@@ -1,0 +1,63 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "goclaw.fullname" . }}
+  labels:
+    {{- include "goclaw.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "goclaw.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  ingress:
+    # Allow intra-namespace (server, ui, db)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: {{ include "goclaw.name" . }}
+            app.kubernetes.io/instance: {{ .Release.Name }}
+    # Allow Traefik ingress from host/remote-node
+    - fromEntities:
+        - host
+        - remote-node
+    # Allow Prometheus scraping from monitoring namespace
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: {{ .Values.server.port | quote }}
+              protocol: TCP
+  egress:
+    # Allow DNS
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Allow intra-namespace
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: {{ include "goclaw.name" . }}
+            app.kubernetes.io/instance: {{ .Release.Name }}
+    # Allow HTTPS egress to world (LLM APIs etc.)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Allow OTEL egress to monitoring namespace
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+{{- end }}

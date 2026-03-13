@@ -1,0 +1,93 @@
+image:
+  repository: ghcr.io/dataplanelabs/goclaw
+  tag: ""
+  pullPolicy: IfNotPresent
+
+server:
+  replicas: 1
+  port: 18790
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+  extraEnv: []
+
+ui:
+  enabled: true
+  image:
+    repository: ghcr.io/dataplanelabs/goclaw-web
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
+
+db:
+  enabled: true
+  image: pgvector/pgvector:0.8.0-pg17
+  storage: 20Gi
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+externalDatabase:
+  url: ""
+  host: ""
+  port: 5432
+  name: "goclaw"
+  user: "goclaw"
+  existingSecret: ""
+
+persistence:
+  data:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  workspace:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+
+ingress:
+  enabled: false
+  host: ""
+  tls: true
+  annotations: {}
+  className: ""
+
+networkPolicy:
+  enabled: false
+
+probes:
+  startup:
+    path: /health
+    initialDelay: 5
+    period: 3
+    failureThreshold: 10
+  readiness:
+    path: /health
+    period: 10
+    timeoutSeconds: 3
+  liveness:
+    path: /health
+    period: 30
+    timeoutSeconds: 3
+
+config:
+  gatewayToken: ""
+  encryptionKey: ""
+  existingSecret: ""
