@@ -242,11 +242,17 @@ func wireExtras(
 		slog.Info("memory layering enabled (Postgres)")
 	}
 
-	// Wire knowledge graph store on KG tool
+	// Wire knowledge graph store on KG tool + hint in memory_search results
 	if stores.KnowledgeGraph != nil {
 		if kgTool, ok := toolsReg.Get("knowledge_graph_search"); ok {
 			if kgt, ok := kgTool.(*tools.KnowledgeGraphSearchTool); ok {
 				kgt.SetKGStore(stores.KnowledgeGraph)
+			}
+		}
+		// Enable KG hint in memory_search results
+		if searchTool, ok := toolsReg.Get("memory_search"); ok {
+			if mst, ok := searchTool.(*tools.MemorySearchTool); ok {
+				mst.SetHasKG(true)
 			}
 		}
 		slog.Info("knowledge graph tool wired (Postgres)")
@@ -400,6 +406,8 @@ func wireExtras(
 				TeamID:            req.TeamID,
 				TeamTaskID:        req.TeamTaskID,
 				ParentAgentID:     req.ParentAgentID,
+				WorkspaceChannel:  req.WorkspaceChannel,
+				WorkspaceChatID:   req.WorkspaceChatID,
 			})
 			if err != nil {
 				return nil, err
@@ -444,7 +452,7 @@ func wireExtras(
 		toolsReg.Register(tools.NewEvaluateLoopTool(delegateMgr))
 
 		// Handoff tool (agent-to-agent conversation transfer)
-		toolsReg.Register(tools.NewHandoffTool(delegateMgr, stores.Teams, stores.Sessions, msgBus))
+		toolsReg.Register(tools.NewHandoffTool(delegateMgr, stores.Teams, stores.Sessions, msgBus, workspace))
 
 		// Inject delegation capability into existing SpawnTool
 		if st, ok := toolsReg.Get("spawn"); ok {
@@ -478,7 +486,7 @@ func wireExtras(
 		slog.Info("delegate + delegate_search tools registered")
 	}
 
-	// Register team tools (team_tasks + team_message) if team store is available.
+	// Register team tools (team_tasks + team_message + workspace) if team store is available.
 	if stores.Teams != nil && stores.Agents != nil {
 		teamMgr := tools.NewTeamToolManager(stores.Teams, stores.Agents, msgBus)
 		if delegateMgr != nil {
@@ -486,6 +494,9 @@ func wireExtras(
 		}
 		toolsReg.Register(tools.NewTeamTasksTool(teamMgr))
 		toolsReg.Register(tools.NewTeamMessageTool(teamMgr))
+		toolsReg.Register(tools.NewWorkspaceWriteTool(teamMgr, workspace))
+		toolsReg.Register(tools.NewWorkspaceReadTool(teamMgr, workspace))
+		slog.Info("team + workspace tools registered", "workspace", workspace)
 
 		// Team cache invalidation via pub/sub
 		msgBus.Subscribe(bus.TopicCacheTeam, func(event bus.Event) {
@@ -532,6 +543,34 @@ func wireExtras(
 			}
 		})
 	}
+
+	// Provider cache: re-register ACP providers on create/update/delete
+	msgBus.Subscribe(bus.TopicCacheProvider, func(event bus.Event) {
+		if event.Name != protocol.EventCacheInvalidate {
+			return
+		}
+		payload, ok := event.Payload.(bus.CacheInvalidatePayload)
+		if !ok || payload.Kind != bus.CacheKindProvider {
+			return
+		}
+		if payload.Key == "" {
+			return
+		}
+		// Re-register from DB if provider still exists and is ACP type
+		p, err := stores.Providers.GetProviderByName(context.Background(), payload.Key)
+		if err != nil {
+			// Provider was deleted or not found — already unregistered by handler
+			return
+		}
+		if p.ProviderType != store.ProviderACP {
+			return
+		}
+		// Unregister old instance (closes ProcessPool) then re-register
+		providerReg.Unregister(p.Name)
+		if p.Enabled {
+			registerACPFromDB(providerReg, *p)
+		}
+	})
 
 	slog.Info("resolver + interceptors + cache subscribers wired")
 	return contextFileInterceptor, delegateMgr, mcpPool, mediaStore

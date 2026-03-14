@@ -113,7 +113,7 @@ func builtinToolSeedData() []store.BuiltinToolDef {
 		{Name: "evaluate_loop", DisplayName: "Evaluate Loop", Description: "Run a generate→evaluate→revise loop between two agents for quality-critical output", Category: "delegation", Enabled: true,
 			Requires: []string{"managed_mode", "agent_links"},
 		},
-		{Name: "handoff", DisplayName: "Handoff", Description: "Transfer the conversation to another agent — the user will talk directly to that agent", Category: "delegation", Enabled: true,
+		{Name: "handoff", DisplayName: "Handoff", Description: "Transfer the conversation to another agent — the user will talk directly to that agent", Category: "delegation", Enabled: false,
 			Requires: []string{"managed_mode", "agent_links"},
 		},
 
@@ -122,6 +122,12 @@ func builtinToolSeedData() []store.BuiltinToolDef {
 			Requires: []string{"managed_mode", "teams"},
 		},
 		{Name: "team_message", DisplayName: "Team Message", Description: "Send a direct message or broadcast to teammates in the agent team", Category: "teams", Enabled: true,
+			Requires: []string{"managed_mode", "teams"},
+		},
+		{Name: "workspace_write", DisplayName: "Workspace Write", Description: "Write files to the team shared workspace visible to all team members", Category: "teams", Enabled: true,
+			Requires: []string{"managed_mode", "teams"},
+		},
+		{Name: "workspace_read", DisplayName: "Workspace Read", Description: "Read, list, delete, pin, and tag files in the team shared workspace", Category: "teams", Enabled: true,
 			Requires: []string{"managed_mode", "teams"},
 		},
 	}

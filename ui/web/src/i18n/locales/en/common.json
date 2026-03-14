@@ -76,6 +76,7 @@
   "sendMessage": "Send a message... (Shift+Enter for new line)",
   "stopGeneration": "Stop generation",
   "sendMessageTitle": "Send message",
+  "sendFollowUp": "Send follow-up message",
   "attachFile": "Attach file",
   "thinking": "Thinking",
   "thinkingStreaming": "Thinking...",
@@ -101,5 +102,6 @@
   "builtinTools": "Built-in",
   "customTools": "Custom",
   "selectOrTypeTools": "Select or type tool names...",
+  "selectOrTypeSkills": "Select or type skill names...",
   "typeAndPressEnter": "Type and press Enter..."
 }
