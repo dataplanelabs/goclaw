@@ -73,6 +73,9 @@ spec:
             - name: workspace
               mountPath: /app/.goclaw
               subPath: .goclaw
+            - name: workspace
+              mountPath: /app/.goclaw/.media
+              subPath: .media
             {{- end }}
           startupProbe:
             httpGet:
