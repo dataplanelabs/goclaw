@@ -13,6 +13,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
 // filteredToolNames returns tool names after applying policy filters.
@@ -27,6 +28,19 @@ func (l *Loop) filteredToolNames() []string {
 		names[i] = d.Function.Name
 	}
 	return names
+}
+
+// buildCredentialCLIContext generates the TOOLS.md supplement for credentialed CLIs.
+// Returns empty string if no secure CLI store is configured or no enabled CLIs.
+func (l *Loop) buildCredentialCLIContext(ctx context.Context) string {
+	if l.secureCLIStore == nil {
+		return ""
+	}
+	creds, err := l.secureCLIStore.ListEnabled(ctx)
+	if err != nil || len(creds) == 0 {
+		return ""
+	}
+	return tools.GenerateCredentialContext(creds)
 }
 
 // buildMCPToolDescs extracts real descriptions for MCP tools from the registry.
@@ -60,7 +74,9 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 	}
 
 	_, hasSpawn := l.tools.Get("spawn")
+	_, hasTeamTools := l.tools.Get("team_tasks")
 	_, hasSkillSearch := l.tools.Get("skill_search")
+	_, hasSkillManage := l.tools.Get("skill_manage")
 	_, hasMCPToolSearch := l.tools.Get("mcp_tool_search")
 	_, hasKG := l.tools.Get("knowledge_graph_search")
 
@@ -89,6 +105,20 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		}
 	}
 
+	// Bootstrap mode: group chats and team-dispatched sessions skip onboarding entirely;
+	// only DMs enter minimal bootstrap mode.
+	if hadBootstrap && (peerKind == "group" || bootstrap.IsTeamSession(sessionKey)) {
+		// Filter BOOTSTRAP.md from context files — groups/team tasks don't need onboarding.
+		filtered := make([]bootstrap.ContextFile, 0, len(contextFiles))
+		for _, cf := range contextFiles {
+			if cf.Path != bootstrap.BootstrapFile {
+				filtered = append(filtered, cf)
+			}
+		}
+		contextFiles = filtered
+		hadBootstrap = false
+	}
+
 	// Group writer restrictions: filter context files + inject prompt
 	if l.groupWriterCache != nil && (strings.HasPrefix(userID, "group:") || strings.HasPrefix(userID, "guild:")) {
 		senderID := store.SenderIDFromContext(ctx)
@@ -102,11 +132,27 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		}
 	}
 
-	// Build MCP tool descriptions for inline mode (not search mode).
+	// Build tool list, filtering out skill_manage when skill_evolve is off.
 	toolNames := l.filteredToolNames()
+	if !l.skillEvolve {
+		filtered := toolNames[:0:0]
+		for _, n := range toolNames {
+			if n != "skill_manage" {
+				filtered = append(filtered, n)
+			}
+		}
+		toolNames = filtered
+	}
 	var mcpToolDescs map[string]string
 	if !hasMCPToolSearch {
 		mcpToolDescs = l.buildMCPToolDescs(toolNames)
+	}
+
+	// Bootstrap DM mode: only restrict tools for open agents (identity being created).
+	// Predefined agents keep full capabilities — BOOTSTRAP.md guides behavior.
+	if hadBootstrap && l.agentType != "predefined" {
+		toolNames = filterBootstrapTools(toolNames)
+		mcpToolDescs = nil
 	}
 
 	systemPrompt := BuildSystemPrompt(SystemPromptConfig{
@@ -122,7 +168,10 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		SkillsSummary:          l.resolveSkillsSummary(skillFilter),
 		HasMemory:              l.hasMemory,
 		HasSpawn:               l.tools != nil && hasSpawn,
+		HasTeam:                hasTeamTools,
+		TeamWorkspace:          tools.ToolTeamWorkspaceFromCtx(ctx),
 		HasSkillSearch:         hasSkillSearch,
+		HasSkillManage:         l.skillEvolve && hasSkillManage,
 		HasMCPToolSearch:       hasMCPToolSearch,
 		HasKnowledgeGraph:      hasKG,
 		MCPToolDescs:           mcpToolDescs,
@@ -133,6 +182,8 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		SandboxContainerDir:    l.sandboxContainerDir,
 		SandboxWorkspaceAccess: l.sandboxWorkspaceAccess,
 		SelfEvolve:             l.selfEvolve,
+		CredentialCLIContext:   l.buildCredentialCLIContext(ctx),
+		IsBootstrap:            hadBootstrap && l.agentType != "predefined",
 	})
 
 	messages = append(messages, providers.Message{
@@ -205,6 +256,24 @@ func (l *Loop) resolveContextFiles(ctx context.Context, userID string) []bootstr
 		}
 	}
 	return merged
+}
+
+// bootstrapToolAllowlist is the set of tools available during bootstrap onboarding.
+// Only write_file (and its alias Write) are needed to save USER.md and clear BOOTSTRAP.md.
+var bootstrapToolAllowlist = map[string]bool{
+	"write_file": true,
+	"Write":      true,
+}
+
+// filterBootstrapTools returns only the bootstrap-allowed tools from the full tool list.
+func filterBootstrapTools(toolNames []string) []string {
+	var filtered []string
+	for _, name := range toolNames {
+		if bootstrapToolAllowlist[name] {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered
 }
 
 // Hybrid skill thresholds: when skill count and total token estimate are below

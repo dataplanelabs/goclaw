@@ -13,8 +13,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+/** Extract the first emoji (single grapheme cluster) from a string, or empty. */
+function extractSingleEmoji(str: string): string {
+  // Match first emoji (handles compound emoji like flags, skin tones)
+  const match = str.match(/\p{Emoji_Presentation}(\u200D\p{Emoji_Presentation})*/u)
+    ?? str.match(/\p{Extended_Pictographic}(\uFE0F?\u200D\p{Extended_Pictographic})*/u);
+  return match?.[0] ?? "";
+}
+
 interface IdentitySectionProps {
   agentKey: string;
+  emoji?: string;
+  onEmojiChange?: (v: string) => void;
   displayName: string;
   onDisplayNameChange: (v: string) => void;
   frontmatter: string;
@@ -27,6 +37,8 @@ interface IdentitySectionProps {
 
 export function IdentitySection({
   agentKey,
+  emoji,
+  onEmojiChange,
   displayName,
   onDisplayNameChange,
   frontmatter,
@@ -72,12 +84,26 @@ export function IdentitySection({
         </div>
         <div className="space-y-2">
           <Label htmlFor="displayName">{t("identity.displayName")}</Label>
-          <Input
-            id="displayName"
-            value={displayName}
-            onChange={(e) => onDisplayNameChange(e.target.value)}
-            placeholder={t("identity.displayNamePlaceholder")}
-          />
+          <div className="flex gap-2">
+            <Input
+              id="emoji"
+              value={emoji ?? ""}
+              onChange={(e) => {
+                const picked = extractSingleEmoji(e.target.value);
+                onEmojiChange?.(picked);
+              }}
+              onFocus={(e) => e.target.select()}
+              placeholder="🤖"
+              className="w-14 shrink-0 text-center text-base md:text-lg"
+              title={t("identity.emojiHint")}
+            />
+            <Input
+              id="displayName"
+              value={displayName}
+              onChange={(e) => onDisplayNameChange(e.target.value)}
+              placeholder={t("identity.displayNamePlaceholder")}
+            />
+          </div>
           <p className="text-xs text-muted-foreground">
             {t("identity.displayNameHint")}
           </p>

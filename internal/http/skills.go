@@ -8,6 +8,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
+	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/store/pg"
@@ -63,22 +64,7 @@ func (h *SkillsHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (h *SkillsHandler) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if h.token != "" {
-			if extractBearerToken(r) != h.token {
-				locale := extractLocale(r)
-				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": i18n.T(locale, i18n.MsgUnauthorized)})
-				return
-			}
-		}
-		userID := extractUserID(r)
-		ctx := store.WithLocale(r.Context(), extractLocale(r))
-		if userID != "" {
-			ctx = store.WithUserID(ctx, userID)
-		}
-		r = r.WithContext(ctx)
-		next(w, r)
-	}
+	return requireAuth(h.token, "", next)
 }
 
 func (h *SkillsHandler) handleList(w http.ResponseWriter, r *http.Request) {
@@ -104,6 +90,16 @@ func (h *SkillsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidID, "skill")})
 		return
+	}
+
+	// Ownership check (admins bypass)
+	auth := resolveAuth(r, h.token)
+	if !permissions.HasMinRole(auth.Role, permissions.RoleAdmin) {
+		userID := store.UserIDFromContext(r.Context())
+		if ownerID, found := h.skills.GetSkillOwnerID(id); found && ownerID != userID {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "only the skill owner can perform this action"})
+			return
+		}
 	}
 
 	var updates map[string]any
@@ -135,6 +131,16 @@ func (h *SkillsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidID, "skill")})
 		return
+	}
+
+	// Ownership check (admins bypass)
+	auth := resolveAuth(r, h.token)
+	if !permissions.HasMinRole(auth.Role, permissions.RoleAdmin) {
+		userID := store.UserIDFromContext(r.Context())
+		if ownerID, found := h.skills.GetSkillOwnerID(id); found && ownerID != userID {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "only the skill owner can perform this action"})
+			return
+		}
 	}
 
 	if err := h.skills.DeleteSkill(id); err != nil {

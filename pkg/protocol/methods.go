@@ -108,13 +108,16 @@ const (
 	MethodTeamsDelete   = "teams.delete"
 	MethodTeamsTaskList      = "teams.tasks.list"
 	MethodTeamsTaskGet       = "teams.tasks.get"
+	MethodTeamsTaskGetLight  = "teams.tasks.get-light"
 	MethodTeamsTaskApprove   = "teams.tasks.approve"
 	MethodTeamsTaskReject    = "teams.tasks.reject"
 	MethodTeamsTaskComment   = "teams.tasks.comment"
 	MethodTeamsTaskComments  = "teams.tasks.comments"
 	MethodTeamsTaskEvents    = "teams.tasks.events"
 	MethodTeamsTaskCreate    = "teams.tasks.create"
-	MethodTeamsTaskAssign    = "teams.tasks.assign"
+	MethodTeamsTaskDelete     = "teams.tasks.delete"
+	MethodTeamsTaskDeleteBulk = "teams.tasks.delete-bulk"
+	MethodTeamsTaskAssign     = "teams.tasks.assign"
 	MethodTeamsMembersAdd    = "teams.members.add"
 	MethodTeamsMembersRemove = "teams.members.remove"
 	MethodTeamsUpdate        = "teams.update"
@@ -129,10 +132,22 @@ const (
 	MethodTeamsWorkspaceDelete = "teams.workspace.delete"
 )
 
+// Team events
+const (
+	MethodTeamsEventsList = "teams.events.list"
+)
+
 // Delegation history
 const (
 	MethodDelegationsList = "delegations.list"
 	MethodDelegationsGet  = "delegations.get"
+)
+
+// API key management
+const (
+	MethodAPIKeysList   = "api_keys.list"
+	MethodAPIKeysCreate = "api_keys.create"
+	MethodAPIKeysRevoke = "api_keys.revoke"
 )
 
 // Phase 3+ - NICE TO HAVE methods

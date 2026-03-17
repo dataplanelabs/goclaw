@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Save, Check, AlertCircle, Sparkles, Info, DollarSign } from "lucide-react";
+import { Save, Check, AlertCircle, Sparkles, Info, DollarSign, GraduationCap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,17 +30,19 @@ export function AgentGeneralTab({ agent, onUpdate }: AgentGeneralTabProps) {
   const [maxToolIterations, setMaxToolIterations] = useState(agent.max_tool_iterations || 20);
   const [llmSaveBlocked, setLlmSaveBlocked] = useState(false);
 
-  // Workspace
-  const [restrictToWorkspace, setRestrictToWorkspace] = useState(agent.restrict_to_workspace);
-
   // Budget (stored in cents, displayed in dollars)
   const [budgetDollars, setBudgetDollars] = useState(
     agent.budget_monthly_cents ? String(agent.budget_monthly_cents / 100) : "",
   );
 
-  // Self-evolve (predefined agents only)
+  // Self-evolve & skill-evolve (predefined agents only)
   const otherCfg = (agent.other_config ?? {}) as Record<string, unknown>;
+  const [emoji, setEmoji] = useState(typeof otherCfg.emoji === "string" ? otherCfg.emoji : "");
   const [selfEvolve, setSelfEvolve] = useState(Boolean(otherCfg.self_evolve));
+  const [skillEvolve, setSkillEvolve] = useState(Boolean(otherCfg.skill_evolve));
+  const [skillNudgeInterval, setSkillNudgeInterval] = useState(
+    typeof otherCfg.skill_nudge_interval === "number" ? otherCfg.skill_nudge_interval : 15,
+  );
 
   // Save state
   const [saving, setSaving] = useState(false);
@@ -56,7 +58,13 @@ export function AgentGeneralTab({ agent, onUpdate }: AgentGeneralTabProps) {
     setSaveError(null);
     setSaved(false);
     try {
-      const updatedOtherConfig = { ...otherCfg, self_evolve: selfEvolve };
+      const updatedOtherConfig = {
+        ...otherCfg,
+        self_evolve: selfEvolve,
+        skill_evolve: skillEvolve,
+        skill_nudge_interval: skillEvolve ? skillNudgeInterval : undefined,
+        emoji: emoji.trim() || undefined,
+      };
       const budgetCents = budgetDollars ? Math.round(parseFloat(budgetDollars) * 100) : null;
       await onUpdate({
         display_name: displayName,
@@ -65,7 +73,6 @@ export function AgentGeneralTab({ agent, onUpdate }: AgentGeneralTabProps) {
         model,
         context_window: contextWindow,
         max_tool_iterations: maxToolIterations,
-        restrict_to_workspace: restrictToWorkspace,
         status,
         is_default: isDefault,
         other_config: updatedOtherConfig,
@@ -84,6 +91,8 @@ export function AgentGeneralTab({ agent, onUpdate }: AgentGeneralTabProps) {
     <div className="max-w-4xl space-y-6">
       <IdentitySection
         agentKey={agent.agent_key}
+        emoji={emoji}
+        onEmojiChange={setEmoji}
         displayName={displayName}
         onDisplayNameChange={setDisplayName}
         frontmatter={frontmatter}
@@ -94,58 +103,7 @@ export function AgentGeneralTab({ agent, onUpdate }: AgentGeneralTabProps) {
         onIsDefaultChange={setIsDefault}
       />
 
-      <Separator />
-
-      <LlmConfigSection
-        provider={provider}
-        onProviderChange={setProvider}
-        model={model}
-        onModelChange={setModel}
-        contextWindow={contextWindow}
-        onContextWindowChange={setContextWindow}
-        maxToolIterations={maxToolIterations}
-        onMaxToolIterationsChange={setMaxToolIterations}
-        savedProvider={agent.provider}
-        savedModel={agent.model}
-        onSaveBlockedChange={handleSaveBlockedChange}
-      />
-
-      <Separator />
-
-      <WorkspaceSection
-        workspace={agent.workspace}
-        restrictToWorkspace={restrictToWorkspace}
-        onRestrictChange={setRestrictToWorkspace}
-      />
-
-      {/* Budget */}
-      <Separator />
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <DollarSign className="h-4 w-4 text-emerald-500" />
-          <h3 className="text-sm font-medium">{t("general.budget")}</h3>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="budget" className="text-sm font-normal">
-            {t("general.budgetLabel")}
-          </Label>
-          <p className="text-xs text-muted-foreground">
-            {t("general.budgetHint")}
-          </p>
-        </div>
-        <Input
-          id="budget"
-          type="number"
-          min="0"
-          step="0.01"
-          placeholder="0.00"
-          value={budgetDollars}
-          onChange={(e) => setBudgetDollars(e.target.value)}
-          className="max-w-[200px]"
-        />
-      </div>
-
-      {/* Self-Evolve (predefined agents only) */}
+      {/* Self-Evolve (predefined agents only) — right after Identity */}
       {agent.agent_type === "predefined" && (
         <>
           <Separator />
@@ -178,6 +136,106 @@ export function AgentGeneralTab({ agent, onUpdate }: AgentGeneralTabProps) {
           </div>
         </>
       )}
+
+      {/* Skill Learning (predefined agents only) — right after Self-Evolve */}
+      {agent.agent_type === "predefined" && (
+        <>
+          <Separator />
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <GraduationCap className="h-4 w-4 text-amber-500" />
+              <h3 className="text-sm font-medium">{t("general.skillLearning")}</h3>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="skill-evolve" className="text-sm font-normal">
+                  {t("general.skillLearningLabel")}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("general.skillLearningHint")}
+                </p>
+              </div>
+              <Switch
+                id="skill-evolve"
+                checked={skillEvolve}
+                onCheckedChange={setSkillEvolve}
+              />
+            </div>
+            {skillEvolve && (
+              <>
+                <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{t("general.skillLearningInfo")}</span>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="nudge-interval" className="text-xs font-normal text-muted-foreground">
+                    {t("general.skillNudgeIntervalLabel")}
+                  </Label>
+                  <Input
+                    id="nudge-interval"
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={skillNudgeInterval}
+                    onChange={(e) => setSkillNudgeInterval(Number(e.target.value) || 0)}
+                    className="max-w-[120px] text-base md:text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t("general.skillNudgeIntervalHint")}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      <Separator />
+
+      <LlmConfigSection
+        provider={provider}
+        onProviderChange={setProvider}
+        model={model}
+        onModelChange={setModel}
+        contextWindow={contextWindow}
+        onContextWindowChange={setContextWindow}
+        maxToolIterations={maxToolIterations}
+        onMaxToolIterationsChange={setMaxToolIterations}
+        savedProvider={agent.provider}
+        savedModel={agent.model}
+        onSaveBlockedChange={handleSaveBlockedChange}
+      />
+
+      <Separator />
+
+      <WorkspaceSection workspace={agent.workspace} />
+
+      {/* Budget */}
+      <Separator />
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <DollarSign className="h-4 w-4 text-emerald-500" />
+          <h3 className="text-sm font-medium">{t("general.budget")}</h3>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="budget" className="text-sm font-normal">
+            {t("general.budgetLabel")}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {t("general.budgetHint")}
+          </p>
+        </div>
+        <Input
+          id="budget"
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="0.00"
+          value={budgetDollars}
+          onChange={(e) => setBudgetDollars(e.target.value)}
+          className="max-w-[200px]"
+        />
+      </div>
 
       {/* Save */}
       {saveError && (

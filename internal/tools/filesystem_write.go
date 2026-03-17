@@ -20,6 +20,7 @@ type WriteFileTool struct {
 	contextFileIntc  *ContextFileInterceptor // nil = no virtual FS routing
 	memIntc          *MemoryInterceptor      // nil = no memory routing
 	groupWriterCache *store.GroupWriterCache // nil = no group write restriction
+	workspaceIntc    *WorkspaceInterceptor   // nil = no team workspace validation
 }
 
 // DenyPaths adds path prefixes that write_file must reject.
@@ -40,6 +41,11 @@ func (t *WriteFileTool) SetMemoryInterceptor(intc *MemoryInterceptor) {
 // SetGroupWriterCache enables group write permission checks.
 func (t *WriteFileTool) SetGroupWriterCache(c *store.GroupWriterCache) {
 	t.groupWriterCache = c
+}
+
+// SetWorkspaceInterceptor enables team workspace validation and event broadcasting.
+func (t *WriteFileTool) SetWorkspaceInterceptor(intc *WorkspaceInterceptor) {
+	t.workspaceIntc = intc
 }
 
 func NewWriteFileTool(workspace string, restrict bool) *WriteFileTool {
@@ -71,7 +77,7 @@ func (t *WriteFileTool) Parameters() map[string]any {
 			},
 			"deliver": map[string]any{
 				"type":        "boolean",
-				"description": "If true, deliver this file to the user as an attachment (image, document, etc.)",
+				"description": "Deliver this file to the user as an attachment. Defaults to true. Set to false for intermediate/temporary files (e.g. config, cache, temp scripts).",
 			},
 		},
 		"required": []string{"path", "content"},
@@ -81,7 +87,10 @@ func (t *WriteFileTool) Parameters() map[string]any {
 func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *Result {
 	path, _ := args["path"].(string)
 	content, _ := args["content"].(string)
-	deliver, _ := args["deliver"].(bool)
+	deliver := true
+	if v, ok := args["deliver"].(bool); ok {
+		deliver = v
+	}
 	if path == "" {
 		return ErrorResult("path is required")
 	}
@@ -128,12 +137,28 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *Resul
 	if workspace == "" {
 		workspace = t.workspace
 	}
-	resolved, err := resolvePath(path, workspace, effectiveRestrict(ctx, t.restrict))
+	allowed := allowedWithTeamWorkspace(ctx, nil)
+	resolved, err := resolvePathWithAllowed(path, workspace, effectiveRestrict(ctx, t.restrict), allowed)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
 	if err := checkDeniedPath(resolved, t.workspace, t.deniedPrefixes); err != nil {
 		return ErrorResult(err.Error())
+	}
+
+	// Team workspace validation + delete-on-empty.
+	if t.workspaceIntc != nil {
+		isDelete, intcErr := t.workspaceIntc.HandleWrite(ctx, resolved, content)
+		if intcErr != nil {
+			return ErrorResult(intcErr.Error())
+		}
+		if isDelete {
+			if err := os.Remove(resolved); err != nil && !os.IsNotExist(err) {
+				return ErrorResult(fmt.Sprintf("failed to delete file: %v", err))
+			}
+			t.workspaceIntc.AfterWrite(ctx, resolved, "delete")
+			return SilentResult(fmt.Sprintf("File deleted: %s", path))
+		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(resolved), 0755); err != nil {
@@ -144,7 +169,15 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *Resul
 		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 
-	result := SilentResult(fmt.Sprintf("File written: %s (%d bytes)", path, len(content)))
+	if t.workspaceIntc != nil {
+		t.workspaceIntc.AfterWrite(ctx, resolved, "write")
+	}
+
+	msg := fmt.Sprintf("File written: %s (%d bytes)", path, len(content))
+	if deliver {
+		msg += ". File will be automatically delivered to the user — do NOT send it again via message tool."
+	}
+	result := SilentResult(msg)
 	result.Deliverable = content
 	if deliver {
 		result.Media = []bus.MediaFile{{Path: resolved}}
@@ -162,7 +195,11 @@ func (t *WriteFileTool) executeInSandbox(ctx context.Context, path, content, san
 		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 
-	result := SilentResult(fmt.Sprintf("File written: %s (%d bytes)", path, len(content)))
+	msg := fmt.Sprintf("File written: %s (%d bytes)", path, len(content))
+	if deliver {
+		msg += ". File will be automatically delivered to the user — do NOT send it again via message tool."
+	}
+	result := SilentResult(msg)
 	result.Deliverable = content
 	if deliver {
 		// Sandbox workspace is bind-mounted — resolve to host path for delivery

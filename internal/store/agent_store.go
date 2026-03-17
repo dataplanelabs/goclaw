@@ -139,6 +139,21 @@ func (a *AgentData) ParseThinkingLevel() string {
 	return cfg.ThinkingLevel
 }
 
+// ParseMaxTokens extracts max_tokens from other_config JSONB.
+// Returns 0 if not configured (caller should apply default).
+func (a *AgentData) ParseMaxTokens() int {
+	if len(a.OtherConfig) == 0 {
+		return 0
+	}
+	var cfg struct {
+		MaxTokens int `json:"max_tokens"`
+	}
+	if json.Unmarshal(a.OtherConfig, &cfg) != nil {
+		return 0
+	}
+	return cfg.MaxTokens
+}
+
 // ParseSelfEvolve extracts self_evolve from other_config JSONB.
 // When true, predefined agents can update their SOUL.md (style/tone) through chat.
 func (a *AgentData) ParseSelfEvolve() bool {
@@ -152,6 +167,41 @@ func (a *AgentData) ParseSelfEvolve() bool {
 		return false
 	}
 	return cfg.SelfEvolve
+}
+
+// ParseSkillEvolve extracts skill_evolve from other_config JSONB.
+// When true, the agent's learning loop is enabled: system prompt includes skill
+// creation guidance, and the loop injects nudges at tool count milestones.
+func (a *AgentData) ParseSkillEvolve() bool {
+	if len(a.OtherConfig) == 0 {
+		return false
+	}
+	var cfg struct {
+		SkillEvolve bool `json:"skill_evolve"`
+	}
+	if json.Unmarshal(a.OtherConfig, &cfg) != nil {
+		return false
+	}
+	return cfg.SkillEvolve
+}
+
+// ParseSkillNudgeInterval extracts skill_nudge_interval from other_config JSONB.
+// Returns the interval (in tool calls) at which the loop injects a skill creation reminder.
+// Default 15 when not set. Explicitly 0 disables mid-loop nudges (system prompt guidance still shown).
+func (a *AgentData) ParseSkillNudgeInterval() int {
+	if len(a.OtherConfig) == 0 {
+		return 15
+	}
+	var cfg struct {
+		SkillNudgeInterval *int `json:"skill_nudge_interval"`
+	}
+	if json.Unmarshal(a.OtherConfig, &cfg) != nil {
+		return 15
+	}
+	if cfg.SkillNudgeInterval == nil {
+		return 15
+	}
+	return *cfg.SkillNudgeInterval
 }
 
 // WorkspaceSharingConfig controls per-user workspace isolation.
