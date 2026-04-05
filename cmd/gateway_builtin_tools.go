@@ -52,7 +52,7 @@ func builtinToolSeedData() []store.BuiltinToolDef {
 			Requires: []string{"document_provider"},
 		},
 		{Name: "create_image", DisplayName: "Create Image", Description: "Generate images from text prompts using an image generation provider", Category: "media", Enabled: true,
-			Settings: json.RawMessage(`{"providers":[{"provider":"openrouter","model":"google/gemini-2.5-flash-image","enabled":true,"timeout":120,"max_retries":2}]}`),
+			Settings: json.RawMessage(`{"providers":[{"provider":"openrouter","model":"google/gemini-2.5-flash-image","enabled":true,"timeout":120,"max_retries":2},{"provider":"openrouter","model":"google/gemini-3.1-flash-image-preview","enabled":true,"timeout":120,"max_retries":2}]}`),
 			Requires: []string{"image_gen_provider"},
 		},
 		{Name: "read_audio", DisplayName: "Read Audio", Description: "Analyze audio files (speech, music, sounds) using an audio-capable LLM provider", Category: "media", Enabled: true,
