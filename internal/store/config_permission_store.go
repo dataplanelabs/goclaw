@@ -49,13 +49,13 @@ type ConfigPermissionStore interface {
 // and is not a file writer. Returns nil if write is allowed.
 //
 // Policy in group/guild context (#915):
+//   - cron:<jobID> SenderID → ALLOW (cron creation already enforces CheckCronPermission)
 //   - empty SenderID        → DENY  (system turn lost the real user — security gap if allowed)
 //   - synthetic SenderID    → DENY  (subagent:, notification:, teammate:, system:, ticker:, session_send_tool)
 //   - real numeric SenderID → DB lookup; deny if no grant
 //   - DB errors             → fail-open (preserve availability over strictness)
 //
-// Outside group/guild context (DM, HTTP, cron-direct): always allow — no per-user
-// writer gate applies.
+// Outside group/guild context (DM, HTTP): always allow — no per-user writer gate applies.
 //
 // Upstream callers should propagate the real acting sender through wrappers
 // (subagent announce, delegate announce, teammate dispatch) so legitimate
@@ -80,6 +80,14 @@ func CheckFileWriterPermission(ctx context.Context, permStore ConfigPermissionSt
 		return nil
 	}
 	senderID := SenderIDFromContext(ctx)
+	// Cron-direct bypass: cron jobs targeting a group are pre-authorized at
+	// creation time via CheckCronPermission (only file_writer or cron-role
+	// users can create them). Once a cron is scheduled, its runs inherit
+	// the creator's write authority for the configured scope. The cron:<jobID>
+	// sender keeps full audit-trail provenance.
+	if isCronSender(senderID) {
+		return nil
+	}
 	if senderID == "" || isSyntheticSender(senderID) {
 		return fmt.Errorf("permission denied: system context cannot write files in group chats. If this is a legitimate user action, ensure the acting sender is preserved through the tool chain")
 	}
@@ -110,6 +118,9 @@ func isAdminRole(ctx context.Context) bool {
 // isSyntheticSender reports whether senderID is an internal system component
 // (not a real user). Mirrors bus.IsInternalSender — kept here to avoid the
 // store→bus import dependency. If prefixes change, update both.
+//
+// Note: "cron:" is intentionally NOT listed here — cron senders are handled
+// by isCronSender and bypass the deny gate (see CheckFileWriterPermission).
 func isSyntheticSender(senderID string) bool {
 	return strings.HasPrefix(senderID, "system:") ||
 		strings.HasPrefix(senderID, "notification:") ||
@@ -117,6 +128,14 @@ func isSyntheticSender(senderID string) bool {
 		strings.HasPrefix(senderID, "ticker:") ||
 		strings.HasPrefix(senderID, "subagent:") ||
 		senderID == "session_send_tool"
+}
+
+// isCronSender reports whether senderID identifies a cron-direct run.
+// Cron runs are pre-authorized at creation time via CheckCronPermission, so
+// they bypass the in-group synthetic-deny gate while still showing distinct
+// provenance in audit logs (sender = "cron:<jobID>").
+func isCronSender(senderID string) bool {
+	return strings.HasPrefix(senderID, "cron:")
 }
 
 // CheckCronPermission returns an error if the caller is in a group context
@@ -138,6 +157,12 @@ func CheckCronPermission(ctx context.Context, permStore ConfigPermissionStore) e
 		return nil // RBAC bypass (admin/operator/owner)
 	}
 	senderID := SenderIDFromContext(ctx)
+	// Cron-direct bypass: a cron run mutating another cron is a legitimate
+	// chain (e.g. self-rescheduling). Creation authority was checked when
+	// the parent cron was scheduled.
+	if isCronSender(senderID) {
+		return nil
+	}
 	if senderID == "" || isSyntheticSender(senderID) {
 		return fmt.Errorf("permission denied: system context cannot manage cron jobs in group chats")
 	}
