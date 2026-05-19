@@ -324,6 +324,59 @@ func TestTelegramGroupWriteFilePermission_AdminRoleBypass(t *testing.T) {
 	}
 }
 
+// Fixture A.12 — cron-direct sender bypasses the group write_file gate.
+// Covers trace 019e3d51 (2026-05-19): cron `daily-marketing-post` delivered
+// to a Zalo OA group with userID=group:zalo-annhien:<chatID>. RunRequest now
+// stamps SenderID="cron:<jobID>" so the run is distinguishable from generic
+// synthetic senders (subagent:/system:/...) and writes are allowed because
+// cron creation already passed CheckCronPermission.
+func TestTelegramGroupWriteFilePermission_CronSenderAllowed(t *testing.T) {
+	db := testDB(t)
+	pg.InitSqlx(db)
+	tenantID, agentID := seedTenantAgent(t, db)
+
+	permStore := pg.NewPGConfigPermissionStore(db)
+
+	cases := []string{
+		"cron:019e28e1-b7c5-7179-860a-1c764e38ef09", // real cron job UUID shape
+		"cron:abc",                                   // tolerant of any suffix
+	}
+	for _, senderID := range cases {
+		t.Run(senderID, func(t *testing.T) {
+			ctx := store.WithTenantID(context.Background(), tenantID)
+			ctx = store.WithUserID(ctx, "group:zalo-annhien:6816738551953874817")
+			ctx = store.WithSenderID(ctx, senderID)
+			ctx = store.WithAgentID(ctx, agentID)
+			// NB: no grant in DB — cron bypass must work without per-user file_writer grant.
+
+			if err := store.CheckFileWriterPermission(ctx, permStore); err != nil {
+				t.Errorf("cron sender %q expected allow, got: %v", senderID, err)
+			}
+			if err := store.CheckCronPermission(ctx, permStore); err != nil {
+				t.Errorf("cron sender %q expected cron-allow, got: %v", senderID, err)
+			}
+		})
+	}
+}
+
+// Fixture A.13 — "cron:" prefix in DM context stays allowed (no group gate
+// applies at all). Guards against regressions that might over-narrow the bypass.
+func TestTelegramGroupWriteFilePermission_CronSenderDMAllowed(t *testing.T) {
+	db := testDB(t)
+	pg.InitSqlx(db)
+	_, agentID := seedTenantAgent(t, db)
+
+	permStore := pg.NewPGConfigPermissionStore(db)
+
+	ctx := store.WithUserID(context.Background(), "user-private-42")
+	ctx = store.WithSenderID(ctx, "cron:abc-123")
+	ctx = store.WithAgentID(ctx, agentID)
+
+	if err := store.CheckFileWriterPermission(ctx, permStore); err != nil {
+		t.Errorf("cron sender in DM expected nil, got: %v", err)
+	}
+}
+
 // Fixture A.11 — viewer / empty role does NOT bypass. Guards against the
 // RBAC bypass leaking to read-only/unscoped roles.
 func TestTelegramGroupWriteFilePermission_ViewerRoleDoesNotBypass(t *testing.T) {

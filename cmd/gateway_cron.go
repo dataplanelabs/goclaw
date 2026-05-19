@@ -94,7 +94,10 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 			sessionMgr.Save(cronCtx, sessionKey)
 		}
 
-		// Schedule through cron lane — scheduler handles agent resolution and concurrency
+		// Schedule through cron lane — scheduler handles agent resolution and concurrency.
+		// SenderID = "cron:<jobID>" gives the run distinct audit-trail provenance and
+		// trips the cron-direct bypass in CheckFileWriterPermission / CheckCronPermission
+		// so group-scoped crons can write memory/log files (pre-authorized at creation).
 		outCh := sched.Schedule(cronCtx, scheduler.LaneCron, agent.RunRequest{
 			SessionKey:        sessionKey,
 			Message:           job.Payload.Message,
@@ -103,6 +106,7 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 			ChatID:            job.DeliverTo,
 			PeerKind:          peerKind,
 			UserID:            job.UserID,
+			SenderID:          fmt.Sprintf("cron:%s", job.ID),
 			RunID:             fmt.Sprintf("cron:%s", job.ID),
 			Stream:            false,
 			ExtraSystemPrompt: extraPrompt,
