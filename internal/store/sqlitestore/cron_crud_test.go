@@ -335,3 +335,66 @@ func mustRawJob(t *testing.T, db *sql.DB, id uuid.UUID) rawCronJobState {
 	}
 	return state
 }
+
+// TestSQLiteCronStore_WriteOnlyHashRoundtrip exercises the gcplane drift-detection
+// contract: write a hash via patch, observe it via GetJob + ListJobs (the same path
+// the cron.list WS handler uses). See https://github.com/dataplanelabs/gcplane/issues/9.
+func TestSQLiteCronStore_WriteOnlyHashRoundtrip(t *testing.T) {
+	cronStore, ctx, _ := newTestSQLiteCronStore(t)
+	everyMS := int64(time.Minute / time.Millisecond)
+
+	job, err := cronStore.AddJob(ctx, "job-woh", store.CronSchedule{
+		Kind:    "every",
+		EveryMS: &everyMS,
+	}, "hello", false, "", "", "", "user-1")
+	if err != nil {
+		t.Fatalf("AddJob error: %v", err)
+	}
+	if job == nil {
+		job = mustOnlyJob(t, cronStore, ctx)
+	}
+
+	// Newly-created job: hash defaults to empty (NOT NULL DEFAULT '').
+	if job.WriteOnlyHash != "" {
+		t.Fatalf("expected empty WriteOnlyHash on fresh job, got %q", job.WriteOnlyHash)
+	}
+
+	// Patch in a hash (as gcplane does on every Update).
+	hash := "sha256:" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if _, err := cronStore.UpdateJob(ctx, job.ID, store.CronJobPatch{
+		WriteOnlyHash: &hash,
+	}); err != nil {
+		t.Fatalf("UpdateJob with WriteOnlyHash error: %v", err)
+	}
+
+	// GetJob reflects the hash.
+	got, ok := cronStore.GetJob(ctx, job.ID)
+	if !ok {
+		t.Fatal("job not found after WriteOnlyHash patch")
+	}
+	if got.WriteOnlyHash != hash {
+		t.Fatalf("GetJob WriteOnlyHash: got %q, want %q", got.WriteOnlyHash, hash)
+	}
+
+	// ListJobs (the WS cron.list path) also reflects it — this is what gcplane reads
+	// on every reconcile to detect drift in message/agentKey without exposing them.
+	listed := cronStore.ListJobs(ctx, false, "", "user-1")
+	if len(listed) != 1 {
+		t.Fatalf("ListJobs: got %d jobs, want 1", len(listed))
+	}
+	if listed[0].WriteOnlyHash != hash {
+		t.Fatalf("ListJobs WriteOnlyHash: got %q, want %q", listed[0].WriteOnlyHash, hash)
+	}
+
+	// Overwrite — confirms the patch is treated as set-to-this-value, not append.
+	newHash := "sha256:deadbeef" + "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"[:56]
+	if _, err := cronStore.UpdateJob(ctx, job.ID, store.CronJobPatch{
+		WriteOnlyHash: &newHash,
+	}); err != nil {
+		t.Fatalf("UpdateJob overwrite error: %v", err)
+	}
+	got2, _ := cronStore.GetJob(ctx, job.ID)
+	if got2.WriteOnlyHash != newHash {
+		t.Fatalf("WriteOnlyHash overwrite: got %q, want %q", got2.WriteOnlyHash, newHash)
+	}
+}
