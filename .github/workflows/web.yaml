@@ -24,7 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
+      # QEMU intentionally omitted: target cluster is amd64-only. See
+      # image.yaml for full rationale.
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
@@ -53,7 +54,7 @@ jobs:
         with:
           context: ./ui/web
           file: ./ui/web/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
