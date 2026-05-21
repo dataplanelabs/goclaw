@@ -531,6 +531,27 @@ func setupSkillsSystem(
 			skillsLoader.SetManagedDir(storeDirs[0])
 			slog.Info("skills-store directory wired into loader", "dir", storeDirs[0])
 
+			// Also register per-tenant skills-store roots so BM25 + filesystem
+			// listing surface tenant-uploaded skills (not just master ones).
+			// Layout: <dataDir>/tenants/<tenant>/skills-store/<slug>/<version>/SKILL.md.
+			// Tenant scoping is enforced downstream by SkillSearchTool.filterByAccess —
+			// indexing all dirs here is safe and avoids embedding-quota single-point-of-failure
+			// (trace 019e49fa: OpenAI 429 → BM25 fallback missed sales-of-day because
+			// the tenant store wasn't in the index).
+			tenantsRoot := filepath.Join(dataDir, "tenants")
+			if entries, err := os.ReadDir(tenantsRoot); err == nil {
+				for _, e := range entries {
+					if !e.IsDir() {
+						continue
+					}
+					tenantSkillsDir := filepath.Join(tenantsRoot, e.Name(), "skills-store")
+					if info, statErr := os.Stat(tenantSkillsDir); statErr == nil && info.IsDir() {
+						skillsLoader.AddManagedDir(tenantSkillsDir)
+						slog.Info("tenant skills-store wired into loader", "tenant", e.Name(), "dir", tenantSkillsDir)
+					}
+				}
+			}
+
 			// Seed system/bundled skills into DB
 			bundledSkillsDir = os.Getenv("GOCLAW_BUNDLED_SKILLS_DIR")
 			if bundledSkillsDir == "" {

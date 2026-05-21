@@ -51,9 +51,13 @@ type Loader struct {
 	globalSkills        string // ~/.goclaw/skills/
 	builtinSkills       string // bundled with binary
 
-	// DB-managed skills directory (set via SetManagedDir).
-	// Uses versioned subdirectory structure: <dir>/<slug>/<version>/SKILL.md
-	managedSkillsDir string
+	// DB-managed skills directories (set via SetManagedDir / AddManagedDir).
+	// Each entry uses versioned subdirectory structure: <dir>/<slug>/<version>/SKILL.md.
+	// Multiple dirs let the loader index both the master skills-store and any
+	// per-tenant skills-store roots (e.g. /app/data/tenants/<tenant>/skills-store)
+	// in a single BM25 index — tenant scoping is enforced downstream by
+	// SkillSearchTool.filterByAccess, not by hiding files here.
+	managedSkillsDirs []string
 
 	mu    sync.RWMutex
 	cache map[string]*Info // name → info (lazily populated)
@@ -92,13 +96,36 @@ func NewLoader(workspace, globalSkills, builtinSkills string) *Loader {
 	}
 }
 
-// SetManagedDir sets the managed skills directory (skills-store).
+// SetManagedDir replaces the managed skills directory list with a single dir.
 // Managed skills use versioned subdirectories: <dir>/<slug>/<version>/SKILL.md.
 // Called after PG stores are created.
 func (l *Loader) SetManagedDir(dir string) {
-	l.managedSkillsDir = dir
+	if dir == "" {
+		l.managedSkillsDirs = nil
+	} else {
+		l.managedSkillsDirs = []string{dir}
+	}
 	l.BumpVersion() // trigger re-scan
 }
+
+// AddManagedDir appends an additional managed skills directory. Used to register
+// per-tenant skills-store roots on top of the master one set via SetManagedDir.
+// Duplicates are ignored. Empty paths are skipped silently.
+func (l *Loader) AddManagedDir(dir string) {
+	if dir == "" {
+		return
+	}
+	for _, existing := range l.managedSkillsDirs {
+		if existing == dir {
+			return
+		}
+	}
+	l.managedSkillsDirs = append(l.managedSkillsDirs, dir)
+	l.BumpVersion()
+}
+
+// hasManagedDirs reports whether any managed dir is configured.
+func (l *Loader) hasManagedDirs() bool { return len(l.managedSkillsDirs) > 0 }
 
 // ListSkills returns all available skills, respecting the priority hierarchy.
 // Higher-priority sources override lower ones by name.
@@ -157,7 +184,9 @@ func (l *Loader) ListSkills(_ context.Context) []Info {
 	}
 
 	// Managed skills (versioned, DB-seeded) come before builtin so their workspace paths win.
-	if l.managedSkillsDir != "" {
+	// Iterate ALL configured managed dirs (master + any tenant-scoped dirs) so
+	// BM25 / system-prompt listing surface tenant-uploaded skills, not just the master ones.
+	if l.hasManagedDirs() {
 		for _, info := range l.listManagedSkills() {
 			if seen[info.Slug] {
 				continue
@@ -203,55 +232,73 @@ func (l *Loader) ListSkills(_ context.Context) []Info {
 	return skills
 }
 
-// listManagedSkills scans the managed skills directory for versioned skill directories.
-// Structure: <managedSkillsDir>/<slug>/<version>/SKILL.md
-// Returns the latest version of each skill found.
+// listManagedSkills scans every configured managed dir for versioned skill directories.
+// Structure: <managedDir>/<slug>/<version>/SKILL.md. Returns the latest version of each
+// unique slug found. Earlier dirs win on slug collision so callers can prepend the
+// authoritative (master) dir before tenant-scoped overlays if they care about precedence.
 func (l *Loader) listManagedSkills() []Info {
-	dirs, err := os.ReadDir(l.managedSkillsDir)
-	if err != nil {
-		return nil
-	}
-
+	seen := make(map[string]struct{})
 	var skills []Info
-	for _, d := range dirs {
-		if !d.IsDir() {
+	for _, root := range l.managedSkillsDirs {
+		dirs, err := os.ReadDir(root)
+		if err != nil {
 			continue
 		}
-		slug := d.Name()
-
-		// Find the latest version subdirectory
-		latestVersion, latestDir := l.findLatestVersion(slug)
-		if latestVersion < 0 {
-			continue
-		}
-
-		skillFile := filepath.Join(latestDir, "SKILL.md")
-		if _, err := os.Stat(skillFile); err != nil {
-			continue
-		}
-
-		info := Info{
-			Name:    slug,
-			Slug:    slug,
-			Path:    skillFile,
-			BaseDir: latestDir,
-			Source:  "managed",
-		}
-		if meta := parseMetadata(skillFile); meta != nil {
-			info.Description = meta.Description
-			if meta.Name != "" {
-				info.Name = meta.Name
+		for _, d := range dirs {
+			if !d.IsDir() {
+				continue
 			}
+			slug := d.Name()
+			if _, dup := seen[slug]; dup {
+				continue
+			}
+
+			latestVersion, latestDir := l.findLatestVersionIn(root, slug)
+			if latestVersion < 0 {
+				continue
+			}
+
+			skillFile := filepath.Join(latestDir, "SKILL.md")
+			if _, err := os.Stat(skillFile); err != nil {
+				continue
+			}
+
+			info := Info{
+				Name:    slug,
+				Slug:    slug,
+				Path:    skillFile,
+				BaseDir: latestDir,
+				Source:  "managed",
+			}
+			if meta := parseMetadata(skillFile); meta != nil {
+				info.Description = meta.Description
+				if meta.Name != "" {
+					info.Name = meta.Name
+				}
+			}
+			skills = append(skills, info)
+			seen[slug] = struct{}{}
 		}
-		skills = append(skills, info)
 	}
 	return skills
 }
 
-// findLatestVersion finds the highest-numbered version subdirectory for a skill slug.
+// findLatestVersion searches every managed dir for the highest-numbered version of
+// the given slug. The first dir holding any version wins (matches the iteration
+// order in listManagedSkills, keeping the chosen file consistent across callers).
 // Returns (version, path) or (-1, "") if no valid version found.
 func (l *Loader) findLatestVersion(slug string) (int, string) {
-	slugDir := filepath.Join(l.managedSkillsDir, slug)
+	for _, root := range l.managedSkillsDirs {
+		if v, dir := l.findLatestVersionIn(root, slug); v >= 0 {
+			return v, dir
+		}
+	}
+	return -1, ""
+}
+
+// findLatestVersionIn looks up the latest version inside a single managed root.
+func (l *Loader) findLatestVersionIn(root, slug string) (int, string) {
+	slugDir := filepath.Join(root, slug)
 	entries, err := os.ReadDir(slugDir)
 	if err != nil {
 		return -1, ""
@@ -297,7 +344,7 @@ func (l *Loader) LoadSkill(_ context.Context, name string) (string, bool) {
 	}
 
 	// Managed skills (DB-seeded, versioned) take priority over raw builtin files.
-	if l.managedSkillsDir != "" {
+	if l.hasManagedDirs() {
 		latestVer, latestDir := l.findLatestVersion(name)
 		if latestVer >= 0 {
 			path := filepath.Join(latestDir, "SKILL.md")
@@ -434,11 +481,12 @@ func (l *Loader) BumpVersion() {
 // Dirs returns all non-empty skill directories (for the watcher to monitor).
 func (l *Loader) Dirs() []string {
 	var dirs []string
-	for _, d := range []string{l.workspaceSkills, l.projectAgentSkills, l.personalAgentSkills, l.globalSkills, l.builtinSkills, l.managedSkillsDir} {
+	for _, d := range []string{l.workspaceSkills, l.projectAgentSkills, l.personalAgentSkills, l.globalSkills, l.builtinSkills} {
 		if d != "" {
 			dirs = append(dirs, d)
 		}
 	}
+	dirs = append(dirs, l.managedSkillsDirs...)
 	return dirs
 }
 
