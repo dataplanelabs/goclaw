@@ -71,6 +71,9 @@ func (m *CronMethods) handleCreate(ctx context.Context, client *gateway.Client, 
 		WakeHeartbeat  bool               `json:"wakeHeartbeat"`
 		Stateless      *bool              `json:"stateless"` // default true for new crons
 		AgentID        string             `json:"agentId"`
+		// WriteOnlyHash is an opaque hash supplied by external reconcilers
+		// (gcplane) to detect drift in write-only fields. Stored as-is.
+		WriteOnlyHash string `json:"writeOnlyHash"`
 	}
 	if req.Params != nil {
 		json.Unmarshal(req.Params, &params)
@@ -105,6 +108,9 @@ func (m *CronMethods) handleCreate(ctx context.Context, client *gateway.Client, 
 		patch := store.CronJobPatch{Stateless: &statelessVal}
 		if params.WakeHeartbeat {
 			patch.WakeHeartbeat = &params.WakeHeartbeat
+		}
+		if params.WriteOnlyHash != "" {
+			patch.WriteOnlyHash = &params.WriteOnlyHash
 		}
 		if updated, pErr := m.service.UpdateJob(ctx, job.ID, patch); pErr == nil {
 			job = updated

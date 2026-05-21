@@ -474,6 +474,7 @@ CREATE TABLE IF NOT EXISTS cron_jobs (
     last_error       TEXT,
     team_id          TEXT REFERENCES agent_teams(id) ON DELETE SET NULL,
     tenant_id        TEXT NOT NULL REFERENCES tenants(id),
+    write_only_hash  TEXT NOT NULL DEFAULT '',
     created_at       TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at       TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 27
+const SchemaVersion = 28
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -574,6 +574,13 @@ UPDATE channel_instances SET channel_type = 'zalo_oa'     WHERE channel_type = '
 UPDATE channel_contacts  SET channel_type = 'zalo_oa_tmp' WHERE channel_type = 'zalo_oauth';
 UPDATE channel_contacts  SET channel_type = 'zalo_bot'    WHERE channel_type = 'zalo_oa';
 UPDATE channel_contacts  SET channel_type = 'zalo_oa'     WHERE channel_type = 'zalo_oa_tmp';`,
+
+	// Version 27 → 28: add write_only_hash column to cron_jobs so gcplane can
+	// detect drift in write-only fields (CronJob.message, CronJob.agentKey)
+	// without the goclaw API having to expose their values. See
+	// migrations/000059_cron_write_only_hash.up.sql for full rationale and
+	// https://github.com/dataplanelabs/gcplane/issues/9.
+	27: `ALTER TABLE cron_jobs ADD COLUMN write_only_hash TEXT NOT NULL DEFAULT '';`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.

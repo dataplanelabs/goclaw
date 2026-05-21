@@ -35,6 +35,12 @@ type CronJob struct {
 	DeliverChannel string       `json:"deliverChannel" db:"deliver_channel"`
 	DeliverTo      string       `json:"deliverTo" db:"deliver_to"`
 	WakeHeartbeat  bool         `json:"wakeHeartbeat" db:"wake_heartbeat"`
+	// WriteOnlyHash is an opaque content hash supplied by external reconcilers
+	// (gcplane) on every create/update. goclaw stores and echoes it but never
+	// inspects or validates the value. It enables drift detection on fields
+	// the API does not return (message, agentKey) without exposing them.
+	// Empty string = no hash recorded yet.
+	WriteOnlyHash string `json:"writeOnlyHash,omitempty" db:"write_only_hash"`
 }
 
 // CronSchedule defines when a job should run.
@@ -94,6 +100,7 @@ type CronJobPatch struct {
 	DeliverChannel *string       `json:"deliverChannel,omitempty" db:"-"`
 	DeliverTo      *string       `json:"deliverTo,omitempty" db:"-"`
 	WakeHeartbeat  *bool         `json:"wakeHeartbeat,omitempty" db:"-"`
+	WriteOnlyHash  *string       `json:"writeOnlyHash,omitempty" db:"-"`
 }
 
 // CronEvent represents a job lifecycle event sent to subscribers.

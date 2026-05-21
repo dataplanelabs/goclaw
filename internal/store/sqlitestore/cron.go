@@ -130,11 +130,12 @@ func scanCronRow(row cronRowScanner) (*store.CronJob, error) {
 	var runAt, nextRunAt, lastRunAt nullSqliteTime
 	var intervalMS *int64
 	var payloadJSON []byte
+	var writeOnlyHash string
 	createdAt, updatedAt := scanTimePair()
 
 	err := row.Scan(&id, &tenantID, &agentID, &userID, &name, &enabled, &scheduleKind, &cronExpr, &runAt, &tz,
 		&intervalMS, &payloadJSON, &deleteAfterRun, &stateless, &deliver, &deliverChannel, &deliverTo, &wakeHeartbeat,
-		&nextRunAt, &lastRunAt, &lastStatus, &lastError,
+		&nextRunAt, &lastRunAt, &lastStatus, &lastError, &writeOnlyHash,
 		createdAt, updatedAt)
 	if err != nil {
 		return nil, err
@@ -162,6 +163,7 @@ func scanCronRow(row cronRowScanner) (*store.CronJob, error) {
 		DeliverChannel: deliverChannel,
 		DeliverTo:      deliverTo,
 		WakeHeartbeat:  wakeHeartbeat,
+		WriteOnlyHash:  writeOnlyHash,
 	}
 
 	if agentID != nil {
@@ -209,7 +211,7 @@ func computeNextRun(schedule *store.CronSchedule, now time.Time, defaultTZ strin
 func (s *SQLiteCronStore) scanJob(ctx context.Context, id uuid.UUID) (*store.CronJob, error) {
 	q := `SELECT id, tenant_id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
 		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat,
-		 next_run_at, last_run_at, last_status, last_error,
+		 next_run_at, last_run_at, last_status, last_error, write_only_hash,
 		 created_at, updated_at FROM cron_jobs WHERE id = ?`
 	args := []any{id}
 
