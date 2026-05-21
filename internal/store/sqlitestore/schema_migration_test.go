@@ -342,6 +342,11 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`ALTER TABLE cron_jobs DROP COLUMN write_only_hash`)
 	}
 
+	if targetVersion < 29 {
+		// Migration 28→29 adds llm_providers.write_only_hash.
+		db.Exec(`ALTER TABLE llm_providers DROP COLUMN write_only_hash`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db

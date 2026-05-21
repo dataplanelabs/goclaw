@@ -76,17 +76,18 @@ CREATE INDEX IF NOT EXISTS idx_tenant_users_tenant ON tenant_users(tenant_id);
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS llm_providers (
-    id            TEXT NOT NULL PRIMARY KEY,
-    name          VARCHAR(50) NOT NULL,
-    display_name  VARCHAR(255),
-    provider_type VARCHAR(30) NOT NULL DEFAULT 'openai_compat',
-    api_base      TEXT,
-    api_key       TEXT,
-    enabled       BOOLEAN NOT NULL DEFAULT 1,
-    settings      TEXT NOT NULL DEFAULT '{}',
-    tenant_id     TEXT NOT NULL REFERENCES tenants(id),
-    created_at    TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at    TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    id              TEXT NOT NULL PRIMARY KEY,
+    name            VARCHAR(50) NOT NULL,
+    display_name    VARCHAR(255),
+    provider_type   VARCHAR(30) NOT NULL DEFAULT 'openai_compat',
+    api_base        TEXT,
+    api_key         TEXT,
+    enabled         BOOLEAN NOT NULL DEFAULT 1,
+    settings        TEXT NOT NULL DEFAULT '{}',
+    write_only_hash TEXT NOT NULL DEFAULT '',
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
+    created_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 -- tenant-scoped unique name (migration 27 Phase I)

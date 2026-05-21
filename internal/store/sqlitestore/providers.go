@@ -15,7 +15,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
-const providerSelectCols = `id, name, display_name, provider_type, api_base, api_key, enabled, settings, created_at, updated_at, tenant_id`
+const providerSelectCols = `id, name, display_name, provider_type, api_base, api_key, enabled, settings, write_only_hash, created_at, updated_at, tenant_id`
 
 // SQLiteProviderStore implements store.ProviderStore backed by SQLite.
 type SQLiteProviderStore struct {
@@ -60,14 +60,15 @@ func (s *SQLiteProviderStore) CreateProvider(ctx context.Context, p *store.LLMPr
 	// This handles orphaned providers left after agent deletion (#295).
 	var actualID string
 	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO llm_providers (id, name, display_name, provider_type, api_base, api_key, enabled, settings, created_at, updated_at, tenant_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO llm_providers (id, name, display_name, provider_type, api_base, api_key, enabled, settings, created_at, updated_at, tenant_id, write_only_hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(tenant_id, name) DO UPDATE SET
 			display_name = excluded.display_name, provider_type = excluded.provider_type,
 			api_base = excluded.api_base, api_key = excluded.api_key,
-			enabled = excluded.enabled, settings = excluded.settings, updated_at = excluded.updated_at
+			enabled = excluded.enabled, settings = excluded.settings, updated_at = excluded.updated_at,
+			write_only_hash = excluded.write_only_hash
 		 RETURNING id`,
-		p.ID, p.Name, p.DisplayName, p.ProviderType, p.APIBase, apiKey, p.Enabled, settings, now, now, tid,
+		p.ID, p.Name, p.DisplayName, p.ProviderType, p.APIBase, apiKey, p.Enabled, settings, now, now, tid, p.WriteOnlyHash,
 	).Scan(&actualID)
 	if err == nil {
 		if parsed, parseErr := uuid.Parse(actualID); parseErr == nil {

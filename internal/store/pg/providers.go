@@ -56,14 +56,15 @@ func (s *PGProviderStore) CreateProvider(ctx context.Context, p *store.LLMProvid
 	// This handles orphaned providers left after agent deletion (#295).
 	var actualID uuid.UUID
 	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO llm_providers (id, name, display_name, provider_type, api_base, api_key, enabled, settings, created_at, updated_at, tenant_id)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		`INSERT INTO llm_providers (id, name, display_name, provider_type, api_base, api_key, enabled, settings, created_at, updated_at, tenant_id, write_only_hash)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		 ON CONFLICT (tenant_id, name) DO UPDATE SET
 			display_name = EXCLUDED.display_name, provider_type = EXCLUDED.provider_type,
 			api_base = EXCLUDED.api_base, api_key = EXCLUDED.api_key,
-			enabled = EXCLUDED.enabled, settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at
+			enabled = EXCLUDED.enabled, settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at,
+			write_only_hash = EXCLUDED.write_only_hash
 		 RETURNING id`,
-		p.ID, p.Name, p.DisplayName, p.ProviderType, p.APIBase, apiKey, p.Enabled, settings, now, now, tid,
+		p.ID, p.Name, p.DisplayName, p.ProviderType, p.APIBase, apiKey, p.Enabled, settings, now, now, tid, p.WriteOnlyHash,
 	).Scan(&actualID)
 	if err == nil {
 		p.ID = actualID // sync in-memory ID with actual DB row
@@ -78,7 +79,7 @@ func (s *PGProviderStore) GetProvider(ctx context.Context, id uuid.UUID) (*store
 	}
 	var p store.LLMProviderData
 	err = pkgSqlxDB.GetContext(ctx, &p,
-		`SELECT id, name, display_name, provider_type, api_base, api_key, enabled, settings, created_at, updated_at, tenant_id
+		`SELECT id, name, display_name, provider_type, api_base, api_key, enabled, settings, write_only_hash, created_at, updated_at, tenant_id
 		 FROM llm_providers WHERE id = $1`+tClause,
 		append([]any{id}, tArgs...)...,
 	)
@@ -96,7 +97,7 @@ func (s *PGProviderStore) GetProviderByName(ctx context.Context, name string) (*
 	}
 	var p store.LLMProviderData
 	err = pkgSqlxDB.GetContext(ctx, &p,
-		`SELECT id, name, display_name, provider_type, api_base, api_key, enabled, settings, created_at, updated_at, tenant_id
+		`SELECT id, name, display_name, provider_type, api_base, api_key, enabled, settings, write_only_hash, created_at, updated_at, tenant_id
 		 FROM llm_providers WHERE name = $1`+tClause,
 		append([]any{name}, tArgs...)...,
 	)
@@ -114,7 +115,7 @@ func (s *PGProviderStore) ListProviders(ctx context.Context) ([]store.LLMProvide
 	}
 	var result []store.LLMProviderData
 	err = pkgSqlxDB.SelectContext(ctx, &result,
-		`SELECT id, name, display_name, provider_type, api_base, api_key, enabled, settings, created_at, updated_at, tenant_id
+		`SELECT id, name, display_name, provider_type, api_base, api_key, enabled, settings, write_only_hash, created_at, updated_at, tenant_id
 		 FROM llm_providers WHERE true`+tClause+` ORDER BY name`, tArgs...)
 	if err != nil {
 		return nil, err
@@ -129,7 +130,7 @@ func (s *PGProviderStore) ListProviders(ctx context.Context) ([]store.LLMProvide
 func (s *PGProviderStore) ListAllProviders(ctx context.Context) ([]store.LLMProviderData, error) {
 	var result []store.LLMProviderData
 	err := pkgSqlxDB.SelectContext(ctx, &result,
-		`SELECT id, name, display_name, provider_type, api_base, api_key, enabled, settings, created_at, updated_at, tenant_id
+		`SELECT id, name, display_name, provider_type, api_base, api_key, enabled, settings, write_only_hash, created_at, updated_at, tenant_id
 		 FROM llm_providers WHERE true ORDER BY name`)
 	if err != nil {
 		return nil, err

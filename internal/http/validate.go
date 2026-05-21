@@ -61,6 +61,7 @@ var providerAllowedFields = map[string]bool{
 	"api_base": true, "base_url": true, "default_model": true,
 	"extra_headers": true, "config": true, "enabled": true,
 	"display_name": true, "display_order": true, "settings": true,
+	"write_only_hash": true,
 }
 
 var customToolAllowedFields = map[string]bool{
