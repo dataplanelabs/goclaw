@@ -83,6 +83,11 @@ type LLMProviderData struct {
 	APIKey       string          `json:"api_key,omitempty" db:"api_key"`
 	Enabled      bool            `json:"enabled" db:"enabled"`
 	Settings     json.RawMessage `json:"settings,omitempty" db:"settings"`
+	// WriteOnlyHash is an opaque content hash supplied by external reconcilers
+	// (gcplane) so they can detect drift on write-only fields like api_key,
+	// which are masked in API responses. goclaw stores and echoes it verbatim.
+	// Empty string means "no hash recorded yet" — reconciler treats as drift.
+	WriteOnlyHash string `json:"write_only_hash,omitempty" db:"write_only_hash"`
 }
 
 // RequiredMemoryEmbeddingDimensions is the fixed vector size used by the pgvector memory schema.

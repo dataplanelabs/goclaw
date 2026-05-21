@@ -13,30 +13,32 @@ import (
 // providerRow is a scan struct for llm_providers rows.
 // Uses sqliteTime for created_at/updated_at to handle SQLite text timestamps.
 type providerRow struct {
-	ID           uuid.UUID       `json:"id" db:"id"`
-	Name         string          `json:"name" db:"name"`
-	DisplayName  string          `json:"display_name" db:"display_name"`
-	ProviderType string          `json:"provider_type" db:"provider_type"`
-	APIBase      string          `json:"api_base" db:"api_base"`
-	APIKey       string          `json:"api_key" db:"api_key"`
-	Enabled      bool            `json:"enabled" db:"enabled"`
-	Settings     json.RawMessage `json:"settings" db:"settings"`
-	CreatedAt    sqliteTime      `json:"created_at" db:"created_at"`
-	UpdatedAt    sqliteTime      `json:"updated_at" db:"updated_at"`
-	TenantID     uuid.UUID       `json:"tenant_id" db:"tenant_id"`
+	ID            uuid.UUID       `json:"id" db:"id"`
+	Name          string          `json:"name" db:"name"`
+	DisplayName   string          `json:"display_name" db:"display_name"`
+	ProviderType  string          `json:"provider_type" db:"provider_type"`
+	APIBase       string          `json:"api_base" db:"api_base"`
+	APIKey        string          `json:"api_key" db:"api_key"`
+	Enabled       bool            `json:"enabled" db:"enabled"`
+	Settings      json.RawMessage `json:"settings" db:"settings"`
+	WriteOnlyHash string          `json:"write_only_hash" db:"write_only_hash"`
+	CreatedAt     sqliteTime      `json:"created_at" db:"created_at"`
+	UpdatedAt     sqliteTime      `json:"updated_at" db:"updated_at"`
+	TenantID      uuid.UUID       `json:"tenant_id" db:"tenant_id"`
 }
 
 func (r *providerRow) toLLMProviderData() store.LLMProviderData {
 	return store.LLMProviderData{
-		BaseModel:    store.BaseModel{ID: r.ID, CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time},
-		TenantID:     r.TenantID,
-		Name:         r.Name,
-		DisplayName:  r.DisplayName,
-		ProviderType: r.ProviderType,
-		APIBase:      r.APIBase,
-		APIKey:       r.APIKey,
-		Enabled:      r.Enabled,
-		Settings:     r.Settings,
+		BaseModel:     store.BaseModel{ID: r.ID, CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time},
+		TenantID:      r.TenantID,
+		Name:          r.Name,
+		DisplayName:   r.DisplayName,
+		ProviderType:  r.ProviderType,
+		APIBase:       r.APIBase,
+		APIKey:        r.APIKey,
+		Enabled:       r.Enabled,
+		Settings:      r.Settings,
+		WriteOnlyHash: r.WriteOnlyHash,
 	}
 }
 

@@ -1,0 +1,23 @@
+-- Migration: add write_only_hash column to llm_providers.
+--
+-- Background: gcplane (the GitOps reconciler) treats Provider.apiKey as
+-- "write-only" — the goclaw provider list/get response masks api_key as
+-- "***", so gcplane cannot detect drift in that field by direct comparison.
+-- Without an opaque hash to compare, rotating GOCLAW_*_API_KEY env vars in
+-- gcplane-secrets does NOT propagate to goclaw: the reconciler sees no
+-- observable drift, logs "resource no-op may hide drift in unobservable
+-- fields", and never re-pushes. The only workaround was to bump
+-- displayName (or other observable field) on every key rotation.
+--
+-- This mirrors migration 000059 for cron_jobs. gcplane sends a SHA-256
+-- hash of write-only fields (apiKey) on every create/update; goclaw
+-- stores opaque and echoes on list/get so gcplane can detect drift on
+-- rotated secrets without exposing the underlying value.
+--
+-- The column is opaque: goclaw never inspects or validates the value, it
+-- only stores and returns it. NOT NULL DEFAULT '' so existing rows are
+-- valid (empty string means "no hash recorded yet" — gcplane treats that
+-- as drift on the first reconcile post-migration, auto-healing existing
+-- rows with one update per provider).
+
+ALTER TABLE llm_providers ADD COLUMN write_only_hash TEXT NOT NULL DEFAULT '';
