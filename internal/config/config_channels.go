@@ -201,6 +201,11 @@ type ZaloPersonalConfig struct {
 	DisablePolls        bool                `json:"disable_polls,omitempty"`         // kill switch for the 5 poll tools
 	DisableReactions    bool                `json:"disable_reactions,omitempty"`     // kill switch for the react tool AND inbound reaction synthesis
 	ListenSelfReactions bool                `json:"listen_self_reactions,omitempty"` // opt-in: surface reactions to the bot's own messages
+	// ReactionsMode controls what happens when an inbound reaction is observed.
+	//   "silent"   — drop without logging
+	//   "feedback" (default) — log the reaction as signal but do NOT trigger an agent run
+	//   "inbound"  — synthesize a [reaction] line and route through HandleMessage (legacy)
+	ReactionsMode string `json:"reactions_mode,omitempty"`
 }
 
 type FeishuConfig struct {

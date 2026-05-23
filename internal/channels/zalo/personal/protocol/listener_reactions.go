@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 )
 
 // TReaction is the wire shape per frame. There is no groupId field — threadID
@@ -50,6 +51,7 @@ func (ln *Listener) handleReactionEvents(ctx context.Context, data string, encTy
 
 	payload, err := ln.decryptEventData(data, encType, ck)
 	if err != nil {
+		slog.Warn("zalo_personal.reaction.decrypt_failed", "err", err, "enc_type", encType, "data_len", len(data))
 		emit(ctx, ln.errorCh, fmt.Errorf("zalo_personal: decrypt reaction event: %w", err))
 		return
 	}
@@ -61,9 +63,15 @@ func (ln *Listener) handleReactionEvents(ctx context.Context, data string, encTy
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(payload, &envelope); err != nil {
+		slog.Warn("zalo_personal.reaction.parse_failed", "err", err, "payload_preview", truncatePayload(payload, 200))
 		emit(ctx, ln.errorCh, fmt.Errorf("zalo_personal: parse reaction event: %w", err))
 		return
 	}
+
+	slog.Info("zalo_personal.reaction.received",
+		"dm_count", len(envelope.Data.Reacts),
+		"group_count", len(envelope.Data.ReactGroups),
+		"payload_len", len(payload))
 
 	for _, r := range envelope.Data.Reacts {
 		if ev, ok := decodeReaction(ln.sess.UID, r, ThreadTypeUser, false); ok {
@@ -75,6 +83,13 @@ func (ln *Listener) handleReactionEvents(ctx context.Context, data string, encTy
 			emit(ctx, ln.reactionCh, ev)
 		}
 	}
+}
+
+func truncatePayload(b []byte, n int) string {
+	if len(b) <= n {
+		return string(b)
+	}
+	return string(b[:n]) + "..."
 }
 
 // handleOldReactions handles cmd=610 (user) and cmd=611 (group) — historical

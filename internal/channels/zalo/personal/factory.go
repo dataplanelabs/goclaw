@@ -31,6 +31,7 @@ type zaloInstanceConfig struct {
 	DisablePolls        bool     `json:"disable_polls,omitempty"`
 	DisableReactions    bool     `json:"disable_reactions,omitempty"`
 	ListenSelfReactions bool     `json:"listen_self_reactions,omitempty"`
+	ReactionsMode       string   `json:"reactions_mode,omitempty"`
 }
 
 // Factory creates a Zalo Personal channel from DB instance data.
@@ -70,6 +71,7 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 		DisablePolls:        ic.DisablePolls,
 		DisableReactions:    ic.DisableReactions,
 		ListenSelfReactions: ic.ListenSelfReactions,
+		ReactionsMode:       ic.ReactionsMode,
 	}
 
 	ch, err := New(zaloCfg, msgBus, pairingSvc, nil)
