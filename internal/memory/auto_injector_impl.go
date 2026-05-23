@@ -85,8 +85,15 @@ func (a *pgAutoInjector) Inject(ctx context.Context, params InjectParams) (*Inje
 		}
 	}
 
-	if injected == 0 {
+	if injected == 0 && !a.hasReactionFeedback(ctx, params) {
 		return &InjectResult{MatchCount: len(results)}, nil
+	}
+
+	if section := a.reactionFeedbackSection(ctx, params); section != "" {
+		if injected > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(section)
 	}
 
 	result := &InjectResult{
@@ -96,10 +103,32 @@ func (a *pgAutoInjector) Inject(ctx context.Context, params InjectParams) (*Inje
 		TopScore:   topScore,
 	}
 
-	// Record retrieval metric non-blocking (best-effort).
 	a.recordRetrievalMetric(params, result)
 
 	return result, nil
+}
+
+const reactionFeedbackLookback = 24 * time.Hour
+const reactionFeedbackLimit = 5
+
+func (a *pgAutoInjector) hasReactionFeedback(ctx context.Context, params InjectParams) bool {
+	rows, err := a.episodicStore.ListBySourceType(ctx, params.AgentID, params.UserID, "reaction_feedback", time.Now().Add(-reactionFeedbackLookback), 1)
+	return err == nil && len(rows) > 0
+}
+
+func (a *pgAutoInjector) reactionFeedbackSection(ctx context.Context, params InjectParams) string {
+	rows, err := a.episodicStore.ListBySourceType(ctx, params.AgentID, params.UserID, "reaction_feedback", time.Now().Add(-reactionFeedbackLookback), reactionFeedbackLimit)
+	if err != nil || len(rows) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("## Recent User Reactions\n\nReactions on your prior replies (use to calibrate tone — don't reply directly to reactions):\n")
+	for _, r := range rows {
+		sb.WriteString("- ")
+		sb.WriteString(r.Summary)
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 // recordRetrievalMetric records an auto-inject retrieval metric in a background goroutine.

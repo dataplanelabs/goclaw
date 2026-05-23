@@ -28,8 +28,8 @@ type Channel struct {
 	listener *protocol.Listener
 
 	reactionCoalescer *reactionCoalescer
+	episodicStore     store.EpisodicStore
 
-	// Pre-loaded credentials (from DB or from file/QR as fallback).
 	preloadedCreds *protocol.Credentials
 
 	stopCh   chan struct{}
@@ -142,7 +142,8 @@ func (c *Channel) SetPendingCompaction(cfg *channels.CompactionConfig) {
 	}
 }
 
-// SetPendingHistoryTenantID propagates tenant_id to the pending history for DB operations.
+func (c *Channel) SetEpisodicStore(s store.EpisodicStore) { c.episodicStore = s }
+
 func (c *Channel) SetPendingHistoryTenantID(id uuid.UUID) {
 	if gh := c.GroupHistory(); gh != nil {
 		gh.SetTenantID(id)

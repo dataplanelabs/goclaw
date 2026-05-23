@@ -62,6 +62,8 @@ type EpisodicStore interface {
 	// Search (hybrid FTS + vector, returns L0 by default)
 	Search(ctx context.Context, query string, agentID, userID string, opts EpisodicSearchOptions) ([]EpisodicSearchResult, error)
 
+	ListBySourceType(ctx context.Context, agentID, userID, sourceType string, since time.Time, limit int) ([]EpisodicSummary, error)
+
 	// Lifecycle
 	ExistsBySourceID(ctx context.Context, agentID, userID, sourceID string) (bool, error)
 	PruneExpired(ctx context.Context) (int, error)
