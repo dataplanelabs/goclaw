@@ -223,7 +223,7 @@ func reactionSentiment(code string) string {
 	case protocol.ReactionAngry, protocol.ReactionCry, protocol.ReactionWorry:
 		return "negative"
 	case protocol.ReactionWow:
-		return "neutral"
+		return "surprise"
 	}
 	return "unknown"
 }
