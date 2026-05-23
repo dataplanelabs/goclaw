@@ -164,6 +164,12 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Res
 	result.Media = []bus.MediaFile{{Path: imagePath, MimeType: "image/png", Filename: filepath.Base(imagePath)}}
 	result.MediaPrompts = map[int]string{0: prompt}
 	result.Deliverable = fmt.Sprintf("[Generated image: %s]\nPrompt: %s", filepath.Base(imagePath), prompt)
+
+	// Register with DeliveredMedia so a follow-up message(MEDIA:path) call sees
+	// the file as already-queued and refuses the duplicate send.
+	if dm := DeliveredMediaFromCtx(ctx); dm != nil {
+		dm.Mark(imagePath)
+	}
 	if t.vaultIntc != nil {
 		go t.vaultIntc.AfterWriteMedia(context.WithoutCancel(ctx), imagePath, prompt, "image/png")
 	}
