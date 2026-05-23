@@ -247,7 +247,7 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
 		ln.handleCipherKey(ctx, envelope.Key)
 	case "1_501_0", "1_502_0":
 		ln.handleUserMessages(ctx, envelope.Data, envelope.Encrypt)
-	case "1_521_0":
+	case "1_521_0", "1_522_0":
 		ln.handleGroupMessages(ctx, envelope.Data, envelope.Encrypt)
 	case "1_601_0":
 		ln.handleControlEvents(ctx, envelope.Data, envelope.Encrypt)
