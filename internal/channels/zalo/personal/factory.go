@@ -92,7 +92,9 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 }
 
 // FactoryWithPendingStore returns a ChannelFactory with persistent history support.
-func FactoryWithPendingStore(pendingStore store.PendingMessageStore) channels.ChannelFactory {
+// episodicStore is optional — when set, inbound reactions persist as
+// reaction_feedback rows that the agent reads next turn.
+func FactoryWithPendingStore(pendingStore store.PendingMessageStore, episodicStore store.EpisodicStore) channels.ChannelFactory {
 	return func(name string, creds json.RawMessage, cfg json.RawMessage,
 		msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
 
@@ -131,6 +133,9 @@ func FactoryWithPendingStore(pendingStore store.PendingMessageStore) channels.Ch
 		ch, err := New(zaloCfg, msgBus, pairingSvc, pendingStore)
 		if err != nil {
 			return nil, err
+		}
+		if episodicStore != nil {
+			ch.SetEpisodicStore(episodicStore)
 		}
 
 		protoCred := &protocol.Credentials{

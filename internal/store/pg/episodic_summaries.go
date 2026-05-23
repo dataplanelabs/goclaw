@@ -122,6 +122,35 @@ func (s *PGEpisodicStore) List(ctx context.Context, agentID, userID string, limi
 	return results, nil
 }
 
+func (s *PGEpisodicStore) ListBySourceType(ctx context.Context, agentID, userID, sourceType string, since time.Time, limit int) ([]store.EpisodicSummary, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	tenantID := store.TenantIDFromContext(ctx)
+	q := `SELECT id, tenant_id, agent_id, user_id, session_key, summary, key_topics,
+		       turn_count, token_count, l0_abstract, source_id, source_type,
+		       created_at, expires_at,
+		       recall_count, recall_score, last_recalled_at
+		FROM episodic_summaries
+		WHERE agent_id = $1 AND user_id = $2 AND source_type = $3 AND tenant_id = $4`
+	args := []any{agentID, userID, sourceType, tenantID}
+	if !since.IsZero() {
+		q += ` AND created_at >= $5`
+		args = append(args, since)
+	}
+	q += ` ORDER BY created_at DESC LIMIT ` + fmt.Sprintf("%d", limit)
+
+	var rows []episodicSummaryRow
+	if err := pkgSqlxDB.SelectContext(ctx, &rows, q, args...); err != nil {
+		return nil, err
+	}
+	results := make([]store.EpisodicSummary, len(rows))
+	for i := range rows {
+		results[i] = rows[i].toEpisodicSummary()
+	}
+	return results, nil
+}
+
 // Search performs hybrid FTS + vector search on episodic summaries.
 func (s *PGEpisodicStore) Search(ctx context.Context, query, agentID, userID string, opts store.EpisodicSearchOptions) ([]store.EpisodicSearchResult, error) {
 	maxResults := opts.MaxResults

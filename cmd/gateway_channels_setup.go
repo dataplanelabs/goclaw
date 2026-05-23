@@ -102,6 +102,9 @@ func registerConfigChannels(cfg *config.Config, channelMgr *channels.Manager, ms
 			channelMgr.RecordFailure(channels.TypeZaloPersonal, "", err)
 			slog.Error("failed to initialize zca channel", "error", err)
 		} else {
+			if pgStores.Episodic != nil {
+				zp.SetEpisodicStore(pgStores.Episodic)
+			}
 			channelMgr.RegisterChannel(channels.TypeZaloPersonal, zp)
 			slog.Info("zca (zalo personal) channel enabled (config)")
 		}

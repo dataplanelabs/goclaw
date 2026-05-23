@@ -7,8 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
+	"github.com/nextlevelbuilder/goclaw/internal/sessions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -138,7 +141,7 @@ func (c *Channel) onReactionEvent(ev ReactionEvent) {
 	case reactionsModeSilent:
 		return
 	case reactionsModeFeedback:
-		c.logReactionFeedback(ev)
+		c.recordReactionFeedback(ev)
 		return
 	}
 	if c.reactionCoalescer == nil {
@@ -148,23 +151,62 @@ func (c *Channel) onReactionEvent(ev ReactionEvent) {
 	c.reactionCoalescer.Submit(ev)
 }
 
-func (c *Channel) logReactionFeedback(ev ReactionEvent) {
+func (c *Channel) recordReactionFeedback(ev ReactionEvent) {
 	icon := ev.Code
 	if u := protocol.ReactionCodeToUnicode(ev.Code); u != "" {
 		icon = u
 	}
+	sentiment := reactionSentiment(ev.Code)
+	reactorName := channels.SanitizeDisplayName(ev.DName)
+	if reactorName == "" {
+		reactorName = ev.UIDFrom
+	}
+
 	slog.Info("zalo_personal.reaction.feedback",
 		"channel", c.Name(),
 		"thread_id", ev.ThreadID,
 		"thread_type", reactionThreadTypeName(ev.ThreadType),
 		"reactor_uid", ev.UIDFrom,
-		"reactor_name", channels.SanitizeDisplayName(ev.DName),
+		"reactor_name", reactorName,
 		"target_msg_id", ev.MsgID,
 		"target_cli_msg_id", ev.CliMsgID,
 		"code", ev.Code,
 		"icon", icon,
-		"sentiment", reactionSentiment(ev.Code),
+		"sentiment", sentiment,
 	)
+
+	if c.episodicStore == nil {
+		return
+	}
+	agentUUID := c.AgentUUID()
+	if agentUUID == uuid.Nil {
+		return
+	}
+
+	summary := fmt.Sprintf("%s reacted %s (%s) on your message %s", reactorName, icon, sentiment, ev.MsgID)
+	if ev.Code == protocol.ReactionNone {
+		summary = fmt.Sprintf("%s removed their reaction on your message %s", reactorName, ev.MsgID)
+	}
+
+	sessionKey := sessions.BuildSessionKey(c.AgentID(), c.Type(), sessions.PeerKindFromGroup(ev.ThreadType == protocol.ThreadTypeGroup), ev.ThreadID)
+	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+
+	ep := &store.EpisodicSummary{
+		TenantID:   c.TenantID(),
+		AgentID:    agentUUID,
+		UserID:     ev.UIDFrom,
+		SessionKey: sessionKey,
+		Summary:    summary,
+		L0Abstract: summary,
+		SourceType: "reaction_feedback",
+		SourceID:   fmt.Sprintf("react:%s:%s:%s", ev.MsgID, ev.UIDFrom, ev.Code),
+		ExpiresAt:  &expiresAt,
+	}
+	ctx, cancel := context.WithTimeout(store.WithTenantID(context.Background(), c.TenantID()), 5*time.Second)
+	defer cancel()
+	if err := c.episodicStore.Create(ctx, ep); err != nil {
+		slog.Warn("zalo_personal.reaction.persist_failed", "err", err, "target_msg_id", ev.MsgID)
+	}
 }
 
 func reactionThreadTypeName(t protocol.ThreadType) string {

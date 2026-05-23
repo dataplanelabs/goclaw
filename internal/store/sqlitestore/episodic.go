@@ -120,6 +120,32 @@ func (s *SQLiteEpisodicStore) List(ctx context.Context, agentID, userID string, 
 	return scanSQLiteEpisodicRows(rows)
 }
 
+func (s *SQLiteEpisodicStore) ListBySourceType(ctx context.Context, agentID, userID, sourceType string, since time.Time, limit int) ([]store.EpisodicSummary, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	tenantID := tenantIDForInsert(ctx)
+	q := `SELECT id, tenant_id, agent_id, user_id, session_key, summary, key_topics,
+		       turn_count, token_count, l0_abstract, source_id, source_type,
+		       created_at, expires_at, recall_count, recall_score, last_recalled_at
+		FROM episodic_summaries
+		WHERE agent_id = ? AND user_id = ? AND source_type = ? AND tenant_id = ?`
+	args := []any{agentID, userID, sourceType, tenantID.String()}
+	if !since.IsZero() {
+		q += ` AND created_at >= ?`
+		args = append(args, since.UTC().Format(time.RFC3339Nano))
+	}
+	q += ` ORDER BY created_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSQLiteEpisodicRows(rows)
+}
+
 // ExistsBySourceID checks if an episodic summary with the given source_id exists.
 func (s *SQLiteEpisodicStore) ExistsBySourceID(ctx context.Context, agentID, userID, sourceID string) (bool, error) {
 	tenantID := tenantIDForInsert(ctx)

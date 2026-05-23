@@ -187,7 +187,8 @@ type BaseChannel struct {
 	stateMu          sync.RWMutex
 	health           ChannelHealth
 	allowList        []string
-	agentID          string                  // for DB instances: routes to specific agent (empty = use resolveAgentRoute)
+	agentID          string                  // agent_key (e.g. "default") — for routing + session keys
+	agentUUID        uuid.UUID               // agent row UUID — for store FK writes (zero = unknown)
 	tenantID         uuid.UUID               // for DB instances: tenant scope (zero = master tenant fallback)
 	contactCollector *store.ContactCollector // optional: auto-collect contacts from channel messages
 
@@ -232,6 +233,9 @@ func (c *BaseChannel) AgentID() string { return c.agentID }
 
 // SetAgentID sets the explicit agent ID for routing (used by InstanceLoader for DB instances).
 func (c *BaseChannel) SetAgentID(id string) { c.agentID = id }
+
+func (c *BaseChannel) AgentUUID() uuid.UUID         { return c.agentUUID }
+func (c *BaseChannel) SetAgentUUID(id uuid.UUID)    { c.agentUUID = id }
 
 // TenantID returns the tenant UUID for this channel (zero = master tenant fallback).
 func (c *BaseChannel) TenantID() uuid.UUID { return c.tenantID }

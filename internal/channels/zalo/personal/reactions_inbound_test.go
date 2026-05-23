@@ -1,15 +1,19 @@
 package personal
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 func makeEvent(threadID, uidFrom, msgID, code string, opts ...func(*ReactionEvent)) ReactionEvent {
@@ -198,6 +202,73 @@ func TestOnReactionEvent_DefaultModeIsFeedback(t *testing.T) {
 	if got := ch.reactionCoalescer.pendingCount(); got != 0 {
 		t.Errorf("feedback mode must not enter coalescer, pending=%d", got)
 	}
+}
+
+func TestRecordReactionFeedback_PersistsToEpisodicStore(t *testing.T) {
+	t.Parallel()
+	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{})
+	ch.SetAgentID("test-agent")
+	ch.SetAgentUUID(uuid.New())
+	fake := &fakeEpisodicStore{}
+	ch.SetEpisodicStore(fake)
+
+	ev := makeEvent("thread-1", "user-x", "msg-100", protocol.ReactionHeart, func(e *ReactionEvent) {
+		e.DName = "Alice"
+		e.CliMsgID = "cli-100"
+	})
+	ch.onReactionEvent(ev)
+
+	if got := len(fake.created); got != 1 {
+		t.Fatalf("created=%d, want 1", got)
+	}
+	ep := fake.created[0]
+	if ep.SourceType != "reaction_feedback" {
+		t.Errorf("source_type=%q, want reaction_feedback", ep.SourceType)
+	}
+	if !strings.Contains(ep.Summary, "Alice") || !strings.Contains(ep.Summary, "msg-100") {
+		t.Errorf("summary missing key fields: %q", ep.Summary)
+	}
+	if !strings.Contains(ep.SourceID, "react:msg-100:user-x:") {
+		t.Errorf("source_id missing dedupe key: %q", ep.SourceID)
+	}
+	if ep.UserID != "user-x" {
+		t.Errorf("user_id=%q, want user-x", ep.UserID)
+	}
+	if ep.ExpiresAt == nil || ep.ExpiresAt.Before(time.Now()) {
+		t.Errorf("expires_at not in future: %v", ep.ExpiresAt)
+	}
+}
+
+func TestRecordReactionFeedback_NoStoreNoCrash(t *testing.T) {
+	t.Parallel()
+	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{})
+	ev := makeEvent("t", "u", "m", protocol.ReactionHeart)
+	ch.onReactionEvent(ev) // no episodic store wired — must not panic
+}
+
+func TestRecordReactionFeedback_NoAgentUUIDSkipsPersist(t *testing.T) {
+	t.Parallel()
+	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{})
+	fake := &fakeEpisodicStore{}
+	ch.SetEpisodicStore(fake)
+	ev := makeEvent("t", "u", "m", protocol.ReactionHeart)
+	ch.onReactionEvent(ev)
+	if len(fake.created) != 0 {
+		t.Errorf("must skip persist when agentUUID is zero, got %d rows", len(fake.created))
+	}
+}
+
+type fakeEpisodicStore struct {
+	store.EpisodicStore // embed to satisfy unused methods via nil panic
+	created             []*store.EpisodicSummary
+	mu                  sync.Mutex
+}
+
+func (f *fakeEpisodicStore) Create(_ context.Context, ep *store.EpisodicSummary) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.created = append(f.created, ep)
+	return nil
 }
 
 func TestOnReactionEvent_SilentMode(t *testing.T) {
