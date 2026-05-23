@@ -213,6 +213,7 @@ export const configSchema: Record<string, FieldDef[]> = {
     { key: "group_policy", label: "Group Policy", type: "select", options: groupPolicyOptions, defaultValue: "allowlist" },
     { key: "require_mention", label: "Require @mention in groups", type: "boolean", defaultValue: true },
     { key: "allow_from", label: "Allowed Users", type: "tags", help: "Zalo user IDs or group IDs" },
+    { key: "quote_user_message", label: "Quote user message", type: "boolean", defaultValue: false, help: "Render bot replies as native Zalo quote bubbles when the user replied to a message. Off by default." },
     { key: "block_reply", label: "Block Reply", type: "select", options: blockReplyOptions, defaultValue: "inherit", help: "Deliver intermediate text during tool iterations" },
   ],
   whatsapp: [
