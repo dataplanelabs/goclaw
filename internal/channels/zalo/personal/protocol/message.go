@@ -116,10 +116,74 @@ func (c Content) Text() string {
 	return ""
 }
 
-// Attachment holds parsed fields from a non-text content object.
+// Attachment mirrors zca-js's TAttachmentContent (8 fields). HD photos arrive
+// with Href="" and the real CDN URL nested in Params — use BestMediaURL() to
+// resolve the best available URL across the fallback chain.
 type Attachment struct {
-	Title string `json:"title"`
-	Href  string `json:"href"`
+	Title       string          `json:"title"`
+	Description string          `json:"description,omitempty"`
+	Href        string          `json:"href"`
+	Thumb       string          `json:"thumb,omitempty"`
+	ChildNumber int             `json:"childnumber,omitempty"`
+	Action      string          `json:"action,omitempty"`
+	Params      json.RawMessage `json:"params,omitempty"`
+	Type        string          `json:"type,omitempty"`
+}
+
+// BestMediaURL returns the highest-quality reachable URL: Href when present,
+// else Params.hdUrl > oriUrl > normalUrl > url, finally Thumb. Accepts Params
+// in either wire shape (raw JSON object OR a JSON string containing the
+// serialized object — zca-js types it as string). Returns "" if no URL found;
+// safe on nil receiver and on malformed Params.
+func (a *Attachment) BestMediaURL() string {
+	if a == nil {
+		return ""
+	}
+	if a.Href != "" {
+		return a.Href
+	}
+	for _, u := range extractParamURLs(a.Params) {
+		if u != "" {
+			return u
+		}
+	}
+	// Thumb fallback is restricted to photos — stickers/voice-notes/files-with-thumb
+	// would otherwise be silently promoted to image attachments by the channel-layer
+	// gate, surfacing low-quality thumb URLs as user-sent media.
+	if a.Type == "photo" {
+		return a.Thumb
+	}
+	return ""
+}
+
+// extractParamURLs handles both wire shapes Zalo uses for the params field:
+//   params: { ... }            // raw object
+//   params: "{ ... }"          // stringified JSON (zca-js's typed shape)
+// Returns URLs in priority order: hdUrl, oriUrl, normalUrl, url. Any unmarshal
+// failure returns the zero array — callers fall through to Thumb.
+func extractParamURLs(raw json.RawMessage) [4]string {
+	if len(raw) == 0 {
+		return [4]string{}
+	}
+	var obj struct {
+		HdUrl     string `json:"hdUrl"`
+		OriUrl    string `json:"oriUrl"`
+		NormalUrl string `json:"normalUrl"`
+		URL       string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &obj); err == nil {
+		if obj.HdUrl != "" || obj.OriUrl != "" || obj.NormalUrl != "" || obj.URL != "" {
+			return [4]string{obj.HdUrl, obj.OriUrl, obj.NormalUrl, obj.URL}
+		}
+	}
+	// Stringified-JSON shape: unmarshal the string, then unmarshal its contents.
+	var s string
+	if json.Unmarshal(raw, &s) == nil && s != "" {
+		if json.Unmarshal([]byte(s), &obj) == nil {
+			return [4]string{obj.HdUrl, obj.OriUrl, obj.NormalUrl, obj.URL}
+		}
+	}
+	return [4]string{}
 }
 
 // ParseAttachment extracts attachment metadata from non-text content.
@@ -140,13 +204,21 @@ var imageExts = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
 }
 
-// IsImage reports whether the attachment href points to an image file.
-// Checks both file extension and Zalo CDN path patterns (e.g. /jpg/, /png/).
+// IsImage reports whether the attachment is an image. Short-circuits on
+// Type=="photo" (zca-js sets this for inbound image attachments); otherwise
+// inspects BestMediaURL() for extension or Zalo CDN path patterns.
 func (a *Attachment) IsImage() bool {
-	if a == nil || a.Href == "" {
+	if a == nil {
 		return false
 	}
-	path := strings.SplitN(a.Href, "?", 2)[0]
+	if a.Type == "photo" {
+		return true
+	}
+	url := a.BestMediaURL()
+	if url == "" {
+		return false
+	}
+	path := strings.SplitN(url, "?", 2)[0]
 	if imageExts[strings.ToLower(filepath.Ext(path))] {
 		return true
 	}
@@ -168,7 +240,7 @@ func (c Content) AttachmentText() string {
 		}
 		return "[User sent an image]"
 	}
-	if att.Href != "" {
+	if att.BestMediaURL() != "" {
 		if att.Title != "" {
 			return fmt.Sprintf("[User sent a file: %s]", att.Title)
 		}

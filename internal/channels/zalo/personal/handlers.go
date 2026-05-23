@@ -249,14 +249,15 @@ func (c *Channel) startTyping(threadID string, threadType protocol.ThreadType) {
 	ctrl.Start()
 }
 
-// Ordering: any href attachment (image/video/audio/file) must beat the title-text
-// probe — Zalo's media-with-caption shape `{title, href}` collides with quote-reply
-// shape `{title, params}` on `title`.
+// Ordering: any reachable attachment (image/video/audio/file) must beat the
+// title-text probe — Zalo's media-with-caption shape `{title, href}` collides
+// with quote-reply shape `{title, params}` on `title`. HD photos arrive with
+// href="" and the URL nested in params.hdUrl — BestMediaURL() resolves it.
 func extractContentAndMedia(content protocol.Content) (string, []string) {
 	if text := content.Text(); text != "" {
 		return text, nil
 	}
-	if att := content.ParseAttachment(); att != nil && att.Href != "" {
+	if att := content.ParseAttachment(); att != nil && att.BestMediaURL() != "" {
 		return extractAttachment(content, att)
 	}
 	if text := extractTextFromRawContent(content.Raw); text != "" {
@@ -270,9 +271,10 @@ func extractContentAndMedia(content protocol.Content) (string, []string) {
 }
 
 func extractAttachment(content protocol.Content, att *protocol.Attachment) (string, []string) {
-	filePath, err := downloadFile(context.Background(), att.Href)
+	url := att.BestMediaURL()
+	filePath, err := downloadFile(context.Background(), url)
 	if err != nil {
-		slog.Warn("zalo_personal: failed to download attachment", "url", att.Href, "error", err)
+		slog.Warn("zalo_personal: failed to download attachment", "url", url, "type", att.Type, "error", err)
 		if text := content.AttachmentText(); text != "" {
 			return text, nil
 		}
@@ -281,6 +283,8 @@ func extractAttachment(content protocol.Content, att *protocol.Attachment) (stri
 
 	mimeType := media.DetectMIMEType(filePath)
 	mediaKind := media.MediaKindFromMime(mimeType)
+	// att.Type from zca-js (e.g. "photo") is a more reliable kind hint than
+	// MIME sniffing on tokenized CDN paths.
 	if mediaKind != media.TypeImage && att.IsImage() {
 		mediaKind = media.TypeImage
 	}
