@@ -268,6 +268,22 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
 		if client != nil {
 			client.Close(CloseCodeDuplicate, "duplicate")
 		}
+	case "1_602_0":
+		// Temporary diagnostic — surface the plaintext payload so we can
+		// identify whether 1_602_0 is the quote-reply DM variant.
+		ln.mu.RLock()
+		ck := ln.cipherKey
+		ln.mu.RUnlock()
+		payload, err := ln.decryptEventData(envelope.Data, envelope.Encrypt, ck)
+		if err != nil {
+			slog.Warn("zalo_personal.diag.602.decrypt_failed", "err", err, "encrypt", envelope.Encrypt, "data_len", len(envelope.Data))
+		} else {
+			preview := string(payload)
+			if len(preview) > 500 {
+				preview = preview[:500]
+			}
+			slog.Info("zalo_personal.diag.602.payload", "encrypt", envelope.Encrypt, "payload_len", len(payload), "preview", preview)
+		}
 	default:
 		if _, seen := ln.unknownFrames.LoadOrStore(key, struct{}{}); !seen {
 			slog.Info("zalo_personal: unhandled ws frame", "key", key, "data_len", len(envelope.Data), "encrypt", envelope.Encrypt)
