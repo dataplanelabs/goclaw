@@ -178,6 +178,14 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 		}
 	}
 
+	// 2e-iii. Smart-quote hint: when the user quote-replies their own previous
+	// request that produced bot-generated images, surface those generation
+	// paths so the LLM can call read_image(path=...) to inspect them. Without
+	// this hint the LLM only sees the current-turn media (selfie from quote)
+	// and may miss that an earlier reply rendered a result the user is now
+	// referencing — trace 019e5666.
+	appendSelfQuoteGenerationHint(messages)
+
 	// 2e-ii. In file-ref mode, enrich ALL user messages' image tags with file paths.
 	// This enables read_image(path=...) for both current and historical images.
 	if deferToReadImageTool {

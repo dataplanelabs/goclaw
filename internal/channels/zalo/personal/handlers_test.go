@@ -151,7 +151,7 @@ func TestQuoteContextPrefix_FallbackToAttach(t *testing.T) {
 	t.Parallel()
 	q := &protocol.TQuote{Msg: "", Attach: `{"title":"recovered from attach"}`}
 	raw, _ := json.Marshal(q)
-	if got := quoteContextPrefix(raw, emptyOwner); got != "[Replying to message: \"recovered from attach\"]\n" {
+	if got := quoteContextPrefix(raw, emptyOwner, false); got != "[Replying to message: \"recovered from attach\"]\n" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -179,7 +179,49 @@ func TestQuoteContextPrefix_MediaQuotes(t *testing.T) {
 			raw, _ := json.Marshal(&protocol.TQuote{
 				CliMsgType: tc.cliMsgType, Msg: tc.msg, Attach: tc.attach,
 			})
-			if got := quoteContextPrefix(raw, emptyOwner); got != tc.want {
+			if got := quoteContextPrefix(raw, emptyOwner, false); got != tc.want {
+				t.Errorf("got %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// When the quoted media file is also attached as <media:image>, the caption
+// must be emitted on a separate "[Quoted caption: ...]" line — otherwise the
+// LLM treats the caption as a description of the image and hallucinates
+// attributes not present in the actual picture (trace 019e5666 regression).
+func TestQuoteContextPrefix_MediaAttached_SeparatesCaption(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		quote *protocol.TQuote
+		ctx   quoteOwnerCtx
+		want  string
+	}{
+		{
+			name:  "their own image with caption",
+			quote: &protocol.TQuote{OwnerID: json.Number("200"), CliMsgType: 2, Msg: "tạo ảnh buồn kiểu chạy"},
+			ctx:   quoteOwnerCtx{senderUID: "200", botUID: "100"},
+			want:  "[Replying to their own image]\n[Quoted caption: \"tạo ảnh buồn kiểu chạy\"]\n",
+		},
+		{
+			name:  "your image no caption (no quoted-caption line)",
+			quote: &protocol.TQuote{OwnerID: json.Number("100"), CliMsgType: 2},
+			ctx:   quoteOwnerCtx{senderUID: "200", botUID: "100"},
+			want:  "[Replying to your image]\n",
+		},
+		{
+			name:  "no owner ctx image with caption from attach",
+			quote: &protocol.TQuote{CliMsgType: 2, Attach: `{"title":"holiday photo"}`},
+			ctx:   emptyOwner,
+			want:  "[Replying to an image]\n[Quoted caption: \"holiday photo\"]\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			raw, _ := json.Marshal(tc.quote)
+			if got := quoteContextPrefix(raw, tc.ctx, true); got != tc.want {
 				t.Errorf("got %q\nwant %q", got, tc.want)
 			}
 		})
@@ -253,7 +295,7 @@ func TestQuoteContextPrefix_OwnerAttribution(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := quoteContextPrefix(tc.raw, tc.ctx); got != tc.want {
+			if got := quoteContextPrefix(tc.raw, tc.ctx, false); got != tc.want {
 				t.Errorf("got %q\nwant %q", got, tc.want)
 			}
 		})
@@ -304,7 +346,7 @@ func TestQuoteContextPrefix(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := quoteContextPrefix(tc.raw, emptyOwner); got != tc.want {
+			if got := quoteContextPrefix(tc.raw, emptyOwner, false); got != tc.want {
 				t.Errorf("got %q\nwant %q", got, tc.want)
 			}
 		})
