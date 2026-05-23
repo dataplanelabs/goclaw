@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -29,6 +30,7 @@ type Channel struct {
 
 	reactionCoalescer *reactionCoalescer
 	episodicStore     store.EpisodicStore
+	outboundCache     *outboundCache
 
 	preloadedCreds *protocol.Credentials
 
@@ -68,8 +70,11 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 	ch.SetHistoryLimit(historyLimit)
 	ch.SetRequireMention(requireMention)
 	ch.reactionCoalescer = newReactionCoalescer(reactionCoalesceWindow, ch.emitCoalescedReaction)
+	ch.outboundCache = newOutboundCache(outboundCacheTTL)
 	return ch, nil
 }
+
+const outboundCacheTTL = time.Hour
 
 // BlockReplyEnabled returns the per-channel block_reply override (nil = inherit gateway default).
 func (c *Channel) BlockReplyEnabled() *bool { return c.config.BlockReply }

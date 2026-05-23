@@ -123,6 +123,11 @@ func (a *pgAutoInjector) reactionFeedbackSection(ctx context.Context, params Inj
 		sb.WriteString(r.Summary)
 		sb.WriteString("\n")
 	}
+	slog.Info("memory.reaction_feedback.injected",
+		"agent_id", params.AgentID,
+		"user_id", params.UserID,
+		"count", len(rows),
+	)
 	return sb.String()
 }
 
