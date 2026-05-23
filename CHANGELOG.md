@@ -35,6 +35,15 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **create_image: codex Responses-API native path silently dropped reference images**
+  — `buildNativeImageRequestBody` only attached the text prompt; refs were
+  never sent. gpt-image-2 generated random faces from prompt alone — the root
+  cause of every "wrong face" output. Wire the fail-fast CLAUDE.md memory
+  intended: when `reference_images` is non-empty on the native path, return an
+  error so the chain falls through to an edits-capable provider (OpenRouter,
+  OpenAI `/v1/images/edits`, Gemini). Tenants whose chain has only codex +
+  dashscope must add an edits-capable provider higher in the chain.
+
 - **create_image: filter ref pool to user-uploaded images only** — PR #37 made
   `WithMediaImageRefs` history-aware via `collectRefsByKind`, but that helper
   collected MediaRefs from ALL message roles — including assistant messages
