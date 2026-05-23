@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -27,122 +26,53 @@ type FileUploadResult struct {
 	Checksum  string `json:"-"` // MD5 hex
 }
 
-// UploadFile uploads a non-image file to Zalo's file service.
-// The upload response only contains fileId; the fileUrl arrives via WebSocket callback.
-// The caller must provide the Listener so we can register a callback for the fileUrl.
+// UploadFile uploads a non-image file. fileUrl arrives via WebSocket callback
+// after all chunks land; the caller must pass the Listener to register for it.
 func UploadFile(ctx context.Context, sess *Session, ln *Listener, threadID string, threadType ThreadType, filePath string) (*FileUploadResult, error) {
-	fileURL := getServiceURL(sess, "file")
-	if fileURL == "" {
+	chunks, err := openChunkedUpload(filePath)
+	if err != nil {
+		return nil, err
+	}
+	endpoint, typeParam := uploadEndpoint(sess, threadType, "asyncfile/upload")
+	if endpoint == "" {
 		return nil, fmt.Errorf("zalo_personal: no file service URL")
 	}
 
-	if err := checkFileSize(filePath); err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("zalo_personal: read file: %w", err)
-	}
-
-	fileName := filepath.Base(filePath)
-	totalSize := len(data)
-	clientID := time.Now().UnixMilli()
-
-	uploadParams := map[string]any{
-		"totalChunk": 1,
-		"fileName":   fileName,
-		"clientId":   clientID,
-		"totalSize":  totalSize,
-		"imei":       sess.IMEI,
-		"isE2EE":     0,
-		"jxl":        0,
-		"chunkId":    1,
-	}
-	if threadType == ThreadTypeGroup {
-		uploadParams["grid"] = threadID
-	} else {
-		uploadParams["toid"] = threadID
-	}
-
-	encParams, err := encryptPayload(sess, uploadParams)
-	if err != nil {
-		return nil, fmt.Errorf("zalo_personal: encrypt file upload params: %w", err)
-	}
-
-	pathPrefix := "/api/message/"
-	typeParam := "2"
-	if threadType == ThreadTypeGroup {
-		pathPrefix = "/api/group/"
-		typeParam = "11"
-	}
-
-	uploadURL := makeURL(sess, fileURL+pathPrefix+"asyncfile/upload", map[string]any{
-		"type":   typeParam,
-		"params": encParams,
-	}, true)
-
-	body, contentType, err := buildMultipartBody("chunkContent", fileName, data)
-	if err != nil {
-		return nil, fmt.Errorf("zalo_personal: build multipart: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, body)
+	var final *FileUploadResult
+	err = chunks.run(ctx, sess, endpoint, typeParam, threadID, threadType, func(plain []byte) error {
+		var r FileUploadResult
+		if err := json.Unmarshal(plain, &r); err != nil {
+			return err
+		}
+		if r.FileID != "" && r.FileID != "-1" {
+			final = &r
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	setDefaultHeaders(req, sess)
-	req.Header.Set("Content-Type", contentType)
-
-	resp, err := sess.Client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("zalo_personal: upload file: %w", err)
+	if final == nil {
+		return nil, fmt.Errorf("zalo_personal: upload completed %d chunks but no final result", chunks.totalChunk)
 	}
-	defer resp.Body.Close()
+	final.TotalSize = chunks.totalSize
+	final.FileName = chunks.fileName
+	final.Checksum = md5Hash(chunks.data)
 
-	var envelope Response[*string]
-	if err := readJSON(resp, &envelope); err != nil {
-		return nil, fmt.Errorf("zalo_personal: parse file upload response: %w", err)
-	}
-	if envelope.ErrorCode != 0 {
-		return nil, fmt.Errorf("zalo_personal: file upload error code %d", envelope.ErrorCode)
-	}
-	if envelope.Data == nil {
-		return nil, fmt.Errorf("zalo_personal: empty file upload response")
-	}
-
-	plain, err := decryptDataField(sess, *envelope.Data)
-	if err != nil {
-		return nil, fmt.Errorf("zalo_personal: decrypt file upload response: %w", err)
-	}
-
-	var result FileUploadResult
-	if err := json.Unmarshal(plain, &result); err != nil {
-		return nil, fmt.Errorf("zalo_personal: parse file upload result: %w", err)
-	}
-
-	result.TotalSize = totalSize
-	result.FileName = fileName
-
-	// Compute MD5 checksum
-	h := md5Hash(data)
-	result.Checksum = h
-
-	// Wait for fileUrl from WebSocket callback
-	if ln != nil && result.FileID != "" && result.FileID != "-1" {
-		urlCh := ln.RegisterUploadCallback(result.FileID)
+	if ln != nil {
+		urlCh := ln.RegisterUploadCallback(final.FileID)
 		select {
 		case fileURL := <-urlCh:
-			result.FileURL = fileURL
+			final.FileURL = fileURL
 		case <-time.After(30 * time.Second):
-			ln.CancelUploadCallback(result.FileID)
-			return nil, fmt.Errorf("zalo_personal: timeout waiting for file upload callback (fileId=%s)", result.FileID)
+			ln.CancelUploadCallback(final.FileID)
+			return nil, fmt.Errorf("zalo_personal: timeout waiting for file upload callback (fileId=%s)", final.FileID)
 		case <-ctx.Done():
-			ln.CancelUploadCallback(result.FileID)
+			ln.CancelUploadCallback(final.FileID)
 			return nil, ctx.Err()
 		}
 	}
-
-	return &result, nil
+	return final, nil
 }
 
 // SendFile sends a previously uploaded file as a message.

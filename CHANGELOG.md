@@ -33,6 +33,18 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   now prefer `gpt-5.5`, with reasoning metadata and context-window defaults updated
   for provider-first model selection.
 
+### Fixed
+
+- **Zalo Personal: chunked upload for images/files > 512KB** — the file-service
+  rejects any single chunk over 512KB with inner error code 201
+  (*"Dung lượng chunk upload không được vượt quá 512K"*). `UploadImage` and
+  `UploadFile` were hard-coding `totalChunk: 1, chunkId: 1`, so 2K posters and
+  other media > 512KB silently failed delivery to Zalo. Now both paths chunk
+  by 512KB (`totalChunk = ceil(size/524288)`), keep `clientId` constant across
+  chunks of one upload, re-encrypt `params` per chunk (chunkId changes), and
+  take the final `photoId`/`fileId` from whichever chunk response carries it
+  (matches zca-js `uploadAttachment.ts` protocol). Applies to DM and group.
+
 ### Changed
 
 - **create_image: native 2K resolution on gpt-image-2** — `SizeFromAspectForModel`
