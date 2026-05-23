@@ -264,6 +264,10 @@ type fakeEpisodicStore struct {
 	mu                  sync.Mutex
 }
 
+func (f *fakeEpisodicStore) GetBySourceID(_ context.Context, _, _, _ string) (*store.EpisodicSummary, error) {
+	return nil, nil
+}
+
 func (f *fakeEpisodicStore) Create(_ context.Context, ep *store.EpisodicSummary) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

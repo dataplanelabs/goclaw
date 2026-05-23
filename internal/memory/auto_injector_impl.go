@@ -194,8 +194,8 @@ func buildReactionFeedbackSection(rows []store.EpisodicSummary, now time.Time, p
 
 	var sb strings.Builder
 	sb.WriteString("## Recent User Reactions (last 24h)\n")
-	fmt.Fprintf(&sb, "Stats: %d positive · %d negative · %d surprise · across %d replies (%d reactors)\n\n",
-		posC, negC, surC, len(byMsg), len(allReactors))
+	fmt.Fprintf(&sb, "Stats: %d positive · %d negative · %d surprise · across %d %s (%d %s)\n\n",
+		posC, negC, surC, len(byMsg), pluralize(len(byMsg), "reply", "replies"), len(allReactors), pluralize(len(allReactors), "reactor", "reactors"))
 	sb.WriteString("Most reacted-to replies (most recent first):\n")
 	for _, m := range sortedMsgs {
 		sb.WriteString("- ")
@@ -313,6 +313,13 @@ func relTimeAgo(d time.Duration) string {
 		return fmt.Sprintf("%dh ago", int(d.Hours()))
 	}
 	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+}
+
+func pluralize(n int, singular, plural string) string {
+	if n == 1 {
+		return singular
+	}
+	return plural
 }
 
 func truncateRunes(s string, max int) string {

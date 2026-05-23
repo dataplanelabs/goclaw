@@ -183,16 +183,13 @@ func (c *Channel) recordReactionFeedback(ev ReactionEvent) {
 		return
 	}
 
-	preview := ""
-	if c.outboundCache != nil {
-		preview = c.outboundCache.get(ev.MsgID)
-		slog.Info("zalo_personal.reaction.preview_lookup",
-			"target_msg_id", ev.MsgID,
-			"target_cli_msg_id", ev.CliMsgID,
-			"hit", preview != "",
-			"preview_len", len(preview),
-		)
-	}
+	preview := c.lookupOutboundPreview(context.Background(), ev.MsgID)
+	slog.Info("zalo_personal.reaction.preview_lookup",
+		"target_msg_id", ev.MsgID,
+		"target_cli_msg_id", ev.CliMsgID,
+		"hit", preview != "",
+		"preview_len", len(preview),
+	)
 	summary := buildReactionSummary(reactorName, icon, sentiment, ev.MsgID, preview, ev.Code == protocol.ReactionNone)
 
 	sessionKey := sessions.BuildSessionKey(c.AgentID(), c.Type(), sessions.PeerKindFromGroup(ev.ThreadType == protocol.ThreadTypeGroup), ev.ThreadID)
