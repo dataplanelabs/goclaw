@@ -58,6 +58,26 @@ func TestExtractContentAndMedia_QuotedReplyShape(t *testing.T) {
 	}
 }
 
+// Regression for PR #14: title-probe must not pre-empt attachment when href is present.
+// Uses TEST-NET-1 to force downloadFile to fail; fallback "[User sent an image: ...]"
+// proves the attachment branch was taken (buggy probe would return bare title).
+func TestExtractContentAndMedia_ImageWithCaption_PrefersAttachment(t *testing.T) {
+	t.Parallel()
+	var c protocol.Content
+	raw := `{"title":"tao poster voi buc hinh nay","href":"https://192.0.2.1/photo.jpg","thumb":"https://192.0.2.1/thumb.jpg"}`
+	if err := json.Unmarshal([]byte(raw), &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got, _ := extractContentAndMedia(c)
+	// Buggy behavior would return just "tao poster voi buc hinh nay" via the title
+	// probe. Fixed behavior routes through extractAttachment → on download fail,
+	// AttachmentText returns "[User sent an image: <title>]".
+	want := "[User sent an image: tao poster voi buc hinh nay]"
+	if got != want {
+		t.Errorf("content = %q, want %q (ordering regression: title probe won over attachment path)", got, want)
+	}
+}
+
 func TestChannel_QuoteInboundOnDM_HonorsConfig(t *testing.T) {
 	t.Parallel()
 	off, on := false, true

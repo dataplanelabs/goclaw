@@ -249,48 +249,42 @@ func (c *Channel) startTyping(threadID string, threadType protocol.ThreadType) {
 	ctrl.Start()
 }
 
-// extractContentAndMedia returns text content (with <media:*> tags) and optional local media
-// file paths from a Zalo message. For text messages, media is nil. For attachments, the file
-// is downloaded and classified by MIME type, matching the pattern used by Telegram/Discord/Feishu.
+// Ordering: any href attachment (image/video/audio/file) must beat the title-text
+// probe — Zalo's media-with-caption shape `{title, href}` collides with quote-reply
+// shape `{title, params}` on `title`.
 func extractContentAndMedia(content protocol.Content) (string, []string) {
 	if text := content.Text(); text != "" {
 		return text, nil
 	}
-	// Quote-reply Content arrives as a JSON object, not a plain string.
+	if att := content.ParseAttachment(); att != nil && att.Href != "" {
+		return extractAttachment(content, att)
+	}
 	if text := extractTextFromRawContent(content.Raw); text != "" {
 		return text, nil
 	}
-	att := content.ParseAttachment()
-	if att == nil || att.Href == "" {
-		if len(content.Raw) > 0 {
-			slog.Warn("zalo_personal: unparseable content shape (message dropped)",
-				"content_raw", string(content.Raw))
-		}
-		return "", nil
+	if len(content.Raw) > 0 {
+		slog.Warn("zalo_personal: unparseable content shape (message dropped)",
+			"content_raw", string(content.Raw))
 	}
+	return "", nil
+}
 
-	// Download the attachment file.
+func extractAttachment(content protocol.Content, att *protocol.Attachment) (string, []string) {
 	filePath, err := downloadFile(context.Background(), att.Href)
 	if err != nil {
 		slog.Warn("zalo_personal: failed to download attachment", "url", att.Href, "error", err)
-		// Return human-readable fallback so the message isn't silently dropped.
 		if text := content.AttachmentText(); text != "" {
 			return text, nil
 		}
 		return "", nil
 	}
 
-	// Classify by MIME type (image, video, audio, document) — same as Discord/Feishu.
 	mimeType := media.DetectMIMEType(filePath)
 	mediaKind := media.MediaKindFromMime(mimeType)
-
-	// For images, also check via Zalo CDN path patterns (e.g. /jpg/, /png/) since
-	// temp files lose the original extension context.
 	if mediaKind != media.TypeImage && att.IsImage() {
 		mediaKind = media.TypeImage
 	}
 
-	// Build the <media:*> tag that the agent loop's enrichImageIDs/enrichMediaIDs expects.
 	tag := media.BuildMediaTags([]media.MediaInfo{{
 		Type:        mediaKind,
 		FilePath:    filePath,
@@ -298,6 +292,10 @@ func extractContentAndMedia(content protocol.Content) (string, []string) {
 		FileName:    att.Title,
 	}})
 
+	// att.Title carries the user's caption (not a filename) in image+caption frames.
+	if caption := strings.TrimSpace(att.Title); caption != "" {
+		return caption + "\n" + tag, []string{filePath}
+	}
 	return tag, []string{filePath}
 }
 
