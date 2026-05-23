@@ -7,11 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 )
+
+// minimaxRefCap is MiniMax's hard cap on subject_reference entries (human face).
+const minimaxRefCap = 1
 
 // minimaxImageAspectRatio returns the aspect_ratio string for MiniMax image_generation.
 // See: https://platform.minimax.io/docs/guides/image-generation
@@ -48,11 +52,27 @@ func minimaxImageAspectRatio(params map[string]any) string {
 func callMinimaxImageGen(ctx context.Context, apiKey, apiBase, model, prompt string, params map[string]any) ([]byte, *providers.Usage, error) {
 	aspectRatio := minimaxImageAspectRatio(params)
 
+	refImages, _ := params["reference_images"].([]providers.ImageContent)
+	if len(refImages) > minimaxRefCap {
+		slog.Warn("create_image: MiniMax accepts only 1 subject_reference; truncating",
+			"provided", len(refImages), "cap", minimaxRefCap)
+		refImages = refImages[:minimaxRefCap]
+	}
+
 	body := map[string]any{
 		"model":           model,
 		"prompt":          prompt,
 		"aspect_ratio":    aspectRatio,
 		"response_format": "base64",
+	}
+	if len(refImages) == 1 {
+		img := refImages[0]
+		body["subject_reference"] = []map[string]any{
+			{
+				"type":       "character",
+				"image_file": fmt.Sprintf("data:%s;base64,%s", img.MimeType, img.Data),
+			},
+		}
 	}
 
 	jsonBody, err := json.Marshal(body)

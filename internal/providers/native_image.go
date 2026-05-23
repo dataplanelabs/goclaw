@@ -61,6 +61,13 @@ type NativeImageRequest struct {
 
 	// OutputFormat is the desired image format: "png" (default), "jpg", "webp".
 	OutputFormat string
+
+	// ReferenceImages is an optional list of reference images for image-to-image
+	// editing or face/composition preservation. Reserved for future native
+	// providers that support edits via the Responses API. The current Codex
+	// implementation ignores this field — see Phase 06 of the image-gen-refs
+	// plan for the live-verification of `action: "edit"` support.
+	ReferenceImages []ImageContent
 }
 
 // NativeImageResult holds the result of a native image generation call.

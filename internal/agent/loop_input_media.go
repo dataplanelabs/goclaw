@@ -78,10 +78,18 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 
 		// Load current-turn images from persisted refs (Path is always set for new uploads).
 		var imageFiles []bus.MediaFile
+		var imageRefs []providers.MediaRef
 		for _, ref := range mediaRefs {
 			if ref.Kind == "image" && ref.Path != "" {
 				imageFiles = append(imageFiles, bus.MediaFile{Path: ref.Path, MimeType: ref.MimeType, Filename: filepath.Base(ref.Path)})
+				imageRefs = append(imageRefs, ref)
 			}
+		}
+		// Expose current-turn image refs to create_image (id-indexed lookup).
+		// Parallel to WithMediaImages (loaded bytes for vision); refs let
+		// create_image load bytes on demand when LLM passes reference_image_ids.
+		if len(imageRefs) > 0 {
+			ctx = tools.WithMediaImageRefs(ctx, imageRefs)
 		}
 		if deferToReadImageTool {
 			// File-ref mode: images primarily accessed via read_image(path=...).
