@@ -90,6 +90,37 @@ func FromInboundQuote(q *TQuote) *SendMessageQuote {
 	}
 }
 
+// getClientMessageType maps the human-readable "chat.*" msgType strings (the
+// form classifyQuoteMsgType produces) into the numeric code Zalo's /quote
+// endpoint expects for qmsgType. Distinct from TQuote.CliMsgType — Zalo runs
+// two parallel enums: cliMsgType (inbound TQuote shape) vs clientMessageType
+// (outbound /quote shape). Mirrors zca-js src/utils.ts::getClientMessageType.
+func getClientMessageType(msgType string) int {
+	switch msgType {
+	case "webchat":
+		return 1
+	case "chat.voice":
+		return 31
+	case "chat.photo":
+		return 32
+	case "chat.sticker":
+		return 36
+	case "chat.doodle":
+		return 37
+	case "chat.recommended", "chat.link":
+		return 38
+	case "chat.video.msg":
+		return 44
+	case "share.file":
+		return 46
+	case "chat.gif":
+		return 49
+	case "chat.location.new":
+		return 43
+	}
+	return 1 // text / unknown — Zalo treats 1 as the generic text quote type
+}
+
 // classifyQuoteMsgType maps zca-js's numeric cliMsgType to the string form
 // Zalo's /quote endpoint expects. Unknown types fall back to "chat.text" with
 // a warn log so misclassified quotes surface in logs rather than silently
@@ -172,17 +203,22 @@ func SendMessage(
 		payload["imei"] = sess.IMEI
 	}
 	if quote != nil {
-		// Field names mirror zca-js's encrypted /quote payload. VERIFY against
-		// captured wire traffic — names may differ (e.g. qmsgFromUid). Fallback
-		// path in Phase 4 catches misnamed-field rejections as ErrQuoteRejected.
+		// Field names + types mirror zca-js src/apis/sendMessage.ts:283-305.
+		// Differences from a previous incorrect attempt: qmsgType is a NUMBER
+		// (not the "chat.*" string), qmsgTTL is uppercase, and qmsgAttach is
+		// OMITTED for DMs (zca-js sets it undefined for non-group, removed via
+		// removeUndefinedKeys). Sending the wrong shape returns server code 114
+		// "Tham số không hợp lệ" with the silent-fallback path hiding the bug.
 		payload["qmsgOwner"] = quote.OwnerID
 		payload["qmsgId"] = quote.MsgID
 		payload["qmsgCliId"] = quote.CliMsgID
-		payload["qmsgType"] = quote.MsgType
+		payload["qmsgType"] = getClientMessageType(quote.MsgType)
 		payload["qmsg"] = quote.Msg
-		payload["qmsgAttach"] = quote.Attach
 		payload["qmsgTs"] = quote.TS
-		payload["qmsgTtl"] = quote.TTL
+		payload["qmsgTTL"] = quote.TTL
+		if threadType == ThreadTypeGroup && quote.Attach != "" {
+			payload["qmsgAttach"] = quote.Attach
+		}
 	}
 
 	// Encrypt payload with session secret key
