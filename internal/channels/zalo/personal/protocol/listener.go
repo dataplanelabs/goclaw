@@ -45,7 +45,9 @@ type Listener struct {
 	closedCh       chan CloseInfo
 	errorCh        chan error
 
-	unknownFrames sync.Map
+	// unknownCounts[key] = *atomic.Uint64 occurrence count. First N get a
+	// full payload preview; rest report a periodic heartbeat.
+	unknownCounts sync.Map
 
 	// Set when a 1_3000_0 frame routes through handleFrame; remaps the next
 	// disconnect (typically TCP 1006) to CloseCodeDuplicate so the channel
@@ -251,11 +253,13 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
 	switch key {
 	case "1_1_1":
 		ln.handleCipherKey(ctx, envelope.Key)
+	case "1_2_1":
+		// Ping/keepalive ack — no-op.
 	case "1_501_0", "1_502_0":
 		ln.handleUserMessages(ctx, envelope.Data, envelope.Encrypt)
 	case "1_521_0", "1_522_0":
 		ln.handleGroupMessages(ctx, envelope.Data, envelope.Encrypt)
-	case "1_601_0":
+	case "1_601_0", "1_602_0":
 		ln.handleControlEvents(ctx, envelope.Data, envelope.Encrypt)
 	case "1_612_0":
 		ln.handleReactionEvents(ctx, envelope.Data, envelope.Encrypt)
@@ -268,26 +272,44 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
 		if client != nil {
 			client.Close(CloseCodeDuplicate, "duplicate")
 		}
-	case "1_602_0":
-		// Temporary diagnostic — surface the plaintext payload so we can
-		// identify whether 1_602_0 is the quote-reply DM variant.
+	default:
+		ln.logUnknownFrame(key, envelope.Data, envelope.Encrypt)
+	}
+}
+
+// logUnknownFrame emits a per-frame diagnostic for any cmd we don't route.
+// First N occurrences per key get the full decrypted payload preview (up to
+// 500 chars); beyond that, only a heartbeat every M occurrences logs the
+// count + size to avoid log spam from periodic frames.
+func (ln *Listener) logUnknownFrame(key, data string, encType uint) {
+	const fullPreviewLimit = 5
+	const heartbeatEvery = 50
+
+	cntAny, _ := ln.unknownCounts.LoadOrStore(key, new(atomic.Uint64))
+	cnt := cntAny.(*atomic.Uint64)
+	n := cnt.Add(1)
+
+	if n <= fullPreviewLimit {
 		ln.mu.RLock()
 		ck := ln.cipherKey
 		ln.mu.RUnlock()
-		payload, err := ln.decryptEventData(envelope.Data, envelope.Encrypt, ck)
+		payload, err := ln.decryptEventData(data, encType, ck)
 		if err != nil {
-			slog.Warn("zalo_personal.diag.602.decrypt_failed", "err", err, "encrypt", envelope.Encrypt, "data_len", len(envelope.Data))
-		} else {
-			preview := string(payload)
-			if len(preview) > 500 {
-				preview = preview[:500]
-			}
-			slog.Info("zalo_personal.diag.602.payload", "encrypt", envelope.Encrypt, "payload_len", len(payload), "preview", preview)
+			slog.Warn("zalo_personal.unknown_frame.decrypt_failed",
+				"key", key, "occurrence", n, "encrypt", encType, "data_len", len(data), "err", err)
+			return
 		}
-	default:
-		if _, seen := ln.unknownFrames.LoadOrStore(key, struct{}{}); !seen {
-			slog.Info("zalo_personal: unhandled ws frame", "key", key, "data_len", len(envelope.Data), "encrypt", envelope.Encrypt)
+		preview := string(payload)
+		if len(preview) > 500 {
+			preview = preview[:500]
 		}
+		slog.Info("zalo_personal.unknown_frame",
+			"key", key, "occurrence", n, "encrypt", encType, "payload_len", len(payload), "preview", preview)
+		return
+	}
+	if n%heartbeatEvery == 0 {
+		slog.Info("zalo_personal.unknown_frame.heartbeat",
+			"key", key, "occurrence", n, "encrypt", encType, "data_len", len(data))
 	}
 }
 
