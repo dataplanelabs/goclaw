@@ -86,11 +86,13 @@ func callDashScopeImageGen(ctx context.Context, apiKey, apiBase, model, prompt s
 
 	endpoint := dashScopeImageEndpoint(apiBase)
 
+	// wan2.x multimodal-generation requires content as []part — string form
+	// returns 400 "Input should be a valid list: input.messages.0.content".
 	body := map[string]any{
 		"model": model,
 		"input": map[string]any{
 			"messages": []map[string]any{
-				{"role": "user", "content": prompt},
+				{"role": "user", "content": []map[string]any{{"text": prompt}}},
 			},
 		},
 		"parameters": map[string]any{
