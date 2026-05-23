@@ -65,6 +65,16 @@ func wireExtraTools(
 	toolsReg.Register(tools.NewListGroupMembersTool())
 	slog.Info("session + message + send_file tools registered")
 
+	// Zalo Personal channel-specific tools (polls + reactions). DI for the
+	// action function happens later in gateway.go once channelMgr exists.
+	toolsReg.Register(tools.NewZaloPersonalCreatePollTool())
+	toolsReg.Register(tools.NewZaloPersonalGetPollTool())
+	toolsReg.Register(tools.NewZaloPersonalVotePollTool())
+	toolsReg.Register(tools.NewZaloPersonalLockPollTool())
+	toolsReg.Register(tools.NewZaloPersonalAddPollOptionsTool())
+	toolsReg.Register(tools.NewZaloPersonalReactTool())
+	slog.Info("zalo_personal poll + react tools registered", "count", 6)
+
 	// Register legacy tool aliases (backward-compat names from policy.go).
 	for alias, canonical := range tools.LegacyToolAliases() {
 		toolsReg.RegisterAlias(alias, canonical)
