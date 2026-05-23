@@ -35,14 +35,20 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
-- **create_image: codex Responses-API native path silently dropped reference images**
-  — `buildNativeImageRequestBody` only attached the text prompt; refs were
-  never sent. gpt-image-2 generated random faces from prompt alone — the root
-  cause of every "wrong face" output. Wire the fail-fast CLAUDE.md memory
-  intended: when `reference_images` is non-empty on the native path, return an
-  error so the chain falls through to an edits-capable provider (OpenRouter,
-  OpenAI `/v1/images/edits`, Gemini). Tenants whose chain has only codex +
-  dashscope must add an edits-capable provider higher in the chain.
+- **create_image: codex Responses-API native path now actually sends reference images**
+  — supersedes the v3.16.12 fail-fast. `buildNativeImageRequestBody` appends
+  `{"type":"input_image","image_url":"data:<mime>;base64,..."}` content parts
+  when refs are present, switches the tool's `action` from `"generate"` to
+  `"edit"`, and adds `input_fidelity: "high"` for face preservation (omitted
+  for `gpt-image-1-mini` which rejects it). `callProvider` passes
+  `params["reference_images"]` into `NativeImageRequest` so the bytes reach
+  the model. gpt-image-2 finally sees the user's selfie.
+
+- **create_image: DashScope wan2.6 text-only requests now work** — wan2.6
+  rejected text-only with `400: "When 'enable_interleave' is False, the last
+  message must contain 1 to 4 images"`. Added `enable_interleave: true` so
+  text-only generations go through. (DashScope still doesn't send image parts
+  for refs — Phase 04 deferred.)
 
 - **create_image: filter ref pool to user-uploaded images only** — PR #37 made
   `WithMediaImageRefs` history-aware via `collectRefsByKind`, but that helper

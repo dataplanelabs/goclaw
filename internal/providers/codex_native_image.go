@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // GenerateImage implements NativeImageProvider for CodexProvider.
@@ -52,11 +53,40 @@ func (p *CodexProvider) GenerateImage(ctx context.Context, req NativeImageReques
 	return parseNativeImageResponse(raw)
 }
 
-// buildNativeImageRequestBody constructs the minimal Responses API body for image generation.
-// The Responses API rejects non-streaming requests with HTTP 400 "Stream must be set to true",
-// so stream is always true. Final assembly happens in parseNativeImageSSE which scans the
-// event stream for response.output_item.done (image item) or response.completed output walk.
+// buildNativeImageRequestBody constructs the Responses API body for image generation.
+// When ReferenceImages is non-empty, input_image parts are appended and the tool runs
+// in edit mode with input_fidelity=high for face/identity preservation.
 func (p *CodexProvider) buildNativeImageRequestBody(model string, req NativeImageRequest) map[string]any {
+	content := []map[string]any{
+		{"type": "input_text", "text": req.Prompt},
+	}
+	for _, img := range req.ReferenceImages {
+		mime := img.MimeType
+		if mime == "" {
+			mime = "image/jpeg"
+		}
+		content = append(content, map[string]any{
+			"type":      "input_image",
+			"image_url": "data:" + mime + ";base64," + img.Data,
+		})
+	}
+
+	action := "generate"
+	tool := map[string]any{
+		"type":          "image_generation",
+		"action":        action,
+		"model":         req.ImageModel,
+		"output_format": req.OutputFormat,
+		"size":          SizeFromAspectForModel(req.AspectRatio, req.ImageModel),
+	}
+	if len(req.ReferenceImages) > 0 {
+		tool["action"] = "edit"
+		// input_fidelity is gpt-image-1 / 1.5 / 2 only; gpt-image-1-mini rejects it.
+		if !isGPTImage1Mini(req.ImageModel) {
+			tool["input_fidelity"] = "high"
+		}
+	}
+
 	return map[string]any{
 		"model":        model,
 		"stream":       true,
@@ -64,25 +94,17 @@ func (p *CodexProvider) buildNativeImageRequestBody(model string, req NativeImag
 		"instructions": "Generate an image matching the user's description using the image_generation tool. Return only the image; do not describe it in text.",
 		"input": []any{
 			map[string]any{
-				"role": "user",
-				"content": []map[string]any{
-					{"type": "input_text", "text": req.Prompt},
-				},
+				"role":    "user",
+				"content": content,
 			},
 		},
-		"tools": []map[string]any{
-			{
-				"type":          "image_generation",
-				"action":        "generate",
-				"model":         req.ImageModel,
-				"output_format": req.OutputFormat,
-				"size":          SizeFromAspectForModel(req.AspectRatio, req.ImageModel),
-			},
-		},
-		"tool_choice": map[string]any{
-			"type": "image_generation",
-		},
+		"tools":       []map[string]any{tool},
+		"tool_choice": map[string]any{"type": "image_generation"},
 	}
+}
+
+func isGPTImage1Mini(model string) bool {
+	return strings.HasPrefix(model, "gpt-image-1-mini")
 }
 
 // parseNativeImageResponse extracts base64-encoded image bytes from a Responses API

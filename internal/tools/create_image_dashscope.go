@@ -87,7 +87,8 @@ func callDashScopeImageGen(ctx context.Context, apiKey, apiBase, model, prompt s
 	endpoint := dashScopeImageEndpoint(apiBase)
 
 	// wan2.x multimodal-generation requires content as []part — string form
-	// returns 400 "Input should be a valid list: input.messages.0.content".
+	// returns 400. Also requires enable_interleave=true for text-only requests
+	// (default false demands 1-4 images in the last message).
 	body := map[string]any{
 		"model": model,
 		"input": map[string]any{
@@ -96,9 +97,10 @@ func callDashScopeImageGen(ctx context.Context, apiKey, apiBase, model, prompt s
 			},
 		},
 		"parameters": map[string]any{
-			"n":             1,
-			"size":          size,
-			"prompt_extend": promptExtend,
+			"n":                1,
+			"size":             size,
+			"prompt_extend":    promptExtend,
+			"enable_interleave": true,
 		},
 	}
 
