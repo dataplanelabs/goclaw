@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
@@ -114,7 +115,10 @@ func (c *Channel) sendImage(ctx context.Context, sess *protocol.Session, chatID 
 		return fmt.Errorf("upload: %w", err)
 	}
 
-	_, err = protocol.SendImage(ctx, sess, chatID, threadType, upload, caption)
+	msgID, err := protocol.SendImage(ctx, sess, chatID, threadType, upload, caption)
+	if err == nil {
+		c.cacheOutboundMedia(msgID, "image", filePath, caption)
+	}
 	return err
 }
 
@@ -129,8 +133,24 @@ func (c *Channel) sendFile(ctx context.Context, sess *protocol.Session, chatID s
 		return fmt.Errorf("upload: %w", err)
 	}
 
-	_, err = protocol.SendFile(ctx, sess, chatID, threadType, upload)
+	msgID, err := protocol.SendFile(ctx, sess, chatID, threadType, upload)
+	if err == nil {
+		c.cacheOutboundMedia(msgID, "file", filePath, "")
+	}
 	return err
+}
+
+func (c *Channel) cacheOutboundMedia(msgID, kind, filePath, caption string) {
+	if c.outboundCache == nil || msgID == "" {
+		return
+	}
+	name := filepath.Base(filePath)
+	preview := fmt.Sprintf("[%s: %s]", kind, name)
+	if caption != "" {
+		preview = fmt.Sprintf("[%s: %s] %s", kind, name, previewText(caption, outboundPreviewMaxChars-len(preview)-1))
+	}
+	c.outboundCache.set(msgID, preview)
+	slog.Info("zalo_personal.outbound.cached", "msg_id", msgID, "kind", kind, "preview_len", len(preview))
 }
 
 // sendChunkedText splits text and sends each chunk. When quote is non-nil it
