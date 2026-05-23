@@ -123,8 +123,8 @@ func TestHandleReactionEvents_SelfReactionFlag(t *testing.T) {
 	if len(events) != 1 || !events[0].IsSelf {
 		t.Errorf("expected IsSelf=true, got %+v", events)
 	}
-	// uidFrom=="self-uid" (not "0") on a DM → threadID resolves to uidFrom
-	// per zca-js's rule: it's only idTo when uidFrom=="0" OR isGroup.
+	// uidFrom=="self-uid" (not "0") on a DM → threadID resolves to uidFrom.
+	// Only uidFrom=="0" OR group threads route to idTo.
 	if events[0].ThreadID != "self-uid" {
 		t.Errorf("threadID=%s, want self-uid (uidFrom path)", events[0].ThreadID)
 	}
@@ -132,8 +132,8 @@ func TestHandleReactionEvents_SelfReactionFlag(t *testing.T) {
 
 func TestHandleReactionEvents_DefaultUIDSelfRoutesToIDTo(t *testing.T) {
 	t.Parallel()
-	// uidFrom=="0" is zca-js's DefaultUIDSelf — DMs with this marker route
-	// the threadID to idTo (the chat partner), not uidFrom.
+	// uidFrom=="0" (DefaultUIDSelf) routes the threadID to idTo (the chat
+	// partner) rather than uidFrom.
 	ln := newListenerForReactions(t)
 	inner := `{"rMsg":[{"gMsgID":1,"cMsgID":2,"msgType":1}],"rIcon":"/-heart","rType":5,"source":6}`
 	envelope := map[string]any{

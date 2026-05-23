@@ -27,6 +27,8 @@ type Channel struct {
 	sess     *protocol.Session
 	listener *protocol.Listener
 
+	reactionCoalescer *reactionCoalescer
+
 	// Pre-loaded credentials (from DB or from file/QR as fallback).
 	preloadedCreds *protocol.Credentials
 
@@ -65,6 +67,7 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 	ch.SetGroupHistory(channels.MakeHistory(channels.TypeZaloPersonal, pendingStore, base.TenantID()))
 	ch.SetHistoryLimit(historyLimit)
 	ch.SetRequireMention(requireMention)
+	ch.reactionCoalescer = newReactionCoalescer(reactionCoalesceWindow, ch.emitCoalescedReaction)
 	return ch, nil
 }
 
@@ -163,6 +166,12 @@ func (c *Channel) Stop(_ context.Context) error {
 	})
 	if ln := c.getListener(); ln != nil {
 		ln.Stop()
+	}
+	if c.reactionCoalescer != nil {
+		// Cancel pending sleepers; do NOT flush emitted events because Stop()
+		// means we're tearing down the agent path — synthetic reactions would
+		// land in a dead HandleMessage call.
+		c.reactionCoalescer.Cancel()
 	}
 	c.SetRunning(false)
 	return nil

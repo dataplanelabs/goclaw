@@ -1,9 +1,7 @@
 package protocol
 
-// Poll endpoints — faithful port of zca-js src/apis/{createPoll,getPollDetail,
-// votePoll,lockPoll,addPollOptions}.ts. All five endpoints live on the "group"
-// service map entry (NOT "group_poll", which is reserved for the directory
-// listing endpoint at /api/group/getlg/v4 — see contacts.go).
+// Poll endpoints. All five live under the "group" service map entry —
+// "group_poll" is reserved for /api/group/getlg/v4 (see contacts.go).
 
 import (
 	"context"
@@ -78,8 +76,8 @@ type pollOptionsResponse struct {
 	Options []PollOption `json:"options"`
 }
 
-// VotePoll submits a vote (or unvotes when optionIDs is empty). zca-js issues
-// this as a GET with the encrypted payload in the `params` query string.
+// VotePoll submits a vote (or unvotes when optionIDs is empty). HTTP GET
+// with the encrypted payload carried in the `params` query string.
 func VotePoll(ctx context.Context, sess *Session, pollID int64, optionIDs []int64) ([]PollOption, error) {
 	if pollID == 0 {
 		return nil, fmt.Errorf("zalo_personal: votePoll requires pollID")
@@ -113,9 +111,8 @@ func LockPoll(ctx context.Context, sess *Session, pollID int64) error {
 	return postEncryptedJSON(ctx, sess, apiPathPollEnd, payload, &discard)
 }
 
-// AddPollOptions extends an existing poll with new options. zca-js GETs this
-// endpoint and serializes `new_options` as a JSON STRING (not nested array)
-// inside the encrypted payload — preserved here exactly to match the wire.
+// AddPollOptions extends an existing poll. HTTP GET; `new_options` is sent
+// as a JSON-stringified array (not nested array) inside the encrypted payload.
 func AddPollOptions(ctx context.Context, sess *Session, pollID int64, newOpts []AddPollOptionsItem, votedOptionIDs []int64) ([]PollOption, error) {
 	if pollID == 0 {
 		return nil, fmt.Errorf("zalo_personal: addPollOptions requires pollID")
@@ -167,8 +164,7 @@ func postEncryptedJSON(ctx context.Context, sess *Session, apiPath string, paylo
 }
 
 // getEncryptedJSON is the GET variant — payload encrypted into the `params`
-// query string rather than the body. Used by votePoll and addPollOptions
-// (faithful to zca-js's wire choice).
+// query string rather than the body. Used by VotePoll + AddPollOptions.
 func getEncryptedJSON(ctx context.Context, sess *Session, apiPath string, payload map[string]any, out any) error {
 	baseURL := getServiceURL(sess, pollServiceKey)
 	if baseURL == "" {

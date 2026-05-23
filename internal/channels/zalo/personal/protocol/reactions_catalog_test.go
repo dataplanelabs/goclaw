@@ -95,12 +95,10 @@ func TestLookupReactionMeta_UnknownCode(t *testing.T) {
 }
 
 func TestCatalogCount(t *testing.T) {
-	// Drift detector: zca-js's addReaction.ts wires 54 reactions as of
-	// 2026-05-23. If this fails after a zca-js upstream pull, audit
-	// src/apis/addReaction.ts and add/remove entries accordingly.
+	// 54 reactions as of 2026-05-23. Bump when adding new wired codes.
 	const want = 54
 	if got := len(reactionMetaTable); got != want {
-		t.Errorf("reactionMetaTable has %d entries, want %d (zca-js drift?)", got, want)
+		t.Errorf("reactionMetaTable has %d entries, want %d", got, want)
 	}
 }
 

@@ -21,12 +21,15 @@ type zaloCreds struct {
 
 // zaloInstanceConfig maps the config JSONB from the channel_instances table.
 type zaloInstanceConfig struct {
-	DMPolicy       string   `json:"dm_policy,omitempty"`
-	GroupPolicy    string   `json:"group_policy,omitempty"`
-	RequireMention *bool    `json:"require_mention,omitempty"`
-	HistoryLimit   int      `json:"history_limit,omitempty"`
-	AllowFrom      []string `json:"allow_from,omitempty"`
-	BlockReply     *bool    `json:"block_reply,omitempty"`
+	DMPolicy            string   `json:"dm_policy,omitempty"`
+	GroupPolicy         string   `json:"group_policy,omitempty"`
+	RequireMention      *bool    `json:"require_mention,omitempty"`
+	HistoryLimit        int      `json:"history_limit,omitempty"`
+	AllowFrom           []string `json:"allow_from,omitempty"`
+	BlockReply          *bool    `json:"block_reply,omitempty"`
+	DisablePolls        bool     `json:"disable_polls,omitempty"`
+	DisableReactions    bool     `json:"disable_reactions,omitempty"`
+	ListenSelfReactions bool     `json:"listen_self_reactions,omitempty"`
 }
 
 // Factory creates a Zalo Personal channel from DB instance data.
@@ -55,13 +58,16 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 	}
 
 	zaloCfg := config.ZaloPersonalConfig{
-		Enabled:        true,
-		AllowFrom:      ic.AllowFrom,
-		DMPolicy:       ic.DMPolicy,
-		GroupPolicy:    ic.GroupPolicy,
-		RequireMention: ic.RequireMention,
-		HistoryLimit:   ic.HistoryLimit,
-		BlockReply:     ic.BlockReply,
+		Enabled:             true,
+		AllowFrom:           ic.AllowFrom,
+		DMPolicy:            ic.DMPolicy,
+		GroupPolicy:         ic.GroupPolicy,
+		RequireMention:      ic.RequireMention,
+		HistoryLimit:        ic.HistoryLimit,
+		BlockReply:          ic.BlockReply,
+		DisablePolls:        ic.DisablePolls,
+		DisableReactions:    ic.DisableReactions,
+		ListenSelfReactions: ic.ListenSelfReactions,
 	}
 
 	ch, err := New(zaloCfg, msgBus, pairingSvc, nil)
@@ -105,13 +111,16 @@ func FactoryWithPendingStore(pendingStore store.PendingMessageStore) channels.Ch
 		}
 
 		zaloCfg := config.ZaloPersonalConfig{
-			Enabled:        true,
-			AllowFrom:      ic.AllowFrom,
-			DMPolicy:       ic.DMPolicy,
-			GroupPolicy:    ic.GroupPolicy,
-			RequireMention: ic.RequireMention,
-			HistoryLimit:   ic.HistoryLimit,
-			BlockReply:     ic.BlockReply,
+			Enabled:             true,
+			AllowFrom:           ic.AllowFrom,
+			DMPolicy:            ic.DMPolicy,
+			GroupPolicy:         ic.GroupPolicy,
+			RequireMention:      ic.RequireMention,
+			HistoryLimit:        ic.HistoryLimit,
+			BlockReply:          ic.BlockReply,
+			DisablePolls:        ic.DisablePolls,
+			DisableReactions:    ic.DisableReactions,
+			ListenSelfReactions: ic.ListenSelfReactions,
 		}
 
 		ch, err := New(zaloCfg, msgBus, pairingSvc, pendingStore)

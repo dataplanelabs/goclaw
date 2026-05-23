@@ -57,10 +57,8 @@ func AddReaction(ctx context.Context, sess *Session, dest ReactionDest, code str
 
 	meta := LookupReactionMeta(code)
 
-	// Inner message JSON faithful to zca-js addReaction.ts. ParseInt failure
-	// returns 0 and falls back to the raw msgID/cliMsgID string fields below;
-	// keeping the inner numeric form for compatibility with how Zalo echoes
-	// them in real captures.
+	// Inner uses numeric IDs (matches how Zalo echoes them in captures).
+	// ParseInt errors fall through to 0; the outer string IDs still carry truth.
 	gMsgID, _ := strconv.ParseInt(dest.MsgID, 10, 64)
 	cMsgID, _ := strconv.ParseInt(dest.CliMsgID, 10, 64)
 	inner := map[string]any{
@@ -145,8 +143,8 @@ func AddReaction(ctx context.Context, sess *Session, dest ReactionDest, code str
 	return parseMsgIDs(raw.MsgIDs)
 }
 
-// parseMsgIDs handles zca-js's quirk: msgIds may be a JSON array or a JSON
-// string containing the array. Either form returns the same []int64.
+// parseMsgIDs handles Zalo's quirk: msgIds may be a JSON array or a JSON
+// string containing the array. Both forms return the same []int64.
 func parseMsgIDs(raw json.RawMessage) ([]int64, error) {
 	if len(raw) == 0 {
 		return nil, nil

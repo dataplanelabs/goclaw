@@ -1,14 +1,10 @@
 package protocol
 
-// Reaction catalog — Zalo reaction code constants, rType/source lookup table,
-// and unicode↔Zalo translator. Faithful to zca-js src/models/Reaction.ts +
-// src/apis/addReaction.ts. Changes here MUST be mirrored back to the catalog
-// drift test (TestCatalogCount).
+// Zalo reaction wire codes + unicode/English translators. Drift detector
+// in TestCatalogCount.
 
 import "strings"
 
-// Reaction code constants. The string value is the Zalo wire code as emitted
-// by zca-js's Reactions enum. ReactionNone ("") is the removal marker.
 const (
 	ReactionNone        = ""
 	ReactionHeart       = "/-heart"
@@ -67,16 +63,11 @@ const (
 	ReactionBeer        = "/-beer"
 )
 
-// reactionMeta carries the rType + source pair Zalo expects in the inner
-// reaction payload. zca-js's addReaction.ts switch covers 53 wired reactions;
-// unknown codes (including ReactionNone for removal) fall back to {-1, 6}.
 type reactionMeta struct {
 	RType  int
 	Source int
 }
 
-// reactionMetaTable mirrors zca-js src/apis/addReaction.ts case-by-case.
-// Length is asserted by TestCatalogCount as a drift detector against upstream.
 var reactionMetaTable = map[string]reactionMeta{
 	ReactionHaha:        {0, 6},
 	ReactionSad:         {1, 6},
@@ -134,9 +125,8 @@ var reactionMetaTable = map[string]reactionMeta{
 	ReactionLoveYou:     {133, 6},
 }
 
-// LookupReactionMeta returns the rType+source pair for a Zalo reaction code.
-// Unknown codes (including the empty NONE marker used to remove a reaction)
-// return {-1, 6} — matching zca-js's default case in addReaction.ts.
+// LookupReactionMeta returns {-1, 6} for unknown codes — Zalo's marker for
+// removal / unhandled reactions.
 func LookupReactionMeta(code string) reactionMeta {
 	if m, ok := reactionMetaTable[code]; ok {
 		return m
@@ -144,10 +134,6 @@ func LookupReactionMeta(code string) reactionMeta {
 	return reactionMeta{RType: -1, Source: 6}
 }
 
-// unicodeToZalo maps the most common agent-emitted unicode emoji to the
-// corresponding Zalo reaction code. Multiple unicode variants may share a
-// single Zalo code (e.g. ❤️ + ❤ both map to ReactionHeart). Coverage is the
-// ~30 emoji decisions.md flagged as the high-frequency set.
 var unicodeToZalo = map[string]string{
 	"❤️":  ReactionHeart,
 	"❤":   ReactionHeart,
@@ -187,8 +173,6 @@ var unicodeToZalo = map[string]string{
 	"☀️":  ReactionSun,
 }
 
-// englishNameToZalo lets agents specify reactions by friendly name. Casing is
-// normalized in ResolveReactionCode before lookup.
 var englishNameToZalo = map[string]string{
 	"heart":       ReactionHeart,
 	"love":        ReactionLove,

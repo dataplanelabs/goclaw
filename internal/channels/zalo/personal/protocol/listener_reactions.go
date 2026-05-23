@@ -1,9 +1,8 @@
 package protocol
 
-// Inbound reaction decoders. Wire frames arrive on cmd=612 (real-time),
-// cmd=610 (historical user-thread replay), cmd=611 (historical group-thread
-// replay). The TReaction shape mirrors zca-js src/models/Reaction.ts; the
-// inner `content` field is a JSON STRING that decodes into tReactionInner.
+// Inbound reaction decoders. cmd=612 = real-time, cmd=610/611 = historical
+// replay on reconnect. The inner `content` field is a JSON string that
+// unmarshals into tReactionInner.
 
 import (
 	"context"
@@ -11,10 +10,9 @@ import (
 	"fmt"
 )
 
-// TReaction is the wire shape for a single reaction frame. There is no
-// `groupId` field — zca-js's Reaction class resolves threadID from idTo /
-// uidFrom (see decodeReaction below). msgType is a STRING here even though
-// the inner rMsg.msgType is numeric.
+// TReaction is the wire shape per frame. There is no groupId field — threadID
+// is resolved from idTo/uidFrom (see decodeReaction). Top-level msgType is a
+// string; the inner rMsg.msgType is numeric.
 type TReaction struct {
 	ActionID string      `json:"actionId,omitempty"`
 	MsgID    json.Number `json:"msgId"`
@@ -122,14 +120,11 @@ func (ln *Listener) handleOldReactions(ctx context.Context, data string, encType
 	}
 }
 
-// decodeReaction parses a TReaction (with stringified inner content) into a
-// ReactionEvent. Returns false when the inner JSON is malformed so the
-// listener silently skips it rather than spamming the error channel.
+// decodeReaction unwraps the stringified inner content. Returns false on
+// malformed JSON so the listener drops silently instead of spamming errors.
 //
-// Thread-ID resolution mirrors zca-js's Reaction constructor:
-//   threadId = isGroup || uidFrom == "0" ? idTo : uidFrom
-// For DMs: chat partner is uidFrom unless uidFrom=="0" (self-sent), then idTo.
-// For groups: always idTo.
+// Thread-ID rule: threadID = idTo when isGroup OR uidFrom == DefaultUIDSelf,
+// else uidFrom. DMs route via the partner UID unless self-sent.
 func decodeReaction(selfUID string, r TReaction, threadType ThreadType, historic bool) (ReactionEvent, bool) {
 	if r.Content == "" {
 		return ReactionEvent{}, false

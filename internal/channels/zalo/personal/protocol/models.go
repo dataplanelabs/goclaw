@@ -137,10 +137,10 @@ type UserInfo struct {
 	Avatar string `json:"avatar"`
 }
 
-// --- Poll types (faithful to zca-js src/apis/createPoll.ts + src/models). ---
+// --- Poll types ---
 
-// CreatePollOptions mirrors zca-js CreatePollOptions. Zero values are omitted
-// from the encrypted payload so Zalo applies its own defaults.
+// CreatePollOptions carries the createPoll request knobs. Zero values are
+// omitted from the encrypted payload so Zalo applies its own defaults.
 type CreatePollOptions struct {
 	Question          string   `json:"question"`
 	Options           []string `json:"options"`
@@ -160,9 +160,8 @@ type PollOption struct {
 	Voted      bool     `json:"voted,omitempty"`
 }
 
-// PollDetail is the full poll-state response. Field shape inferred from
-// zca-js usage; verify against a live response during Phase 2 (Locked may
-// instead be encoded as `state: 1`).
+// PollDetail is the full poll-state response. Verify against a live response
+// when first hitting production — Locked may instead arrive as `state: 1`.
 type PollDetail struct {
 	PollID            json.Number  `json:"poll_id"`
 	Question          string       `json:"question"`
