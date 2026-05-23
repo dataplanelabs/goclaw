@@ -74,7 +74,7 @@ func main() {
 	// Test 1: Send text message
 	log.Println("\n--- Test 1: Send Text Message ---")
 	msgID, err := protocol.SendMessage(ctx, sess, groupID, protocol.ThreadTypeGroup,
-		fmt.Sprintf("GoClaw Go E2E test - %s", time.Now().Format(time.RFC3339)))
+		fmt.Sprintf("GoClaw Go E2E test - %s", time.Now().Format(time.RFC3339)), nil)
 	if err != nil {
 		log.Fatalf("send text: %v", err)
 	}

@@ -1,0 +1,52 @@
+PHASE 3 VERIFICATION ARTIFACT — STATUS: UNSATISFIED
+====================================================
+
+This file is the gate artifact promised by
+plans/260523-1813-zalo-personal-quoted-messages/phase-03-extend-sendmessage-for-quote-endpoint.md.
+
+The phase plan REQUIRES one of:
+  (A) A captured HTTP request from a real zca-js session sending a quoted
+      message, with the exact URL + decrypted form body recorded here.
+  (B) A live smoke test confirming the implementation against a real Zalo
+      Personal account renders a native quote bubble.
+
+Neither has been collected yet. The implementation is shipping with the
+following INFERRED values pending verification:
+
+URL path suffix (DM):    /api/message/quote
+URL path suffix (group): /api/group/quote
+Encrypted payload fields (in addition to the existing send fields):
+  qmsgOwner   = TQuote.OwnerID
+  qmsgId      = TQuote.GlobalMsgID (string form)
+  qmsgCliId   = TQuote.CliMsgID    (string form)
+  qmsgType    = classifyQuoteMsgType(TQuote.CliMsgType)
+  qmsg        = TQuote.Msg
+  qmsgAttach  = TQuote.Attach (opaque JSON string, verbatim)
+  qmsgTs      = TQuote.TS    (string form)
+  qmsgTtl     = TQuote.TTL   (int)
+
+Reasoning recorded in internal/channels/zalo/personal/protocol/send.go:
+the /quote path REPLACES the /sms (or /sendmsg) suffix per zca-js
+sendMessage.ts:290-302 (`pathname + "/quote"` is the alternative branch to
+`pathname + "/sms"`). The original plan documented appending /quote after
+/sms; that turned out to be wrong on re-read.
+
+Failure mode if any of the above is incorrect:
+  - Phase 4's sendChunkWithQuoteFallback retries without the quote on any
+    non-zero error_code, so a wrong URL or wrong field name surfaces as
+    "quotes silently downgrade to plain replies" rather than message loss.
+  - The fallback warn log "zalo_personal.quote.fallback_no_quote" is the
+    canary; if it fires on every quoted reply in dev, the URL or field names
+    are wrong.
+
+REQUIRED before merge:
+  Capture a real /quote request via Charles / mitmproxy / browser devtools
+  with zca-js v2.1.2 in dev, and overwrite this file with:
+    - The exact URL (path + query)
+    - The decrypted form body (JSON dump of the qmsg* fields actually sent)
+    - The exact `error_code` returned by Zalo when quoting a deleted message
+      (so nonQuoteErrorCodes in send.go can stay narrowly scoped to auth /
+      rate-limit families)
+
+PR description checklist:
+  [ ] Phase 3 verification artifact attached (this file replaced with real data)

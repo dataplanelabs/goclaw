@@ -27,6 +27,37 @@ type TMessage struct {
 	CMD     int     `json:"cmd"`
 	ST      int     `json:"st"`
 	AT      int     `json:"at"`
+	Quote   *TQuote `json:"quote,omitempty"`
+}
+
+// TQuote represents a quoted message attached to a TMessage (when a user replies
+// to another message). Mirrors zca-js's TQuote shape. Pointer on TMessage so the
+// common no-quote case costs nothing.
+//
+// Numeric ID fields use json.Number because Zalo serializes the same field as a
+// string or number depending on endpoint version. PropertyExt is kept as raw
+// JSON so the opaque server-side payload survives a marshal/unmarshal roundtrip
+// for outbound /quote sends.
+type TQuote struct {
+	OwnerID     string          `json:"ownerId"`
+	CliMsgID    json.Number     `json:"cliMsgId"`
+	GlobalMsgID json.Number     `json:"globalMsgId"`
+	CliMsgType  int             `json:"cliMsgType"`
+	TS          json.Number     `json:"ts"`
+	Msg         string          `json:"msg"`
+	Attach      string          `json:"attach"`
+	FromD       string          `json:"fromD"`
+	TTL         int             `json:"ttl"`
+	PropertyExt json.RawMessage `json:"propertyExt,omitempty"`
+}
+
+// GlobalMsgIDString returns the global message ID as a string for downstream
+// metadata stamping. Defensive on nil receiver.
+func (q *TQuote) GlobalMsgIDString() string {
+	if q == nil {
+		return ""
+	}
+	return q.GlobalMsgID.String()
 }
 
 // TGroupMessage extends TMessage with group-specific fields.

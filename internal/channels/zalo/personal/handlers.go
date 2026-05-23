@@ -2,9 +2,11 @@ package personal
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +20,32 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
+
+// buildQuoteMetadata returns the two metadata keys that carry an inbound
+// TQuote downstream: reply_to_message_id (the quoted message's global ID, for
+// gateway routing) and reply_to_quote_payload (the full JSON-serialized TQuote
+// that the outbound Send() rebuilds into a Zalo /quote payload).
+//
+// Returns nil when the quote is nil OR when marshal fails — never stamps a
+// half-result. The reachable marshal-failure case is invalid JSON in
+// PropertyExt (RawMessage validates on marshal); stamping only the ID without
+// the payload would silently downgrade the outbound reply to non-quoted while
+// still claiming "I quoted something". Better to skip the stamp entirely so
+// the reply lands as a plain message.
+func buildQuoteMetadata(q *protocol.TQuote) map[string]string {
+	if q == nil {
+		return nil
+	}
+	payload, err := json.Marshal(q)
+	if err != nil {
+		slog.Warn("zalo_personal.quote.marshal_failed", "err", err, "global_msg_id", q.GlobalMsgIDString())
+		return nil
+	}
+	return map[string]string{
+		"reply_to_message_id":    q.GlobalMsgIDString(),
+		"reply_to_quote_payload": string(payload),
+	}
+}
 
 func (c *Channel) handleMessage(msg protocol.Message) {
 	if msg.IsSelf() {
@@ -72,6 +100,7 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		"platform":     channels.TypeZaloPersonal,
 		"display_name": channels.SanitizeDisplayName(senderName),
 	}
+	maps.Copy(metadata, buildQuoteMetadata(msg.Data.Quote))
 	c.HandleMessage(senderID, threadID, content, media, metadata, "direct")
 }
 
@@ -153,6 +182,7 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		"group_id":     threadID,
 		"display_name": channels.SanitizeDisplayName(senderName),
 	}
+	maps.Copy(metadata, buildQuoteMetadata(msg.Data.Quote))
 	c.HandleMessage(senderID, threadID, finalContent, allMedia, metadata, "group")
 
 	// Clear pending history after sending to agent (matches Telegram/Discord/Slack/Feishu pattern).
@@ -163,6 +193,12 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 // Zalo typing expires after ~5s, so keepalive fires every 3s.
 func (c *Channel) startTyping(threadID string, threadType protocol.ThreadType) {
 	sess := c.session()
+	if sess == nil {
+		// No authenticated session (e.g. brief window during reconnect, or in tests
+		// that exercise handler logic without a live Zalo connection). Typing is
+		// best-effort UX — skip rather than panic in the goroutine started below.
+		return
+	}
 	ctrl := typing.New(typing.Options{
 		MaxDuration:       60 * time.Second,
 		KeepaliveInterval: 4 * time.Second,

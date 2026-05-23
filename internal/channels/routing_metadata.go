@@ -16,6 +16,7 @@ var routingMetaKeys = []string{
 	"pancake_mode",           // pancake inbox vs comment routing
 	"post_id",                // pancake: post id for template vars
 	"display_name",           // pancake: commenter display name for template vars
+	"reply_to_quote_payload", // zalo_personal: JSON-serialized TQuote for native /quote endpoint
 }
 
 var finalReplyMetaKeys = append([]string{
