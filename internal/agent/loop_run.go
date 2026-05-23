@@ -216,7 +216,11 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		if isChildTrace && l.traceCollector != nil && traceID != uuid.Nil {
 			l.traceCollector.SetTraceStatus(ctx, traceID, store.TraceStatusCompleted)
 		}
-		completedPayload := map[string]any{"content": result.Content}
+		completedPayload := map[string]any{
+			"content":     result.Content,
+			"duration_ms": int(elapsed.Milliseconds()),
+			"iterations":  result.Iterations,
+		}
 		if result.Thinking != "" {
 			completedPayload["thinking"] = result.Thinking
 		}

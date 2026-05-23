@@ -52,6 +52,34 @@ func reactionMetaTableLookup(code string) (struct{}, bool) {
 
 var _ channels.ReactionChannel = (*Channel)(nil)
 
+// Thresholds chosen so a casual chat answer (single iteration, fast,
+// short) gets no heart, while anything involving a tool, a long run,
+// or a substantial reply does. Errors always react.
+const (
+	reactDoneDurationMs  = 5000
+	reactDoneOutputChars = 200
+)
+
+// shouldReactOnDone decides whether the heart on a completed run is
+// worth firing — based on whether the run was non-trivial. Errors are
+// gated separately (always react).
+func (c *Channel) shouldReactOnDone(ctx context.Context) bool {
+	e, ok := channels.ReactionExtrasFromCtx(ctx)
+	if !ok {
+		return true
+	}
+	if e.Iterations > 1 {
+		return true
+	}
+	if e.DurationMs >= reactDoneDurationMs {
+		return true
+	}
+	if e.OutputChars >= reactDoneOutputChars {
+		return true
+	}
+	return false
+}
+
 type personalReactionController struct {
 	ch              *Channel
 	threadID        string
@@ -213,6 +241,9 @@ func (c *Channel) OnReactionEvent(ctx context.Context, chatID, messageID, status
 		return nil
 	}
 	if chatID == "" || messageID == "" {
+		return nil
+	}
+	if status == "done" && !c.shouldReactOnDone(ctx) {
 		return nil
 	}
 	select {
