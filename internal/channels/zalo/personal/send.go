@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
@@ -141,16 +140,7 @@ func (c *Channel) sendFile(ctx context.Context, sess *protocol.Session, chatID s
 }
 
 func (c *Channel) cacheOutboundMedia(msgID, kind, filePath, caption string) {
-	if c.outboundCache == nil || msgID == "" {
-		return
-	}
-	name := filepath.Base(filePath)
-	preview := fmt.Sprintf("[%s: %s]", kind, name)
-	if caption != "" {
-		preview = fmt.Sprintf("[%s: %s] %s", kind, name, previewText(caption, outboundPreviewMaxChars-len(preview)-1))
-	}
-	c.outboundCache.set(msgID, preview)
-	slog.Info("zalo_personal.outbound.cached", "msg_id", msgID, "kind", kind, "preview_len", len(preview))
+	c.recordOutboundMessage(msgID, mediaPreview(kind, filePath, caption))
 }
 
 // sendChunkedText splits text and sends each chunk. When quote is non-nil it
@@ -169,15 +159,10 @@ func (c *Channel) sendChunkedText(ctx context.Context, sess *protocol.Session, c
 		if err != nil {
 			return err
 		}
-		if c.outboundCache != nil && msgID != "" {
-			c.outboundCache.set(msgID, previewText(chunk, outboundPreviewMaxChars))
-			slog.Info("zalo_personal.outbound.cached", "msg_id", msgID, "preview_len", len(chunk))
-		}
+		c.recordOutboundMessage(msgID, previewText(chunk, outboundPreviewMax))
 	}
 	return nil
 }
-
-const outboundPreviewMaxChars = 200
 
 // sendChunkWithQuoteFallback sends a single text chunk with an optional quote.
 // On ErrQuoteRejected (quote source deleted, expired, cross-thread, etc.) it

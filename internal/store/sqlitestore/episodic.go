@@ -120,6 +120,26 @@ func (s *SQLiteEpisodicStore) List(ctx context.Context, agentID, userID string, 
 	return scanSQLiteEpisodicRows(rows)
 }
 
+func (s *SQLiteEpisodicStore) GetBySourceID(ctx context.Context, agentID, userID, sourceID string) (*store.EpisodicSummary, error) {
+	tenantID := tenantIDForInsert(ctx)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, tenant_id, agent_id, user_id, session_key, summary, key_topics,
+		       turn_count, token_count, l0_abstract, source_id, source_type,
+		       created_at, expires_at, recall_count, recall_score, last_recalled_at
+		FROM episodic_summaries
+		WHERE agent_id = ? AND user_id = ? AND source_id = ? AND tenant_id = ?
+		LIMIT 1`, agentID, userID, sourceID, tenantID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	results, err := scanSQLiteEpisodicRows(rows)
+	if err != nil || len(results) == 0 {
+		return nil, err
+	}
+	return &results[0], nil
+}
+
 func (s *SQLiteEpisodicStore) ListBySourceType(ctx context.Context, agentID, userID, sourceType string, since time.Time, limit int) ([]store.EpisodicSummary, error) {
 	if limit <= 0 {
 		limit = 20

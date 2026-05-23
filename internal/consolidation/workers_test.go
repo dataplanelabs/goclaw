@@ -62,6 +62,10 @@ func (m *mockEpisodicStore) ListBySourceType(context.Context, string, string, st
 	return nil, nil
 }
 
+func (m *mockEpisodicStore) GetBySourceID(context.Context, string, string, string) (*store.EpisodicSummary, error) {
+	return nil, nil
+}
+
 func (m *mockEpisodicStore) ExistsBySourceID(_ context.Context, _, _, sourceID string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

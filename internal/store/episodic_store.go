@@ -64,6 +64,8 @@ type EpisodicStore interface {
 
 	ListBySourceType(ctx context.Context, agentID, userID, sourceType string, since time.Time, limit int) ([]EpisodicSummary, error)
 
+	GetBySourceID(ctx context.Context, agentID, userID, sourceID string) (*EpisodicSummary, error)
+
 	// Lifecycle
 	ExistsBySourceID(ctx context.Context, agentID, userID, sourceID string) (bool, error)
 	PruneExpired(ctx context.Context) (int, error)
