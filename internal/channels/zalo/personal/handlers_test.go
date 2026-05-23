@@ -468,6 +468,9 @@ func drainInbound(t *testing.T, mb *bus.MessageBus) bus.InboundMessage {
 	return msg
 }
 
+// Even when the inbound is itself a quote-reply, the bot's reply must quote
+// the user's CURRENT message (not the message the user was quoting). Matches
+// the "Quote user message" toggle's natural intent.
 func TestHandleDM_StampsQuoteMetadata(t *testing.T) {
 	t.Parallel()
 	ch, mb := newHandlerTestChannel(t)
@@ -481,24 +484,36 @@ func TestHandleDM_StampsQuoteMetadata(t *testing.T) {
 	})
 
 	ch.handleDM(protocol.NewUserMessage("self-uid", protocol.TMessage{
-		MsgID:   "current-msg",
-		UIDFrom: "456",
-		IDTo:    "self-uid",
-		DName:   "Replier",
-		Content: protocol.Content{String: &text},
-		Quote:   quote,
+		MsgID:    "7858722000099",
+		CliMsgID: json.Number("1700000000999"),
+		UIDFrom:  "456",
+		IDTo:     "self-uid",
+		DName:    "Replier",
+		TS:       "1700000001",
+		Content:  protocol.Content{String: &text},
+		Quote:    quote,
 	}))
 
 	got := drainInbound(t, mb)
-	if got.Metadata["reply_to_message_id"] != "9876543210" {
-		t.Errorf("reply_to_message_id = %q, want 9876543210", got.Metadata["reply_to_message_id"])
+	if got.Metadata["reply_to_message_id"] != "7858722000099" {
+		t.Errorf("reply_to_message_id = %q, want 7858722000099 (inbound's own MsgID)", got.Metadata["reply_to_message_id"])
 	}
-	if got.Metadata["reply_to_quote_payload"] == "" {
-		t.Error("reply_to_quote_payload should be stamped")
+	payload := got.Metadata["reply_to_quote_payload"]
+	if payload == "" {
+		t.Fatal("reply_to_quote_payload should be stamped")
 	}
-	// Sanity: existing keys still present.
-	if got.Metadata["message_id"] != "current-msg" {
-		t.Errorf("message_id = %q, want current-msg", got.Metadata["message_id"])
+	var q protocol.TQuote
+	if err := json.Unmarshal([]byte(payload), &q); err != nil {
+		t.Fatalf("payload not valid TQuote JSON: %v", err)
+	}
+	if q.OwnerID.String() != "456" {
+		t.Errorf("OwnerID = %q, want 456 (sender), not the quoted msg owner 111", q.OwnerID.String())
+	}
+	if q.Msg != "thanks!" {
+		t.Errorf("Msg = %q, want 'thanks!' (inbound's text, not the quoted msg's 'hello there')", q.Msg)
+	}
+	if got.Metadata["message_id"] != "7858722000099" {
+		t.Errorf("message_id = %q, want 7858722000099", got.Metadata["message_id"])
 	}
 }
 
@@ -630,18 +645,20 @@ func TestHandleGroupMessage_StampsQuoteMetadata(t *testing.T) {
 
 	ch.handleGroupMessage(protocol.NewGroupMessage("self-uid", protocol.TGroupMessage{
 		TMessage: protocol.TMessage{
-			MsgID:   "g-current",
-			UIDFrom: "789",
-			IDTo:    "group-abc",
-			DName:   "GroupReplier",
-			Content: protocol.Content{String: &text},
-			Quote:   quote,
+			MsgID:    "7858722000200",
+			CliMsgID: json.Number("1700000002000"),
+			UIDFrom:  "789",
+			IDTo:     "group-abc",
+			DName:    "GroupReplier",
+			TS:       "1700000002",
+			Content:  protocol.Content{String: &text},
+			Quote:    quote,
 		},
 	}))
 
 	got := drainInbound(t, mb)
-	if got.Metadata["reply_to_message_id"] != "9876543299" {
-		t.Errorf("group reply_to_message_id = %q, want 9876543299", got.Metadata["reply_to_message_id"])
+	if got.Metadata["reply_to_message_id"] != "7858722000200" {
+		t.Errorf("group reply_to_message_id = %q, want 7858722000200 (inbound's own MsgID)", got.Metadata["reply_to_message_id"])
 	}
 	if got.Metadata["reply_to_quote_payload"] == "" {
 		t.Error("group reply_to_quote_payload should be stamped")

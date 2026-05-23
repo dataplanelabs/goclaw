@@ -442,9 +442,7 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		"display_name": channels.SanitizeDisplayName(senderName),
 	}
 	if c.quoteUserMessageEnabled() {
-		if qm := buildQuoteMetadata(msg.Data.Quote); qm != nil {
-			maps.Copy(metadata, qm)
-		} else if qm := buildSelfQuoteMetadata(&msg.Data, senderID); qm != nil {
+		if qm := buildSelfQuoteMetadata(&msg.Data, senderID); qm != nil {
 			maps.Copy(metadata, qm)
 		}
 	}
@@ -538,9 +536,7 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		"display_name": channels.SanitizeDisplayName(senderName),
 	}
 	if c.quoteUserMessageEnabled() {
-		if qm := buildQuoteMetadata(msg.Data.Quote); qm != nil {
-			maps.Copy(metadata, qm)
-		} else if qm := buildSelfQuoteMetadata(&msg.Data.TMessage, senderID); qm != nil {
+		if qm := buildSelfQuoteMetadata(&msg.Data.TMessage, senderID); qm != nil {
 			maps.Copy(metadata, qm)
 		}
 	}
