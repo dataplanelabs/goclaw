@@ -100,7 +100,9 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		"platform":     channels.TypeZaloPersonal,
 		"display_name": channels.SanitizeDisplayName(senderName),
 	}
-	maps.Copy(metadata, buildQuoteMetadata(msg.Data.Quote))
+	if c.quoteUserMessageEnabled() {
+		maps.Copy(metadata, buildQuoteMetadata(msg.Data.Quote))
+	}
 	c.HandleMessage(senderID, threadID, content, media, metadata, "direct")
 }
 
@@ -182,7 +184,9 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		"group_id":     threadID,
 		"display_name": channels.SanitizeDisplayName(senderName),
 	}
-	maps.Copy(metadata, buildQuoteMetadata(msg.Data.Quote))
+	if c.quoteUserMessageEnabled() {
+		maps.Copy(metadata, buildQuoteMetadata(msg.Data.Quote))
+	}
 	c.HandleMessage(senderID, threadID, finalContent, allMedia, metadata, "group")
 
 	// Clear pending history after sending to agent (matches Telegram/Discord/Slack/Feishu pattern).

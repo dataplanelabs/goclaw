@@ -71,16 +71,15 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 // BlockReplyEnabled returns the per-channel block_reply override (nil = inherit gateway default).
 func (c *Channel) BlockReplyEnabled() *bool { return c.config.BlockReply }
 
-// QuoteInboundOnDM opts zalo_personal into the gateway's DM reply-to stamping
-// path. Zalo Personal supports native quote bubbles on DMs (not just groups),
-// so we want replies to a quoted DM to render as a native quote.
-//
-// In practice the gateway is also a no-op for us when the inbound TQuote is
-// present (Phase 2 stamps reply_to_message_id ourselves before the gateway
-// helper runs, and the gateway preserves a channel-stamped value). The opt-in
-// matters when Zalo sends a non-quote DM that the agent still wants to reply
-// to — those keep working without us writing any explicit metadata.
-func (c *Channel) QuoteInboundOnDM() bool { return true }
+func (c *Channel) QuoteInboundOnDM() bool { return c.quoteUserMessageEnabled() }
+
+// quoteUserMessageEnabled defaults to false (opt-in), mirroring zalo-oa.
+func (c *Channel) quoteUserMessageEnabled() bool {
+	if c.config.QuoteUserMessage == nil {
+		return false
+	}
+	return *c.config.QuoteUserMessage
+}
 
 // session returns the current session snapshot (thread-safe).
 func (c *Channel) session() *protocol.Session {
