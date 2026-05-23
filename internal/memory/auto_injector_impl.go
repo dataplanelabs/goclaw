@@ -23,13 +23,23 @@ func NewAutoInjector(es store.EpisodicStore, ms store.EvolutionMetricsStore) Aut
 	return &pgAutoInjector{episodicStore: es, metricsStore: ms}
 }
 
-// Inject searches episodic memory for relevant L0 abstracts and formats a prompt section.
+// Inject builds the per-turn auto-inject section. Reaction feedback fires
+// regardless of message triviality — even on "ok" we want the agent to see
+// that the user reacted angrily on the previous reply. The semantic memory
+// recall (FTS+vector) keeps its triviality gate because greetings don't carry
+// search intent for past episodes.
 func (a *pgAutoInjector) Inject(ctx context.Context, params InjectParams) (*InjectResult, error) {
 	if a.episodicStore == nil {
 		return &InjectResult{}, nil
 	}
+
+	feedbackSection := a.reactionFeedbackSection(ctx, params)
+
 	if isTrivialMessage(params.UserMessage) {
-		return &InjectResult{}, nil
+		if feedbackSection == "" {
+			return &InjectResult{}, nil
+		}
+		return &InjectResult{Section: feedbackSection}, nil
 	}
 
 	maxEntries := params.MaxEntries
@@ -41,17 +51,11 @@ func (a *pgAutoInjector) Inject(ctx context.Context, params InjectParams) (*Inje
 		threshold = 0.3
 	}
 
-	// Phase 9: context-aware recall. When the caller supplied RecentContext,
-	// build a richer search query that captures conversational intent. Without
-	// this, vector search on "what's my favorite?" misses memories about the
-	// topic under discussion. With it, the query embedding captures the
-	// follow-up semantics and returns materially better matches.
 	searchQuery := buildRecallQuery(params.UserMessage, params.RecentContext)
 
-	// Search with FTS bias (faster than vector for auto-inject)
 	results, err := a.episodicStore.Search(ctx, searchQuery, params.AgentID, params.UserID,
 		store.EpisodicSearchOptions{
-			MaxResults:   maxEntries * 2, // fetch more, filter by threshold
+			MaxResults:   maxEntries * 2,
 			MinScore:     threshold,
 			VectorWeight: 0.3,
 			TextWeight:   0.7,
@@ -59,41 +63,39 @@ func (a *pgAutoInjector) Inject(ctx context.Context, params InjectParams) (*Inje
 	if err != nil {
 		return nil, fmt.Errorf("auto-inject search: %w", err)
 	}
-	if len(results) == 0 {
-		return &InjectResult{}, nil
-	}
 
-	// Build prompt section from L0 abstracts
 	var sb strings.Builder
-	sb.WriteString("## Memory Context\n\nRelevant memories from past sessions (use memory_search for details):\n")
-
 	injected := 0
 	var topScore float64
-	for _, r := range results {
-		if injected >= maxEntries {
-			break
-		}
-		if r.L0Abstract == "" {
-			continue
-		}
-		sb.WriteString("- ")
-		sb.WriteString(r.L0Abstract)
-		sb.WriteString("\n")
-		injected++
-		if r.Score > topScore {
-			topScore = r.Score
+
+	if len(results) > 0 {
+		sb.WriteString("## Memory Context\n\nRelevant memories from past sessions (use memory_search for details):\n")
+		for _, r := range results {
+			if injected >= maxEntries {
+				break
+			}
+			if r.L0Abstract == "" {
+				continue
+			}
+			sb.WriteString("- ")
+			sb.WriteString(r.L0Abstract)
+			sb.WriteString("\n")
+			injected++
+			if r.Score > topScore {
+				topScore = r.Score
+			}
 		}
 	}
 
-	if injected == 0 && !a.hasReactionFeedback(ctx, params) {
-		return &InjectResult{MatchCount: len(results)}, nil
-	}
-
-	if section := a.reactionFeedbackSection(ctx, params); section != "" {
+	if feedbackSection != "" {
 		if injected > 0 {
 			sb.WriteString("\n")
 		}
-		sb.WriteString(section)
+		sb.WriteString(feedbackSection)
+	}
+
+	if sb.Len() == 0 {
+		return &InjectResult{MatchCount: len(results)}, nil
 	}
 
 	result := &InjectResult{
@@ -102,19 +104,12 @@ func (a *pgAutoInjector) Inject(ctx context.Context, params InjectParams) (*Inje
 		Injected:   injected,
 		TopScore:   topScore,
 	}
-
 	a.recordRetrievalMetric(params, result)
-
 	return result, nil
 }
 
 const reactionFeedbackLookback = 24 * time.Hour
 const reactionFeedbackLimit = 5
-
-func (a *pgAutoInjector) hasReactionFeedback(ctx context.Context, params InjectParams) bool {
-	rows, err := a.episodicStore.ListBySourceType(ctx, params.AgentID, params.UserID, "reaction_feedback", time.Now().Add(-reactionFeedbackLookback), 1)
-	return err == nil && len(rows) > 0
-}
 
 func (a *pgAutoInjector) reactionFeedbackSection(ctx context.Context, params InjectParams) string {
 	rows, err := a.episodicStore.ListBySourceType(ctx, params.AgentID, params.UserID, "reaction_feedback", time.Now().Add(-reactionFeedbackLookback), reactionFeedbackLimit)
