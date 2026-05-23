@@ -81,8 +81,9 @@ func (p *CodexProvider) buildNativeImageRequestBody(model string, req NativeImag
 	}
 	if len(req.ReferenceImages) > 0 {
 		tool["action"] = "edit"
-		// input_fidelity is gpt-image-1 / 1.5 / 2 only; gpt-image-1-mini rejects it.
-		if !isGPTImage1Mini(req.ImageModel) {
+		// input_fidelity: gpt-image-1 / 1.5 only. gpt-image-2 rejects it (handles
+		// fidelity automatically); gpt-image-1-mini rejects it (not supported).
+		if supportsInputFidelity(req.ImageModel) {
 			tool["input_fidelity"] = "high"
 		}
 	}
@@ -103,8 +104,13 @@ func (p *CodexProvider) buildNativeImageRequestBody(model string, req NativeImag
 	}
 }
 
-func isGPTImage1Mini(model string) bool {
-	return strings.HasPrefix(model, "gpt-image-1-mini")
+// supportsInputFidelity reports whether the image model accepts input_fidelity.
+// gpt-image-1 and gpt-image-1.5 only. gpt-image-2 and gpt-image-1-mini reject it.
+func supportsInputFidelity(model string) bool {
+	if strings.HasPrefix(model, "gpt-image-1-mini") {
+		return false
+	}
+	return strings.HasPrefix(model, "gpt-image-1.5") || model == "gpt-image-1"
 }
 
 // parseNativeImageResponse extracts base64-encoded image bytes from a Responses API

@@ -44,11 +44,18 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   `params["reference_images"]` into `NativeImageRequest` so the bytes reach
   the model. gpt-image-2 finally sees the user's selfie.
 
-- **create_image: DashScope wan2.6 text-only requests now work** — wan2.6
-  rejected text-only with `400: "When 'enable_interleave' is False, the last
-  message must contain 1 to 4 images"`. Added `enable_interleave: true` so
-  text-only generations go through. (DashScope still doesn't send image parts
-  for refs — Phase 04 deferred.)
+- **create_image: gpt-image-2 rejects `input_fidelity` parameter** — v3.17.1 added
+  `input_fidelity: "high"` for all gpt-image-1/1.5/2 when refs are present, but
+  gpt-image-2 errors `400 "The model 'gpt-image-2' does not support the
+  'input_fidelity' parameter"` (v2 auto-handles fidelity internally). Now gated
+  via `supportsInputFidelity`: only gpt-image-1 and gpt-image-1.5 receive it.
+
+- **create_image: revert DashScope `enable_interleave`** — v3.17.1 added
+  `enable_interleave: true` to fix text-only, but that mode requires SSE
+  streaming we don't implement (server returns `400 "stream=False is not
+  supported"`). Reverted. DashScope text-only is still broken on wan2.6, but
+  codex handles text-only successfully so the chain works in practice. Real
+  DashScope refs/text-only fix needs SSE wiring (followup).
 
 - **create_image: filter ref pool to user-uploaded images only** — PR #37 made
   `WithMediaImageRefs` history-aware via `collectRefsByKind`, but that helper
