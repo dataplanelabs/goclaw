@@ -33,6 +33,16 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   now prefer `gpt-5.5`, with reasoning metadata and context-window defaults updated
   for provider-first model selection.
 
+### Changed
+
+- **create_image: native 2K resolution on gpt-image-2** — `SizeFromAspectForModel`
+  picks model-aware dims so gpt-image-2 generates at its native 2K bucket
+  (1536×2048 for 3:4, 2048×1536 for 4:3, 2048×2048 for 1:1, 2304×1296 / 1296×2304
+  for 16:9 / 9:16) — ~2× pixel quality vs the previous 1K bucket while staying
+  within v2's 655k–8.3M total-pixel cap and 16-divisible rule. gpt-image-1.5
+  snaps to its 3 canonical sizes (1024², 1024×1536, 1536×1024); unknown models
+  fall through to the conservative 1K SizeFromAspect default.
+
 ### Fixed
 
 - **create_image: 3:4 / 4:3 aspect rejected by codex (`divisible by 16`)** —

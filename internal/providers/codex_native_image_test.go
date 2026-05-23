@@ -139,8 +139,7 @@ func TestCodexGenerateImage_BuildsNativeRequest(t *testing.T) {
 	if typ, _ := tool["type"].(string); typ != "image_generation" {
 		t.Errorf("tools[0].type = %q, want %q", typ, "image_generation")
 	}
-	// size should map to 1792x1024 for 16:9
-	wantSize := SizeFromAspect("16:9")
+	wantSize := SizeFromAspectForModel("16:9", DefaultImageModel)
 	if size, _ := tool["size"].(string); size != wantSize {
 		t.Errorf("tools[0].size = %q, want %q", size, wantSize)
 	}
@@ -341,6 +340,51 @@ func TestSizeFromAspect(t *testing.T) {
 		got := SizeFromAspect(tc.ratio)
 		if got != tc.want {
 			t.Errorf("SizeFromAspect(%q) = %q, want %q", tc.ratio, got, tc.want)
+		}
+	}
+}
+
+func TestSizeFromAspectForModel(t *testing.T) {
+	cases := []struct {
+		ratio, model, want string
+	}{
+		// gpt-image-2: native 2K.
+		{"1:1", "gpt-image-2", "2048x2048"},
+		{"3:4", "gpt-image-2", "1536x2048"},
+		{"4:3", "gpt-image-2", "2048x1536"},
+		{"16:9", "gpt-image-2", "2304x1296"},
+		{"9:16", "gpt-image-2", "1296x2304"},
+		{"", "gpt-image-2", "2048x2048"},
+		// gpt-image-1.5: only 3 canonical sizes; non-canonical ARs snap to closest.
+		{"1:1", "gpt-image-1.5", "1024x1024"},
+		{"3:4", "gpt-image-1.5", "1024x1536"},
+		{"9:16", "gpt-image-1.5", "1024x1536"},
+		{"4:3", "gpt-image-1.5", "1536x1024"},
+		{"16:9", "gpt-image-1.5", "1536x1024"},
+		// Unknown model falls back to SizeFromAspect.
+		{"3:4", "gpt-image-1", "1024x1360"},
+		{"3:4", "", "1024x1360"},
+	}
+	for _, tc := range cases {
+		got := SizeFromAspectForModel(tc.ratio, tc.model)
+		if got != tc.want {
+			t.Errorf("SizeFromAspectForModel(%q, %q) = %q, want %q", tc.ratio, tc.model, got, tc.want)
+		}
+	}
+	// Sanity: every gpt-image-2 result must have both dims divisible by 16 and
+	// total pixels within 655k–8.3M.
+	for _, ar := range []string{"1:1", "3:4", "4:3", "16:9", "9:16"} {
+		s := SizeFromAspectForModel(ar, "gpt-image-2")
+		var w, h int
+		if _, err := fmt.Sscanf(s, "%dx%d", &w, &h); err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		if w%16 != 0 || h%16 != 0 {
+			t.Errorf("gpt-image-2 %s: %dx%d not 16-divisible", ar, w, h)
+		}
+		px := w * h
+		if px < 655_360 || px > 8_294_400 {
+			t.Errorf("gpt-image-2 %s: %dx%d total px %d outside 655360..8294400", ar, w, h, px)
 		}
 	}
 }
