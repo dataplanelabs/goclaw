@@ -219,6 +219,13 @@ func SendMessage(
 		if threadType == ThreadTypeGroup && quote.Attach != "" {
 			payload["qmsgAttach"] = quote.Attach
 		}
+		slog.Info("zalo_personal.quote.sending",
+			"thread", threadID,
+			"thread_type", threadType,
+			"qmsg_owner", quote.OwnerID,
+			"qmsg_id", quote.MsgID,
+			"qmsg_type", getClientMessageType(quote.MsgType),
+			"msg_type_str", quote.MsgType)
 	}
 
 	// Encrypt payload with session secret key
