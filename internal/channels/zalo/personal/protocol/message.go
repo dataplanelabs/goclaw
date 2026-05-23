@@ -57,7 +57,7 @@ func (m *TMessage) ParseQuote() (*TQuote, error) {
 // JSON so the opaque server-side payload survives a marshal/unmarshal roundtrip
 // for outbound /quote sends.
 type TQuote struct {
-	OwnerID     string          `json:"ownerId"`
+	OwnerID     json.Number     `json:"ownerId"`
 	CliMsgID    json.Number     `json:"cliMsgId"`
 	GlobalMsgID json.Number     `json:"globalMsgId"`
 	CliMsgType  int             `json:"cliMsgType"`

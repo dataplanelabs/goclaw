@@ -58,23 +58,19 @@ func quoteContextPrefix(raw json.RawMessage) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		return ""
 	}
-	preview := string(raw)
-	if len(preview) > 500 {
-		preview = preview[:500]
-	}
 	var q protocol.TQuote
 	if err := json.Unmarshal(raw, &q); err != nil {
-		slog.Info("zalo_personal.quote.tquote_parse_failed", "err", err, "raw_preview", preview)
+		preview := string(raw)
+		if len(preview) > 300 {
+			preview = preview[:300]
+		}
+		slog.Warn("zalo_personal.quote.parse_failed", "err", err, "raw_preview", preview)
 		return ""
 	}
 	body := strings.TrimSpace(q.Msg)
-	source := "msg"
 	if body == "" {
 		body = extractAttachBody(q.Attach)
-		source = "attach"
 	}
-	slog.Info("zalo_personal.quote.diag", "source", source, "body_len", len(body),
-		"q_msg_len", len(q.Msg), "q_attach_len", len(q.Attach), "raw_preview", preview)
 	if body == "" {
 		return ""
 	}
