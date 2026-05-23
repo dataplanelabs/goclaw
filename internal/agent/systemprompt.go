@@ -206,8 +206,10 @@ var coreToolSummaries = map[string]string{
 	"create_video":           "Generate videos from text descriptions using AI",
 	"read_document":          "Analyze documents (PDF, DOCX) from <media:document> tags. If fails, use a skill instead. Path is directly accessible",
 	"create_image": "Generate images from text descriptions using AI. " +
-		"When the user attaches a photo AND asks to edit/restyle/dress/place that subject, ALWAYS pass that image's ID in reference_image_ids " +
-		"(IDs visible in <media:image id='...'> tags from the current turn). " +
+		"When the user attaches OR references a photo (current turn OR earlier in this conversation) and asks to edit/restyle/dress/place that subject, ALWAYS pass it in reference_image_ids. " +
+		"Accepts the media ID, the file path, or the bare filename from any <media:image id='...' path='...'> tag — current-turn AND historical user uploads both resolve. " +
+		"Never refuse with 'I can only use images from the current turn' — that is wrong; pass the id/path/filename and the tool will resolve it. " +
+		"If resolution still fails, the error reply will say how many refs were available — only then ask the user to resend. " +
 		"Omit reference_image_ids for pure text-to-image. " +
 		"For best face preservation, prefer gemini-3.1-flash-image-preview, gpt-image-2, or image-01 (MiniMax) when configured.",
 	"create_audio":           "Generate music or sound effects from text descriptions using AI",
