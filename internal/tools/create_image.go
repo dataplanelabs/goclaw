@@ -76,7 +76,7 @@ func (t *CreateImageTool) Parameters() map[string]any {
 			"reference_image_ids": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Optional. Media IDs from <media:image id='...'> tags in the current turn, used as reference images for face/composition/style preservation. Pass exact ID(s); first ID is the primary reference. Max 4 IDs total (provider-aware: Gemini up to 4, OpenRouter up to 4, OpenAI gpt-image-* up to 4 in this gateway, MiniMax 1 — character only). DashScope and BytePlus do NOT currently support refs and will silently fall back to text-only. Animated GIFs and SVG are not supported.",
+				"description": "Optional. Reference images for face/composition/style preservation. Accepts media IDs from <media:image id='...'> tags, file paths from path='...' attrs, or the bare filename (basename of the path). Looks across the current turn AND user-uploaded history. First entry is the primary reference. Max 4 (provider-aware: Gemini 4, OpenRouter 4, OpenAI gpt-image-* 4, MiniMax 1 — character only). DashScope and BytePlus drop refs silently. Animated GIFs and SVG not supported.",
 			},
 		},
 		"required": []string{"prompt"},
@@ -117,7 +117,7 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Res
 
 			if len(refImages) == 0 {
 				return ErrorResult(fmt.Sprintf(
-					"reference_image_ids %v could not be resolved and no images are attached to the current turn. Ask the user to resend the image before retrying.", ids))
+					"reference_image_ids %v could not be resolved (looked up by id, path, basename in %d available refs). Ask the user to resend the image before retrying.", ids, len(availableRefs)))
 			}
 		}
 	}
@@ -681,6 +681,10 @@ func toStringSlice(v any) []string {
 // resolveRefImageIDs looks up image MediaRefs by ID, validates MIME and size,
 // loads file bytes, base64-encodes, and returns []ImageContent.
 //
+// Lookup tries three keys in order: MediaRef.ID, MediaRef.Path,
+// filepath.Base(MediaRef.Path). The last covers cases where the LLM lists the
+// uploads dir via exec and passes the filename it sees there.
+//
 // Refs that don't resolve, fail validation, or fail to load are dropped with a
 // warn log. Duplicates are deduped (first occurrence wins) and order is preserved.
 //
@@ -693,8 +697,14 @@ func toStringSlice(v any) []string {
 // Allocates a fresh slice — does NOT alias the input refs.
 func resolveRefImageIDs(_ context.Context, ids []string, refs []providers.MediaRef, maxRefs int) []providers.ImageContent {
 	refByID := make(map[string]providers.MediaRef, len(refs))
+	refByPath := make(map[string]providers.MediaRef, len(refs))
+	refByBase := make(map[string]providers.MediaRef, len(refs))
 	for _, r := range refs {
 		refByID[r.ID] = r
+		if r.Path != "" {
+			refByPath[r.Path] = r
+			refByBase[filepath.Base(r.Path)] = r
+		}
 	}
 	seen := make(map[string]bool, len(ids))
 	out := make([]providers.ImageContent, 0, len(ids))
@@ -711,7 +721,14 @@ func resolveRefImageIDs(_ context.Context, ids []string, refs []providers.MediaR
 		}
 		ref, ok := refByID[id]
 		if !ok {
-			slog.Warn("create_image: reference image ID not found in current-turn refs", "id", id)
+			if ref, ok = refByPath[id]; ok {
+				slog.Debug("create_image: resolved reference image by path", "key", id, "id", ref.ID)
+			} else if ref, ok = refByBase[filepath.Base(id)]; ok {
+				slog.Debug("create_image: resolved reference image by basename", "key", id, "id", ref.ID)
+			}
+		}
+		if !ok {
+			slog.Warn("create_image: reference image not found by id/path/basename", "key", id)
 			continue
 		}
 		if !allowedRefMIMEs[ref.MimeType] {

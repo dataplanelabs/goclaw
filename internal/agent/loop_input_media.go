@@ -164,6 +164,20 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 	// knows images were received and stored (consistent with audio/video enrichment).
 	l.enrichImageIDs(messages, mediaRefs)
 
+	// 2e-i. Attach current-turn mediaRefs to the last user message struct so
+	// the persisted history (sessions.messages JSONB) carries refs across turns.
+	// Without this, future turns reload history with empty MediaRefs and
+	// collectUserUploadedRefs returns nothing — create_image then has no
+	// historical refs to resolve against. See trace 019e5650.
+	if len(mediaRefs) > 0 {
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == "user" {
+				messages[i].MediaRefs = append(messages[i].MediaRefs, mediaRefs...)
+				break
+			}
+		}
+	}
+
 	// 2e-ii. In file-ref mode, enrich ALL user messages' image tags with file paths.
 	// This enables read_image(path=...) for both current and historical images.
 	if deferToReadImageTool {
