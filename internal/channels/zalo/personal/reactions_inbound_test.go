@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 )
 
-// makeEvent is a small helper to keep tests readable.
 func makeEvent(threadID, uidFrom, msgID, code string, opts ...func(*ReactionEvent)) ReactionEvent {
 	ev := ReactionEvent{
 		MsgID:    msgID,
@@ -133,7 +133,8 @@ func newTestChannel(t *testing.T, cfg config.ZaloPersonalConfig) (*Channel, *[]R
 	var got []ReactionEvent
 	var mu sync.Mutex
 	ch := &Channel{
-		config: cfg,
+		BaseChannel: channels.NewBaseChannel(channels.TypeZaloPersonal, nil, nil),
+		config:      cfg,
 	}
 	ch.reactionCoalescer = newReactionCoalescer(10*time.Millisecond, func(ev ReactionEvent) {
 		mu.Lock()
@@ -145,7 +146,7 @@ func newTestChannel(t *testing.T, cfg config.ZaloPersonalConfig) (*Channel, *[]R
 
 func TestOnReactionEvent_SuppressSelf(t *testing.T) {
 	t.Parallel()
-	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{})
+	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{ReactionsMode: reactionsModeInbound})
 	ev := makeEvent("t", "u", "m", protocol.ReactionHeart, func(e *ReactionEvent) {
 		e.IsSelf = true
 	})
@@ -157,7 +158,7 @@ func TestOnReactionEvent_SuppressSelf(t *testing.T) {
 
 func TestOnReactionEvent_AllowSelfOptIn(t *testing.T) {
 	t.Parallel()
-	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{ListenSelfReactions: true})
+	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{ListenSelfReactions: true, ReactionsMode: reactionsModeInbound})
 	ev := makeEvent("t", "u", "m", protocol.ReactionHeart, func(e *ReactionEvent) {
 		e.IsSelf = true
 	})
@@ -169,7 +170,7 @@ func TestOnReactionEvent_AllowSelfOptIn(t *testing.T) {
 
 func TestOnReactionEvent_SuppressHistoric(t *testing.T) {
 	t.Parallel()
-	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{})
+	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{ReactionsMode: reactionsModeInbound})
 	ev := makeEvent("t", "u", "m", protocol.ReactionHeart, func(e *ReactionEvent) {
 		e.IsHistoric = true
 	})
@@ -186,6 +187,45 @@ func TestOnReactionEvent_KillSwitch(t *testing.T) {
 	ch.onReactionEvent(ev)
 	if got := ch.reactionCoalescer.pendingCount(); got != 0 {
 		t.Errorf("disabled reactions must be dropped, pending=%d", got)
+	}
+}
+
+func TestOnReactionEvent_DefaultModeIsFeedback(t *testing.T) {
+	t.Parallel()
+	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{})
+	ev := makeEvent("t", "u", "m", protocol.ReactionHeart)
+	ch.onReactionEvent(ev)
+	if got := ch.reactionCoalescer.pendingCount(); got != 0 {
+		t.Errorf("feedback mode must not enter coalescer, pending=%d", got)
+	}
+}
+
+func TestOnReactionEvent_SilentMode(t *testing.T) {
+	t.Parallel()
+	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{ReactionsMode: reactionsModeSilent})
+	ev := makeEvent("t", "u", "m", protocol.ReactionHeart)
+	ch.onReactionEvent(ev)
+	if got := ch.reactionCoalescer.pendingCount(); got != 0 {
+		t.Errorf("silent mode must drop, pending=%d", got)
+	}
+}
+
+func TestReactionSentiment(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		protocol.ReactionHeart: "positive",
+		protocol.ReactionLike:  "positive",
+		protocol.ReactionHaha:  "positive",
+		protocol.ReactionAngry: "negative",
+		protocol.ReactionCry:   "negative",
+		protocol.ReactionWorry: "negative",
+		protocol.ReactionWow:   "neutral",
+		protocol.ReactionNone:  "unknown",
+	}
+	for code, want := range cases {
+		if got := reactionSentiment(code); got != want {
+			t.Errorf("reactionSentiment(%q)=%q, want %q", code, got, want)
+		}
 	}
 }
 

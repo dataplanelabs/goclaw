@@ -3,6 +3,7 @@ package personal
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -109,14 +110,35 @@ func coalesceKey(ev ReactionEvent) string {
 	return ev.ThreadID + "|" + ev.UIDFrom + "|" + ev.MsgID
 }
 
+const (
+	reactionsModeSilent   = "silent"
+	reactionsModeFeedback = "feedback"
+	reactionsModeInbound  = "inbound"
+)
+
+func (c *Channel) reactionsMode() string {
+	if c.config.DisableReactions {
+		return reactionsModeSilent
+	}
+	switch c.config.ReactionsMode {
+	case reactionsModeSilent, reactionsModeFeedback, reactionsModeInbound:
+		return c.config.ReactionsMode
+	}
+	return reactionsModeFeedback
+}
+
 func (c *Channel) onReactionEvent(ev ReactionEvent) {
 	if ev.IsHistoric {
 		return
 	}
-	if c.config.DisableReactions {
+	if ev.IsSelf && !c.config.ListenSelfReactions {
 		return
 	}
-	if ev.IsSelf && !c.config.ListenSelfReactions {
+	switch c.reactionsMode() {
+	case reactionsModeSilent:
+		return
+	case reactionsModeFeedback:
+		c.logReactionFeedback(ev)
 		return
 	}
 	if c.reactionCoalescer == nil {
@@ -124,6 +146,44 @@ func (c *Channel) onReactionEvent(ev ReactionEvent) {
 		return
 	}
 	c.reactionCoalescer.Submit(ev)
+}
+
+func (c *Channel) logReactionFeedback(ev ReactionEvent) {
+	icon := ev.Code
+	if u := protocol.ReactionCodeToUnicode(ev.Code); u != "" {
+		icon = u
+	}
+	slog.Info("zalo_personal.reaction.feedback",
+		"channel", c.Name(),
+		"thread_id", ev.ThreadID,
+		"thread_type", reactionThreadTypeName(ev.ThreadType),
+		"reactor_uid", ev.UIDFrom,
+		"reactor_name", channels.SanitizeDisplayName(ev.DName),
+		"target_msg_id", ev.MsgID,
+		"target_cli_msg_id", ev.CliMsgID,
+		"code", ev.Code,
+		"icon", icon,
+		"sentiment", reactionSentiment(ev.Code),
+	)
+}
+
+func reactionThreadTypeName(t protocol.ThreadType) string {
+	if t == protocol.ThreadTypeGroup {
+		return "group"
+	}
+	return "direct"
+}
+
+func reactionSentiment(code string) string {
+	switch code {
+	case protocol.ReactionHeart, protocol.ReactionLike, protocol.ReactionHaha:
+		return "positive"
+	case protocol.ReactionAngry, protocol.ReactionCry, protocol.ReactionWorry:
+		return "negative"
+	case protocol.ReactionWow:
+		return "neutral"
+	}
+	return "unknown"
 }
 
 func (c *Channel) emitCoalescedReaction(ev ReactionEvent) {
