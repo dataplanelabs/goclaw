@@ -112,11 +112,14 @@ func TestBuildQuoteMetadata_NilReturnsNil(t *testing.T) {
 
 // TestBuildQuoteMetadata_InvalidPropertyExtReturnsNil: when PropertyExt
 // contains invalid JSON, json.Marshal fails — the helper must return nil
+// emptyOwner pretends the quote has no owner UID — exercises the no-attribution path.
+var emptyOwner = quoteOwnerCtx{}
+
 func TestQuoteContextPrefix_FallbackToAttach(t *testing.T) {
 	t.Parallel()
 	q := &protocol.TQuote{Msg: "", Attach: `{"title":"recovered from attach"}`}
 	raw, _ := json.Marshal(q)
-	if got := quoteContextPrefix(raw); got != "[Replying to: \"recovered from attach\"]\n" {
+	if got := quoteContextPrefix(raw, emptyOwner); got != "[Replying to message: \"recovered from attach\"]\n" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -136,7 +139,7 @@ func TestQuoteContextPrefix_MediaQuotes(t *testing.T) {
 		{"voice no caption", 5, "", "", "[Replying to a voice message]\n"},
 		{"checklist no caption", 19, "", "", "[Replying to a checklist]\n"},
 		{"unknown media type", 99, "", "", "[Replying to a media message]\n"},
-		{"text quote wins over media label", 2, "actual text body", "", "[Replying to: \"actual text body\"]\n"},
+		{"text quote on image type", 2, "actual text body", "", "[Replying to an image: \"actual text body\"]\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -144,7 +147,81 @@ func TestQuoteContextPrefix_MediaQuotes(t *testing.T) {
 			raw, _ := json.Marshal(&protocol.TQuote{
 				CliMsgType: tc.cliMsgType, Msg: tc.msg, Attach: tc.attach,
 			})
-			if got := quoteContextPrefix(raw); got != tc.want {
+			if got := quoteContextPrefix(raw, emptyOwner); got != tc.want {
+				t.Errorf("got %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestQuoteContextPrefix_OwnerAttribution(t *testing.T) {
+	t.Parallel()
+	mk := func(ownerUID, msg string) json.RawMessage {
+		b, _ := json.Marshal(&protocol.TQuote{OwnerID: json.Number(ownerUID), Msg: msg})
+		return b
+	}
+	resolver := func(uid string) string {
+		if uid == "999" {
+			return "Mai Hà Lan"
+		}
+		return ""
+	}
+	cases := []struct {
+		name string
+		raw  json.RawMessage
+		ctx  quoteOwnerCtx
+		want string
+	}{
+		{
+			name: "bot's own message",
+			raw:  mk("100", "I helped earlier"),
+			ctx:  quoteOwnerCtx{senderUID: "200", botUID: "100"},
+			want: "[Replying to your message: \"I helped earlier\"]\n",
+		},
+		{
+			name: "sender replied to their own message",
+			raw:  mk("200", "earlier user line"),
+			ctx:  quoteOwnerCtx{senderUID: "200", botUID: "100"},
+			want: "[Replying to their own message: \"earlier user line\"]\n",
+		},
+		{
+			name: "third party with resolved name",
+			raw:  mk("999", "hello from group member"),
+			ctx:  quoteOwnerCtx{senderUID: "200", botUID: "100", resolveName: resolver},
+			want: "[Replying to Mai Hà Lan's message: \"hello from group member\"]\n",
+		},
+		{
+			name: "third party without resolver",
+			raw:  mk("888", "anonymous group line"),
+			ctx:  quoteOwnerCtx{senderUID: "200", botUID: "100"},
+			want: "[Replying to another participant's message: \"anonymous group line\"]\n",
+		},
+		{
+			name: "bot quoted an image (no caption)",
+			raw: func() json.RawMessage {
+				b, _ := json.Marshal(&protocol.TQuote{OwnerID: json.Number("100"), CliMsgType: 2})
+				return b
+			}(),
+			ctx:  quoteOwnerCtx{senderUID: "200", botUID: "100"},
+			want: "[Replying to your image]\n",
+		},
+		{
+			name: "third party image with caption",
+			raw: func() json.RawMessage {
+				b, _ := json.Marshal(&protocol.TQuote{
+					OwnerID: json.Number("999"), CliMsgType: 2,
+					Attach: `{"title":"holiday photo"}`,
+				})
+				return b
+			}(),
+			ctx:  quoteOwnerCtx{senderUID: "200", botUID: "100", resolveName: resolver},
+			want: "[Replying to Mai Hà Lan's image: \"holiday photo\"]\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quoteContextPrefix(tc.raw, tc.ctx); got != tc.want {
 				t.Errorf("got %q\nwant %q", got, tc.want)
 			}
 		})
@@ -188,14 +265,14 @@ func TestQuoteContextPrefix(t *testing.T) {
 		{"empty", nil, ""},
 		{"null", json.RawMessage("null"), ""},
 		{"blank msg", mk("   "), ""},
-		{"short", mk("hello world"), "[Replying to: \"hello world\"]\n"},
-		{"full body preserved (no truncation)", mk(long), fmt.Sprintf("[Replying to: %q]\n", long)},
+		{"short", mk("hello world"), "[Replying to message: \"hello world\"]\n"},
+		{"full body preserved (no truncation)", mk(long), fmt.Sprintf("[Replying to message: %q]\n", long)},
 		{"invalid json", json.RawMessage("not-json"), ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := quoteContextPrefix(tc.raw); got != tc.want {
+			if got := quoteContextPrefix(tc.raw, emptyOwner); got != tc.want {
 				t.Errorf("got %q\nwant %q", got, tc.want)
 			}
 		})
@@ -217,7 +294,7 @@ func TestHandleDM_QuoteContextInjectedIntoAgentInput(t *testing.T) {
 		Quote:   quote,
 	}))
 	got := drainInbound(t, mb)
-	if !strings.Contains(got.Content, "[Replying to:") {
+	if !strings.Contains(got.Content, "[Replying to") {
 		t.Errorf("agent input missing quote prefix:\n%s", got.Content)
 	}
 	if !strings.Contains(got.Content, quoted) {

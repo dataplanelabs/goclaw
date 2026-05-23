@@ -52,11 +52,45 @@ func extractTextFromRawContent(raw json.RawMessage) string {
 // buildQuoteMetadata returns the two metadata keys that carry an inbound
 // TQuote downstream: reply_to_message_id (the quoted message's global ID, for
 // gateway routing) and reply_to_quote_payload (the full JSON-serialized TQuote
-// quoteContextPrefix returns a "[Replying to ...]" line the agent can read.
-// Tries q.Msg → caption-from-attach → media-type placeholder so the agent
-// always knows the user is replying to something specific even for media-only
-// quotes (image / sticker / voice / file).
-func quoteContextPrefix(raw json.RawMessage) string {
+type quoteOwnerCtx struct {
+	senderUID   string
+	botUID      string
+	resolveName func(uid string) string
+}
+
+// quoteOwnerCtxFor builds the attribution context for a given inbound sender.
+// botUID resolves from the live session (empty during pre-auth — acceptable).
+func (c *Channel) quoteOwnerCtxFor(senderUID string, resolveName func(uid string) string) quoteOwnerCtx {
+	var botUID string
+	if sess := c.session(); sess != nil {
+		botUID = sess.UID
+	}
+	return quoteOwnerCtx{senderUID: senderUID, botUID: botUID, resolveName: resolveName}
+}
+
+// groupNameResolver returns a func that maps a UID to a display name using the
+// channel's recent group-history entries. Returns nil when no history is
+// available so the caller falls back to a generic "another participant" label.
+func (c *Channel) groupNameResolver(threadID string) func(uid string) string {
+	gh := c.GroupHistory()
+	if gh == nil {
+		return nil
+	}
+	return func(uid string) string {
+		for _, entry := range gh.GetEntries(threadID) {
+			if entry.SenderID == uid && entry.Sender != "" {
+				return entry.Sender
+			}
+		}
+		return ""
+	}
+}
+
+// quoteContextPrefix returns a "[Replying to ...]" line attributing the quoted
+// message's author so the agent knows who originated it (bot / sender's own
+// earlier message / third party in a group). Falls through q.Msg →
+// caption-from-attach → media-type placeholder for body.
+func quoteContextPrefix(raw json.RawMessage, owner quoteOwnerCtx) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		return ""
 	}
@@ -69,39 +103,91 @@ func quoteContextPrefix(raw json.RawMessage) string {
 		slog.Warn("zalo_personal.quote.parse_failed", "err", err, "raw_preview", preview)
 		return ""
 	}
-	if body := strings.TrimSpace(q.Msg); body != "" {
-		return fmt.Sprintf("[Replying to: %q]\n", body)
+	body := strings.TrimSpace(q.Msg)
+	if body == "" {
+		body = extractAttachBody(q.Attach)
 	}
-	if caption := extractAttachBody(q.Attach); caption != "" {
-		if label := mediaLabel(q.CliMsgType); label != "" {
-			return fmt.Sprintf("[Replying to %s: %q]\n", label, caption)
+	noun := mediaNoun(q.CliMsgType)
+	who := whoAuthored(q.OwnerID.String(), owner)
+	return formatReplyingTo(who, noun, body)
+}
+
+// whoAuthored returns a human-readable phrase for who wrote the quoted message:
+//   - "your"                              → bot's earlier message (agent is "you")
+//   - "their own"                         → current sender quoted themselves
+//   - "<name>'s"                          → third party in a group (name resolved)
+//   - "another participant's"             → third party, name unresolvable
+func whoAuthored(ownerUID string, ctx quoteOwnerCtx) string {
+	if ownerUID == "" || (ctx.botUID == "" && ctx.senderUID == "" && ctx.resolveName == nil) {
+		return ""
+	}
+	switch ownerUID {
+	case ctx.botUID:
+		return "your"
+	case ctx.senderUID:
+		return "their own"
+	}
+	if ctx.resolveName != nil {
+		if name := strings.TrimSpace(ctx.resolveName(ownerUID)); name != "" {
+			return name + "'s"
 		}
-		return fmt.Sprintf("[Replying to: %q]\n", caption)
 	}
-	if label := mediaLabel(q.CliMsgType); label != "" {
-		return fmt.Sprintf("[Replying to %s]\n", label)
+	return "another participant's"
+}
+
+// formatReplyingTo composes the prefix line.
+//   - who:  "your" | "their own" | "<name>'s" | "another participant's" | ""
+//   - noun: bare media noun ("image", "sticker", ...) or ""
+//   - body: actual text body or caption from attach
+func formatReplyingTo(who, noun, body string) string {
+	switch {
+	case body != "" && noun != "" && who != "":
+		return fmt.Sprintf("[Replying to %s %s: %q]\n", who, noun, body)
+	case body != "" && noun != "":
+		return fmt.Sprintf("[Replying to %s %s: %q]\n", mediaArticle(noun), noun, body)
+	case body != "" && who != "":
+		return fmt.Sprintf("[Replying to %s message: %q]\n", who, body)
+	case body != "":
+		return fmt.Sprintf("[Replying to message: %q]\n", body)
+	case noun != "" && who != "":
+		return fmt.Sprintf("[Replying to %s %s]\n", who, noun)
+	case noun != "":
+		return fmt.Sprintf("[Replying to %s %s]\n", mediaArticle(noun), noun)
 	}
 	return ""
 }
 
-func mediaLabel(cliMsgType int) string {
+// mediaNoun returns the bare noun for a quoted message's media type so the
+// caller can compose with an article or a possessive. Empty for text/unknown.
+func mediaNoun(cliMsgType int) string {
 	switch cliMsgType {
 	case 2:
-		return "an image"
+		return "image"
 	case 3:
-		return "a sticker"
+		return "sticker"
 	case 5:
-		return "a voice message"
+		return "voice message"
 	case 19:
-		return "a checklist"
+		return "checklist"
 	case 1:
 		return ""
 	default:
 		if cliMsgType > 0 {
-			return "a media message"
+			return "media message"
 		}
 		return ""
 	}
+}
+
+func mediaArticle(noun string) string {
+	if noun == "" {
+		return ""
+	}
+	switch noun[0] {
+	case 'a', 'e', 'i', 'o', 'u':
+		return "an"
+	}
+	return "a"
 }
 
 func extractAttachBody(attach string) string {
@@ -185,7 +271,7 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		return
 	}
 
-	if prefix := quoteContextPrefix(msg.Data.Quote); prefix != "" {
+	if prefix := quoteContextPrefix(msg.Data.Quote, c.quoteOwnerCtxFor(senderID, nil)); prefix != "" {
 		content = prefix + content
 	}
 	senderName := msg.Data.DName
@@ -272,7 +358,7 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		"preview", channels.Truncate(content, 50),
 	)
 
-	if prefix := quoteContextPrefix(msg.Data.Quote); prefix != "" {
+	if prefix := quoteContextPrefix(msg.Data.Quote, c.quoteOwnerCtxFor(senderID, c.groupNameResolver(threadID))); prefix != "" {
 		content = prefix + content
 	}
 	annotated := fmt.Sprintf("[From: %s]\n%s", senderName, content)
