@@ -9,7 +9,8 @@ import (
 	"os"
 
 	"github.com/disintegration/imaging"
-	_ "golang.org/x/image/webp" // register WebP decoder for SanitizeImage
+	_ "github.com/gen2brain/jpegxl" // register JPEG XL decoder (wazero-WASM libjxl, no CGo)
+	_ "golang.org/x/image/webp"     // register WebP decoder for SanitizeImage
 )
 
 // Image sanitization constants (moved from telegram/image_sanitize.go).

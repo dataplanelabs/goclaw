@@ -6,6 +6,21 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- **General JPEG XL (.jxl) inbound support** — Zalo HD photos (and any other
+  `.jxl` input) now decode transparently before reaching the LLM, since
+  Anthropic / OpenAI / Gemini reject `image/jxl`. Two-layer fix:
+  (1) `internal/agent/media_sanitize.go` blank-imports `github.com/gen2brain/jpegxl`
+  (wazero-WASM libjxl, CGo-free) — self-registers a decoder for both raw codestream
+  (`\xff\x0a`) and ISOBMFF container (`????JXL`) magic bytes; `SanitizeImage`
+  decodes JXL → JPEG q=85 transparently.
+  (2) `internal/channels/zalo/personal/handlers.go` adds `pickInboundImageURL` +
+  `urlIsJXL` + reordered `attachMediaURLFields` to prefer non-`.jxl` CDN URLs
+  when alternatives exist (skips a 150-400ms WASM decode). MIME plumbing
+  (`mime_detect.go`, `media.go`, `store.go`) maps `.jxl ↔ image/jxl`.
+  Tool-layer `read_image` re-encodes JXL via `imaging.Open` + `jpeg.Encode`.
+  Defensive: `persistMedia` drops JXL/HEIC on `SanitizeImage` failure rather
+  than shipping raw bytes that providers reject. Trigger trace `019e56f5`.
+
 - **Skill agent manage grants** — Adds per-agent skill edit/delete grants with
   backend checks, HTTP/WS support, SQLite and PostgreSQL schema updates, and web
   dashboard controls for granting and revoking manage access.

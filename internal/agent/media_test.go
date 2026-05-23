@@ -10,6 +10,33 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 )
 
+func TestInferImageMime(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		path string
+		want string
+	}{
+		{"photo.jpg", "image/jpeg"},
+		{"PHOTO.JPG", "image/jpeg"},
+		{"photo.jpeg", "image/jpeg"},
+		{"image.png", "image/png"},
+		{"anim.gif", "image/gif"},
+		{"sticker.webp", "image/webp"},
+		{"hd-photo.jxl", "image/jxl"},
+		{"document.pdf", ""},
+		{"no-extension", ""},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
+			if got := inferImageMime(tc.path); got != tc.want {
+				t.Errorf("inferImageMime(%q) = %q, want %q", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestEnrichImageIDs_BareTag verifies enrichment of a bare <media:image> tag
 // (non-Discord channels where SourceURL is empty).
 func TestEnrichImageIDs_BareTag(t *testing.T) {

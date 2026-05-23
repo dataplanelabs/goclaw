@@ -218,7 +218,13 @@ func (l *Loop) persistMedia(sessionKey string, files []bus.MediaFile, workspace 
 		if kind == "image" {
 			sanitized, err := SanitizeImage(f.Path)
 			if err != nil {
-				slog.Warn("media: sanitize image failed, using original", "path", f.Path, "error", err)
+				slog.Warn("media: sanitize image failed", "path", f.Path, "mime", mime, "error", err)
+				// JXL and HEIC fall-throughs would ship raw bytes that providers reject;
+				// drop the file entirely rather than fail the LLM call. Other formats
+				// (JPEG/PNG/WebP/GIF) are provider-accepted so fall back to original.
+				if mime == "image/jxl" || mime == "image/heic" || mime == "image/heif" {
+					continue
+				}
 			} else {
 				srcPath = sanitized
 				sanitizedTemp = sanitized
@@ -642,6 +648,8 @@ func inferImageMime(path string) string {
 		return "image/gif"
 	case ".webp":
 		return "image/webp"
+	case ".jxl":
+		return "image/jxl"
 	default:
 		return ""
 	}

@@ -153,12 +153,14 @@ func (c Content) ParseAttachment() *Attachment {
 }
 
 // imageExts lists file extensions recognized as images by the agent's vision pipeline.
+// `.jxl` is included so Zalo HD photos (decoded to JPEG via agent.SanitizeImage)
+// surface correct media-kind labels in placeholders.
 var imageExts = map[string]bool{
-	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".jxl": true,
 }
 
 // IsImage reports whether the attachment href points to an image file.
-// Checks both file extension and Zalo CDN path patterns (e.g. /jpg/, /png/).
+// Checks both file extension and Zalo CDN path patterns (e.g. /jpg/, /png/, /jxl/).
 func (a *Attachment) IsImage() bool {
 	if a == nil || a.Href == "" {
 		return false
@@ -170,7 +172,8 @@ func (a *Attachment) IsImage() bool {
 	// Zalo CDN paths like https://f20-zpc.zdn.vn/jpg/...
 	lower := strings.ToLower(path)
 	return strings.Contains(lower, "/jpg/") || strings.Contains(lower, "/png/") ||
-		strings.Contains(lower, "/gif/") || strings.Contains(lower, "/webp/")
+		strings.Contains(lower, "/gif/") || strings.Contains(lower, "/webp/") ||
+		strings.Contains(lower, "/jxl/")
 }
 
 // AttachmentText returns a human-readable placeholder for non-text content.
