@@ -48,6 +48,42 @@ func TestEnsureSchema_FreshDB(t *testing.T) {
 			t.Errorf("vault_documents missing column %q", want)
 		}
 	}
+
+	for _, table := range []string{"hooks", "hook_agents"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil {
+			t.Fatalf("lookup %s table: %v", table, err)
+		}
+		if count != 1 {
+			t.Errorf("fresh schema missing %q table", table)
+		}
+	}
+}
+
+func TestEnsureSchema_PreHooksUpgradeCreatesHookTables(t *testing.T) {
+	db := openTestDBAtVersion(t, 19)
+	for _, table := range []string{"tenant_hook_budget", "hook_executions", "hook_agents", "hooks"} {
+		if _, err := db.Exec(`DROP TABLE IF EXISTS ` + table); err != nil {
+			t.Fatalf("drop %s: %v", table, err)
+		}
+	}
+	if _, err := db.Exec(`UPDATE schema_version SET version = 19`); err != nil {
+		t.Fatalf("set pre-hooks schema version: %v", err)
+	}
+
+	if err := EnsureSchema(db); err != nil {
+		t.Fatalf("EnsureSchema (pre-hooks to current) failed: %v", err)
+	}
+
+	for _, table := range []string{"hooks", "hook_agents"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil {
+			t.Fatalf("lookup %s table: %v", table, err)
+		}
+		if count != 1 {
+			t.Errorf("upgrade schema missing %q table", table)
+		}
+	}
 }
 
 // TestEnsureSchema_MigrationV11Only verifies migrations from v11 onward
@@ -345,6 +381,47 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 	if targetVersion < 29 {
 		// Migration 28→29 adds llm_providers.write_only_hash.
 		db.Exec(`ALTER TABLE llm_providers DROP COLUMN write_only_hash`)
+	}
+
+	if targetVersion < 30 {
+		// Migration 29→30 adds secure_cli_agent_grants.encrypted_env.
+		db.Exec(`ALTER TABLE secure_cli_agent_grants DROP COLUMN encrypted_env`)
+	}
+
+	if targetVersion < 31 {
+		// Migration 30→31 creates webhooks + webhook_calls tables.
+		// Drop them so the create-table migration is exercised on upgrade.
+		db.Exec(`DROP TABLE IF EXISTS webhook_calls`)
+		db.Exec(`DROP TABLE IF EXISTS webhooks`)
+	}
+
+	if targetVersion < 34 {
+		// Migration 33→34 creates workstations + agent_workstation_links.
+		db.Exec(`DROP INDEX IF EXISTS idx_agent_workstation_default`)
+		db.Exec(`DROP INDEX IF EXISTS idx_agent_workstation_tenant`)
+		db.Exec(`DROP TABLE IF EXISTS agent_workstation_links`)
+		db.Exec(`DROP INDEX IF EXISTS idx_workstations_tenant_active`)
+		db.Exec(`DROP TABLE IF EXISTS workstations`)
+	}
+
+	if targetVersion < 35 {
+		// Migration 34→35 creates workstation_permissions.
+		db.Exec(`DROP TABLE IF EXISTS workstation_permissions`)
+	}
+
+	if targetVersion < 36 {
+		// Migration 35→36 creates workstation_activity.
+		db.Exec(`DROP TABLE IF EXISTS workstation_activity`)
+	}
+
+	if targetVersion < 37 {
+		// Migration 36→37 adds agents.model_fallback.
+		db.Exec(`ALTER TABLE agents DROP COLUMN model_fallback`)
+	}
+
+	if targetVersion < 38 {
+		// Migration 37→38 adds skill_agent_grants.can_manage.
+		db.Exec(`ALTER TABLE skill_agent_grants DROP COLUMN can_manage`)
 	}
 
 	// Set version back to target.

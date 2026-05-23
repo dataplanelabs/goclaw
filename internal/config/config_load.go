@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +14,54 @@ import (
 
 	"github.com/titanous/json5"
 )
+
+const GatewayAllowInsecureNoAuthEnv = "GOCLAW_ALLOW_INSECURE_NO_AUTH"
+
+// GatewayNoAuthFallbackAllowed reports whether empty-token gateway auth may
+// run in local/dev compatibility mode.
+func GatewayNoAuthFallbackAllowed(g GatewayConfig) bool {
+	if strings.TrimSpace(g.Token) != "" {
+		return false
+	}
+	if insecureNoAuthOptIn() {
+		return true
+	}
+	return isLoopbackGatewayHost(g.Host)
+}
+
+// ValidateGatewayAuth fails configurations that would expose the gateway
+// without any bearer token.
+func ValidateGatewayAuth(g GatewayConfig) error {
+	if strings.TrimSpace(g.Token) != "" || GatewayNoAuthFallbackAllowed(g) {
+		return nil
+	}
+	return fmt.Errorf("gateway token is required when GOCLAW_HOST=%q; set GOCLAW_GATEWAY_TOKEN or explicit %s=1 for local development only", g.Host, GatewayAllowInsecureNoAuthEnv)
+}
+
+func insecureNoAuthOptIn() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(GatewayAllowInsecureNoAuthEnv))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLoopbackGatewayHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	addr, err := netip.ParseAddr(host)
+	return err == nil && addr.IsLoopback()
+}
 
 // Default returns a Config with sensible defaults.
 func Default() *Config {
@@ -284,7 +334,6 @@ func (c *Config) applyEnvOverrides() {
 		c.Tools.Browser.Enabled = true
 	}
 }
-
 
 // Save writes the config to a JSON file.
 func Save(path string, cfg *Config) error {
