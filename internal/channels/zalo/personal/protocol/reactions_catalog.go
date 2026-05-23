@@ -2,12 +2,9 @@ package protocol
 
 import "strings"
 
-// Basic reaction set — mirrors the 7 codes Zalo OA exposes (haha/worry/cry/
-// like/heart/angry/wow) plus the empty NONE removal marker.
 const (
 	ReactionNone  = ""
 	ReactionHaha  = ":>"
-	ReactionWorry = "--b"
 	ReactionCry   = ":-(("
 	ReactionLike  = "/-strong"
 	ReactionHeart = "/-heart"
@@ -22,7 +19,6 @@ type reactionMeta struct {
 
 var reactionMetaTable = map[string]reactionMeta{
 	ReactionHaha:  {0, 6},
-	ReactionWorry: {1, 6},
 	ReactionCry:   {2, 6},
 	ReactionLike:  {3, 6},
 	ReactionHeart: {5, 6},
@@ -51,27 +47,24 @@ var unicodeToZalo = map[string]string{
 	"😮": ReactionWow,
 	"😯": ReactionWow,
 	"😱": ReactionWow,
-	"😞": ReactionWorry,
-	"😔": ReactionWorry,
 }
 
 var englishNameToZalo = map[string]string{
-	"heart":       ReactionHeart,
-	"love":        ReactionHeart,
-	"like":        ReactionLike,
-	"thumbs_up":   ReactionLike,
-	"thumbsup":    ReactionLike,
-	"haha":        ReactionHaha,
-	"laugh":       ReactionHaha,
-	"wow":         ReactionWow,
-	"surprise":    ReactionWow,
-	"cry":         ReactionCry,
-	"sad":         ReactionCry,
-	"worry":       ReactionWorry,
-	"angry":       ReactionAngry,
-	"remove":      ReactionNone,
-	"none":        ReactionNone,
-	"unreact":     ReactionNone,
+	"heart":     ReactionHeart,
+	"love":      ReactionHeart,
+	"like":      ReactionLike,
+	"thumbs_up": ReactionLike,
+	"thumbsup":  ReactionLike,
+	"haha":      ReactionHaha,
+	"laugh":     ReactionHaha,
+	"wow":       ReactionWow,
+	"surprise":  ReactionWow,
+	"cry":       ReactionCry,
+	"sad":       ReactionCry,
+	"angry":     ReactionAngry,
+	"remove":    ReactionNone,
+	"none":      ReactionNone,
+	"unreact":   ReactionNone,
 }
 
 // ResolveReactionCode accepts unicode emoji, English friendly name, or raw
