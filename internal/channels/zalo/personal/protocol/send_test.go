@@ -189,9 +189,7 @@ func TestSendMessage_WithQuote_IncludesQmsgParams(t *testing.T) {
 		"qmsgOwner": "owner-111",
 		"qmsgId":    "9876543210",
 		"qmsgCliId": "1709300000123",
-		"qmsgType":  "chat.text",
 		"qmsg":      "original text",
-		"qmsgAttach": `{"hdUrl":"x"}`,
 		"qmsgTs":    "1709300000",
 	}
 	for k, want := range wantPairs {
@@ -204,9 +202,23 @@ func TestSendMessage_WithQuote_IncludesQmsgParams(t *testing.T) {
 			t.Errorf("payload[%q] = %v, want %v", k, got, want)
 		}
 	}
-	// qmsgTtl decodes as JSON number → float64; check separately.
-	if v, ok := payload["qmsgTtl"]; !ok || v.(float64) != 0 {
-		t.Errorf("qmsgTtl = %v, want 0", v)
+	// qmsgType must be a NUMBER, not the "chat.text" string — Zalo /quote rejects
+	// the string form with code 114. zca-js getClientMessageType returns 1 for
+	// text / unknown.
+	if v, ok := payload["qmsgType"]; !ok || v.(float64) != 1 {
+		t.Errorf("qmsgType = %v (%T), want 1 (number)", v, v)
+	}
+	// qmsgTTL must be uppercase TTL — the lowercase variant was a port typo.
+	if v, ok := payload["qmsgTTL"]; !ok || v.(float64) != 0 {
+		t.Errorf("qmsgTTL = %v, want 0", v)
+	}
+	if _, ok := payload["qmsgTtl"]; ok {
+		t.Errorf("legacy lowercase qmsgTtl must not appear in payload")
+	}
+	// qmsgAttach must be OMITTED for DM (zca-js sets it undefined for non-group
+	// then strips via removeUndefinedKeys); sending it on DM caused 114.
+	if _, ok := payload["qmsgAttach"]; ok {
+		t.Errorf("qmsgAttach must not appear in DM payload, got %v", payload["qmsgAttach"])
 	}
 	// Regular send fields still present.
 	if payload["message"] != "reply" {
@@ -214,6 +226,31 @@ func TestSendMessage_WithQuote_IncludesQmsgParams(t *testing.T) {
 	}
 	if payload["toid"] != "user-1" {
 		t.Errorf("toid = %v, want 'user-1'", payload["toid"])
+	}
+}
+
+// Group quotes preserve qmsgAttach (Zalo requires it for groups); DM omits.
+// Mirrors zca-js sendMessage.ts: `qmsgAttach: isGroupMessage ? JSON.stringify(prepareQMSGAttach(quote)) : undefined`.
+func TestSendMessage_WithQuote_Group_IncludesAttach(t *testing.T) {
+	t.Parallel()
+	srv, cap := captureServer(t, "1001", 0)
+	sess := newQuoteTestSession(t, srv)
+
+	q := &SendMessageQuote{
+		OwnerID: "owner-111", MsgID: "9876543210", CliMsgID: "1709300000123",
+		MsgType: "chat.photo", Msg: "", Attach: `{"hdUrl":"x"}`, TS: "1709300000",
+	}
+	_, err := SendMessage(context.Background(), sess, "group-1", ThreadTypeGroup, "reply", q)
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	payload := decryptRequestParams(t, (*cap)[0].body)
+	if v, ok := payload["qmsgAttach"]; !ok || v != `{"hdUrl":"x"}` {
+		t.Errorf("group qmsgAttach = %v, want raw JSON string", v)
+	}
+	// chat.photo → 32 per zca-js getClientMessageType.
+	if v, ok := payload["qmsgType"]; !ok || v.(float64) != 32 {
+		t.Errorf("qmsgType = %v, want 32 (chat.photo)", v)
 	}
 }
 
