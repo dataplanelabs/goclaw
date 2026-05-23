@@ -251,12 +251,8 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
 		ln.handleGroupMessages(ctx, envelope.Data, envelope.Encrypt)
 	case "1_601_0":
 		ln.handleControlEvents(ctx, envelope.Data, envelope.Encrypt)
-	case "1_612_0":
+	case "1_621_0":
 		ln.handleReactionEvents(ctx, envelope.Data, envelope.Encrypt)
-	case "1_610_0":
-		ln.handleOldReactions(ctx, envelope.Data, envelope.Encrypt, false)
-	case "1_611_0":
-		ln.handleOldReactions(ctx, envelope.Data, envelope.Encrypt, true)
 	case "1_3000_0":
 		slog.Warn("zalo_personal: duplicate connection detected, closing")
 		ln.mu.RLock()
