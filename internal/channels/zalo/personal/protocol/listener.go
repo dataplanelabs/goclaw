@@ -44,6 +44,8 @@ type Listener struct {
 	closedCh       chan CloseInfo
 	errorCh        chan error
 
+	unknownFrames sync.Map
+
 	pingCancel context.CancelFunc
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
@@ -262,6 +264,10 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
 		ln.mu.RUnlock()
 		if client != nil {
 			client.Close(CloseCodeDuplicate, "duplicate")
+		}
+	default:
+		if _, seen := ln.unknownFrames.LoadOrStore(key, struct{}{}); !seen {
+			slog.Info("zalo_personal: unhandled ws frame", "key", key, "data_len", len(envelope.Data), "encrypt", envelope.Encrypt)
 		}
 	}
 }
