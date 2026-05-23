@@ -125,17 +125,21 @@ func FactoryWithPendingStore(pendingStore store.PendingMessageStore, episodicSto
 		}
 
 		zaloCfg := config.ZaloPersonalConfig{
-			Enabled:             true,
-			AllowFrom:           ic.AllowFrom,
-			DMPolicy:            ic.DMPolicy,
-			GroupPolicy:         ic.GroupPolicy,
-			RequireMention:      ic.RequireMention,
-			HistoryLimit:        ic.HistoryLimit,
-			BlockReply:          ic.BlockReply,
-			QuoteUserMessage:    ic.QuoteUserMessage,
-			DisablePolls:        ic.DisablePolls,
-			DisableReactions:    ic.DisableReactions,
-			ListenSelfReactions: ic.ListenSelfReactions,
+			Enabled:                    true,
+			AllowFrom:                  ic.AllowFrom,
+			DMPolicy:                   ic.DMPolicy,
+			GroupPolicy:                ic.GroupPolicy,
+			RequireMention:             ic.RequireMention,
+			HistoryLimit:               ic.HistoryLimit,
+			BlockReply:                 ic.BlockReply,
+			QuoteUserMessage:           ic.QuoteUserMessage,
+			DisablePolls:               ic.DisablePolls,
+			DisableReactions:           ic.DisableReactions,
+			ListenSelfReactions:        ic.ListenSelfReactions,
+			ReactionsMode:              ic.ReactionsMode,
+			ReactionLevel:              ic.ReactionLevel,
+			ReactionTerminalDelayMinMs: ic.ReactionTerminalDelayMinMs,
+			ReactionTerminalDelayMaxMs: ic.ReactionTerminalDelayMaxMs,
 		}
 
 		ch, err := New(zaloCfg, msgBus, pairingSvc, pendingStore)
