@@ -52,9 +52,8 @@ func extractTextFromRawContent(raw json.RawMessage) string {
 // buildQuoteMetadata returns the two metadata keys that carry an inbound
 // TQuote downstream: reply_to_message_id (the quoted message's global ID, for
 // gateway routing) and reply_to_quote_payload (the full JSON-serialized TQuote
-// quoteContextPrefix returns a "[Replying to ...]" line the agent can read
-// to understand what the user is quoting. Empty when no quote, parse fails,
-// or the quoted body is blank (e.g. quoting a sticker / media-only message).
+// quoteContextPrefix returns a "[Replying to ...]" line the agent can read.
+// Tries q.Msg first, falls back to q.Attach (Zalo packs rich messages there).
 func quoteContextPrefix(raw json.RawMessage) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		return ""
@@ -65,9 +64,42 @@ func quoteContextPrefix(raw json.RawMessage) string {
 	}
 	body := strings.TrimSpace(q.Msg)
 	if body == "" {
+		body = extractAttachBody(q.Attach)
+	}
+	if body == "" {
+		preview := string(raw)
+		if len(preview) > 300 {
+			preview = preview[:300]
+		}
+		slog.Info("zalo_personal.quote.no_extractable_body", "raw_preview", preview)
 		return ""
 	}
 	return fmt.Sprintf("[Replying to: %q]\n", body)
+}
+
+func extractAttachBody(attach string) string {
+	attach = strings.TrimSpace(attach)
+	if attach == "" || attach == "null" {
+		return ""
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(attach), &obj); err != nil {
+		return ""
+	}
+	for _, key := range quotedReplyTextFields {
+		val, ok := obj[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if err := json.Unmarshal(val, &s); err != nil {
+			continue
+		}
+		if s = strings.TrimSpace(s); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // Returns nil when no quote, when the quote raw JSON fails to parse against

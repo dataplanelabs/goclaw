@@ -112,6 +112,35 @@ func TestBuildQuoteMetadata_NilReturnsNil(t *testing.T) {
 
 // TestBuildQuoteMetadata_InvalidPropertyExtReturnsNil: when PropertyExt
 // contains invalid JSON, json.Marshal fails — the helper must return nil
+func TestQuoteContextPrefix_FallbackToAttach(t *testing.T) {
+	t.Parallel()
+	q := &protocol.TQuote{Msg: "", Attach: `{"title":"recovered from attach"}`}
+	raw, _ := json.Marshal(q)
+	if got := quoteContextPrefix(raw); got != "[Replying to: \"recovered from attach\"]\n" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestExtractAttachBody(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ name, attach, want string }{
+		{"empty", "", ""},
+		{"null", "null", ""},
+		{"title", `{"title":"hello"}`, "hello"},
+		{"msg", `{"msg":"hi"}`, "hi"},
+		{"invalid json", "{not-json}", ""},
+		{"no text key", `{"width":100,"height":200}`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := extractAttachBody(tc.attach); got != tc.want {
+				t.Errorf("got %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // (no half-stamp) so the outbound reply gracefully degrades to a plain send
 // rather than carrying a stale reply_to_message_id with no payload.
 func TestQuoteContextPrefix(t *testing.T) {
