@@ -240,7 +240,7 @@ func reactionSentiment(code string) string {
 	switch code {
 	case protocol.ReactionHeart, protocol.ReactionLike, protocol.ReactionHaha:
 		return "positive"
-	case protocol.ReactionAngry, protocol.ReactionCry, protocol.ReactionWorry:
+	case protocol.ReactionAngry, protocol.ReactionCry:
 		return "negative"
 	case protocol.ReactionWow:
 		return "surprise"

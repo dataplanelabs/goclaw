@@ -289,7 +289,6 @@ func TestReactionSentiment(t *testing.T) {
 		protocol.ReactionHaha:  "positive",
 		protocol.ReactionAngry: "negative",
 		protocol.ReactionCry:   "negative",
-		protocol.ReactionWorry: "negative",
 		protocol.ReactionWow:   "surprise",
 		protocol.ReactionNone:  "unknown",
 	}
