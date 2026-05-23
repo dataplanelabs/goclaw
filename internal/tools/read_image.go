@@ -71,7 +71,7 @@ func NewReadImageTool(registry *providers.Registry) *ReadImageTool {
 func (t *ReadImageTool) Name() string { return "read_image" }
 
 func (t *ReadImageTool) Description() string {
-	return "Analyze images using vision AI. Works with: (1) images sent by the user (<media:image> tags), (2) workspace/generated image files (pass a file path)."
+	return "Analyze images using vision AI. Without `path`: analyzes only the images attached in the current user turn (<media:image> tags). With `path`: loads a specific image from disk — use this for older images from earlier turns or generated outputs in workspace."
 }
 
 func (t *ReadImageTool) Parameters() map[string]any {
@@ -84,7 +84,7 @@ func (t *ReadImageTool) Parameters() map[string]any {
 			},
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Optional file path to an image in the workspace. Use this for generated images or attachments. If omitted, analyzes images from the conversation.",
+				"description": "Optional file path to an image in the workspace. Use this for older images from earlier turns (e.g. a previously generated image the user references later). If omitted, analyzes only the images attached in the current turn.",
 			},
 		},
 		"required": []string{"prompt"},

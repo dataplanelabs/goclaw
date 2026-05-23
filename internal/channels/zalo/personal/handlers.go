@@ -89,8 +89,10 @@ func (c *Channel) groupNameResolver(threadID string) func(uid string) string {
 // quoteContextPrefix returns a "[Replying to ...]" line attributing the quoted
 // message's author so the agent knows who originated it (bot / sender's own
 // earlier message / third party in a group). Falls through q.Msg →
-// caption-from-attach → media-type placeholder for body.
-func quoteContextPrefix(raw json.RawMessage, owner quoteOwnerCtx) string {
+// caption-from-attach → media-type placeholder for body. When mediaAttached is
+// true, the body (caption) is rendered on a separate line as quoted-message
+// text so the LLM doesn't conflate it with the attached image's content.
+func quoteContextPrefix(raw json.RawMessage, owner quoteOwnerCtx, mediaAttached bool) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		return ""
 	}
@@ -109,7 +111,7 @@ func quoteContextPrefix(raw json.RawMessage, owner quoteOwnerCtx) string {
 	}
 	noun := mediaNoun(q.CliMsgType)
 	who := whoAuthored(q.OwnerID.String(), owner)
-	return formatReplyingTo(who, noun, body)
+	return formatReplyingTo(who, noun, body, mediaAttached)
 }
 
 // attachMediaURLFields lists the JSON keys Zalo uses inside TQuote.Attach to
@@ -205,7 +207,24 @@ func whoAuthored(ownerUID string, ctx quoteOwnerCtx) string {
 //   - who:  "your" | "their own" | "<name>'s" | "another participant's" | ""
 //   - noun: bare media noun ("image", "sticker", ...) or ""
 //   - body: actual text body or caption from attach
-func formatReplyingTo(who, noun, body string) string {
+//   - mediaAttached: true when the quoted media file is also attached to the
+//     current turn. In that case caption is emitted on a separate "[Quoted
+//     caption: ...]" line so the LLM treats it as the sender's text rather
+//     than as a description of the image content (prevents hallucinations
+//     like "running in rain" when the image is a static portrait).
+func formatReplyingTo(who, noun, body string, mediaAttached bool) string {
+	if mediaAttached && noun != "" {
+		var head string
+		if who != "" {
+			head = fmt.Sprintf("[Replying to %s %s]\n", who, noun)
+		} else {
+			head = fmt.Sprintf("[Replying to %s %s]\n", mediaArticle(noun), noun)
+		}
+		if body != "" {
+			head += fmt.Sprintf("[Quoted caption: %q]\n", body)
+		}
+		return head
+	}
 	switch {
 	case body != "" && noun != "" && who != "":
 		return fmt.Sprintf("[Replying to %s %s: %q]\n", who, noun, body)
@@ -337,12 +356,13 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		return
 	}
 
-	if prefix := quoteContextPrefix(msg.Data.Quote, c.quoteOwnerCtxFor(senderID, nil)); prefix != "" {
+	quotedPath, quotedTag := extractQuoteMedia(msg.Data.Quote)
+	if prefix := quoteContextPrefix(msg.Data.Quote, c.quoteOwnerCtxFor(senderID, nil), quotedPath != ""); prefix != "" {
 		content = prefix + content
 	}
-	if path, tag := extractQuoteMedia(msg.Data.Quote); path != "" {
-		content = content + "\n" + tag
-		media = append(media, path)
+	if quotedPath != "" {
+		content = content + "\n" + quotedTag
+		media = append(media, quotedPath)
 	}
 	senderName := msg.Data.DName
 	if senderName != "" {
@@ -428,12 +448,13 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		"preview", channels.Truncate(content, 50),
 	)
 
-	if prefix := quoteContextPrefix(msg.Data.Quote, c.quoteOwnerCtxFor(senderID, c.groupNameResolver(threadID))); prefix != "" {
+	quotedPath, quotedTag := extractQuoteMedia(msg.Data.Quote)
+	if prefix := quoteContextPrefix(msg.Data.Quote, c.quoteOwnerCtxFor(senderID, c.groupNameResolver(threadID)), quotedPath != ""); prefix != "" {
 		content = prefix + content
 	}
-	if path, tag := extractQuoteMedia(msg.Data.Quote); path != "" {
-		content = content + "\n" + tag
-		media = append(media, path)
+	if quotedPath != "" {
+		content = content + "\n" + quotedTag
+		media = append(media, quotedPath)
 	}
 	annotated := fmt.Sprintf("[From: %s]\n%s", senderName, content)
 	finalContent := annotated
