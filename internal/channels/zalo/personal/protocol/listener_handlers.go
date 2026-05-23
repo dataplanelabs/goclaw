@@ -275,7 +275,14 @@ func (ln *Listener) sendPing(ctx context.Context) {
 const stableThreshold = 60 * time.Second
 
 func (ln *Listener) handleDisconnect(ctx context.Context, ci CloseInfo) {
-	// Reset retry counters if connection was stable (>60s uptime)
+	// Zalo's server kills the socket via TCP RST faster than client.Close
+	// (CloseCodeDuplicate) flushes, so the disconnect normally arrives as 1006.
+	// Remap to 3000 when handleFrame just routed a 1_3000_0 push.
+	if ln.duplicateSeen.Swap(false) {
+		ci.Code = CloseCodeDuplicate
+		ci.Reason = "duplicate (remapped from " + ci.Reason + ")"
+	}
+
 	if !ln.connectedAt.IsZero() && time.Since(ln.connectedAt) > stableThreshold {
 		ln.resetRetryCounters()
 	}

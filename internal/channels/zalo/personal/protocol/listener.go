@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -45,6 +46,11 @@ type Listener struct {
 	errorCh        chan error
 
 	unknownFrames sync.Map
+
+	// Set when a 1_3000_0 frame routes through handleFrame; remaps the next
+	// disconnect (typically TCP 1006) to CloseCodeDuplicate so the channel
+	// layer waits before retrying instead of hitting Zalo's dedup window.
+	duplicateSeen atomic.Bool
 
 	pingCancel context.CancelFunc
 	cancel     context.CancelFunc
@@ -255,6 +261,7 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
 		ln.handleReactionEvents(ctx, envelope.Data, envelope.Encrypt)
 	case "1_3000_0":
 		slog.Warn("zalo_personal: duplicate connection detected, closing")
+		ln.duplicateSeen.Store(true)
 		ln.mu.RLock()
 		client := ln.client
 		ln.mu.RUnlock()
