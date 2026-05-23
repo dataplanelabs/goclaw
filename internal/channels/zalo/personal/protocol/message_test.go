@@ -322,10 +322,13 @@ func TestTMessage_UnmarshalQuote_Text(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
 		t.Fatal(err)
 	}
-	if msg.Quote == nil {
+	q, err := msg.ParseQuote()
+	if err != nil {
+		t.Fatalf("ParseQuote: %v", err)
+	}
+	if q == nil {
 		t.Fatal("Quote should not be nil")
 	}
-	q := msg.Quote
 	if q.OwnerID != "111" {
 		t.Errorf("OwnerID = %q, want 111", q.OwnerID)
 	}
@@ -392,24 +395,57 @@ func TestTMessage_UnmarshalQuote_Media(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
 		t.Fatal(err)
 	}
-	if msg.Quote == nil {
+	q, err := msg.ParseQuote()
+	if err != nil {
+		t.Fatalf("ParseQuote: %v", err)
+	}
+	if q == nil {
 		t.Fatal("Quote should not be nil")
 	}
-	if msg.Quote.CliMsgType != 2 {
-		t.Errorf("CliMsgType = %d, want 2 (image)", msg.Quote.CliMsgType)
+	if q.CliMsgType != 2 {
+		t.Errorf("CliMsgType = %d, want 2 (image)", q.CliMsgType)
 	}
-	// Attach should carry the JSON string verbatim.
 	wantAttach := `{"hdUrl":"https://example.com/photo.jpg","width":1080,"height":720}`
-	if msg.Quote.Attach != wantAttach {
-		t.Errorf("Attach = %q\nwant %q", msg.Quote.Attach, wantAttach)
+	if q.Attach != wantAttach {
+		t.Errorf("Attach = %q\nwant %q", q.Attach, wantAttach)
 	}
-	// PropertyExt absent → nil RawMessage.
-	if msg.Quote.PropertyExt != nil {
-		t.Errorf("PropertyExt should be nil when absent, got %s", msg.Quote.PropertyExt)
+	if q.PropertyExt != nil {
+		t.Errorf("PropertyExt should be nil when absent, got %s", q.PropertyExt)
 	}
-	// GlobalMsgID came in as string this time — json.Number handles both.
-	if msg.Quote.GlobalMsgID.String() != "9876543299" {
-		t.Errorf("GlobalMsgID = %q, want 9876543299", msg.Quote.GlobalMsgID.String())
+	if q.GlobalMsgID.String() != "9876543299" {
+		t.Errorf("GlobalMsgID = %q, want 9876543299", q.GlobalMsgID.String())
+	}
+}
+
+func TestTMessage_UnmarshalQuote_TolerantToShapeVariance(t *testing.T) {
+	// Regression for the silent-drop bug: when Zalo sends a quote with a
+	// shape we don't anticipate (e.g. attach as object), TMessage must STILL
+	// parse so the user's text reaches the agent. Quote becomes nil via
+	// ParseQuote — outbound loses the quote, inbound text survives.
+	raw := `{
+		"msgId": "9999",
+		"uidFrom": "456",
+		"idTo": "789",
+		"ts": "1709300300",
+		"content": "the user typed this",
+		"msgType": "chat.message",
+		"cmd": 501,
+		"st": 1,
+		"at": 0,
+		"quote": {
+			"ownerId": "111",
+			"attach": {"weird": "object instead of string"}
+		}
+	}`
+	var msg TMessage
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		t.Fatalf("TMessage unmarshal must NOT fail on polymorphic quote: %v", err)
+	}
+	if msg.Content.Text() != "the user typed this" {
+		t.Errorf("user text lost: %q", msg.Content.Text())
+	}
+	if _, err := msg.ParseQuote(); err == nil {
+		t.Error("ParseQuote should surface the schema mismatch error so callers can warn-log")
 	}
 }
 
@@ -429,8 +465,15 @@ func TestTMessage_UnmarshalNoQuote(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
 		t.Fatal(err)
 	}
-	if msg.Quote != nil {
-		t.Errorf("Quote should be nil for non-quoted message, got %+v", msg.Quote)
+	if len(msg.Quote) != 0 {
+		t.Errorf("Quote should be empty for non-quoted message, got %s", msg.Quote)
+	}
+	q, err := msg.ParseQuote()
+	if err != nil {
+		t.Errorf("ParseQuote on empty: %v", err)
+	}
+	if q != nil {
+		t.Errorf("ParseQuote should return nil for non-quoted, got %+v", q)
 	}
 }
 

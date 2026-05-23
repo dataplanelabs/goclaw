@@ -52,19 +52,24 @@ func extractTextFromRawContent(raw json.RawMessage) string {
 // buildQuoteMetadata returns the two metadata keys that carry an inbound
 // TQuote downstream: reply_to_message_id (the quoted message's global ID, for
 // gateway routing) and reply_to_quote_payload (the full JSON-serialized TQuote
-// that the outbound Send() rebuilds into a Zalo /quote payload).
-//
-// Returns nil when the quote is nil OR when marshal fails — never stamps a
-// half-result. The reachable marshal-failure case is invalid JSON in
-// PropertyExt (RawMessage validates on marshal); stamping only the ID without
-// the payload would silently downgrade the outbound reply to non-quoted while
-// still claiming "I quoted something". Better to skip the stamp entirely so
-// the reply lands as a plain message.
-func buildQuoteMetadata(q *protocol.TQuote) map[string]string {
-	if q == nil {
+// Returns nil when no quote, when the quote raw JSON fails to parse against
+// our TQuote shape, or when re-marshal fails. Parse failures are warn-logged
+// with the raw payload preview so the schema mismatch is visible — the rest
+// of the inbound message (text, mentions, media) still flows through.
+func buildQuoteMetadata(raw json.RawMessage) map[string]string {
+	if len(raw) == 0 || string(raw) == "null" {
 		return nil
 	}
-	payload, err := json.Marshal(q)
+	var q protocol.TQuote
+	if err := json.Unmarshal(raw, &q); err != nil {
+		preview := string(raw)
+		if len(preview) > 300 {
+			preview = preview[:300]
+		}
+		slog.Warn("zalo_personal.quote.parse_failed", "err", err, "raw_preview", preview)
+		return nil
+	}
+	payload, err := json.Marshal(&q)
 	if err != nil {
 		slog.Warn("zalo_personal.quote.marshal_failed", "err", err, "global_msg_id", q.GlobalMsgIDString())
 		return nil
