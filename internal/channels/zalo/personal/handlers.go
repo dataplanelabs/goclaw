@@ -52,6 +52,24 @@ func extractTextFromRawContent(raw json.RawMessage) string {
 // buildQuoteMetadata returns the two metadata keys that carry an inbound
 // TQuote downstream: reply_to_message_id (the quoted message's global ID, for
 // gateway routing) and reply_to_quote_payload (the full JSON-serialized TQuote
+// quoteContextPrefix returns a "[Replying to ...]" line the agent can read
+// to understand what the user is quoting. Empty when no quote, parse fails,
+// or the quoted body is blank (e.g. quoting a sticker / media-only message).
+func quoteContextPrefix(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var q protocol.TQuote
+	if err := json.Unmarshal(raw, &q); err != nil {
+		return ""
+	}
+	body := strings.TrimSpace(q.Msg)
+	if body == "" {
+		return ""
+	}
+	return fmt.Sprintf("[Replying to: %q]\n", body)
+}
+
 // Returns nil when no quote, when the quote raw JSON fails to parse against
 // our TQuote shape, or when re-marshal fails. Parse failures are warn-logged
 // with the raw payload preview so the schema mismatch is visible — the rest
@@ -108,7 +126,9 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		return
 	}
 
-	// Annotate with sender display name so the agent knows who is messaging.
+	if prefix := quoteContextPrefix(msg.Data.Quote); prefix != "" {
+		content = prefix + content
+	}
 	senderName := msg.Data.DName
 	if senderName != "" {
 		content = fmt.Sprintf("[From: %s]\n%s", senderName, content)
@@ -193,7 +213,9 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		"preview", channels.Truncate(content, 50),
 	)
 
-	// Step 3: flush pending history + annotate current message with sender name.
+	if prefix := quoteContextPrefix(msg.Data.Quote); prefix != "" {
+		content = prefix + content
+	}
 	annotated := fmt.Sprintf("[From: %s]\n%s", senderName, content)
 	finalContent := annotated
 	if c.HistoryLimit() > 0 {
