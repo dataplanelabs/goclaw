@@ -151,6 +151,7 @@ func (c *Channel) sendChunkedText(ctx context.Context, sess *protocol.Session, c
 		}
 		if c.outboundCache != nil && msgID != "" {
 			c.outboundCache.set(msgID, previewText(chunk, outboundPreviewMaxChars))
+			slog.Info("zalo_personal.outbound.cached", "msg_id", msgID, "preview_len", len(chunk))
 		}
 	}
 	return nil
