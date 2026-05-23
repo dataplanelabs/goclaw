@@ -121,6 +121,36 @@ func TestQuoteContextPrefix_FallbackToAttach(t *testing.T) {
 	}
 }
 
+func TestQuoteContextPrefix_MediaQuotes(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		cliMsgType int
+		msg        string
+		attach     string
+		want       string
+	}{
+		{"image with caption", 2, "", `{"title":"holiday photo"}`, "[Replying to an image: \"holiday photo\"]\n"},
+		{"image no caption", 2, "", "", "[Replying to an image]\n"},
+		{"sticker no caption", 3, "", "", "[Replying to a sticker]\n"},
+		{"voice no caption", 5, "", "", "[Replying to a voice message]\n"},
+		{"checklist no caption", 19, "", "", "[Replying to a checklist]\n"},
+		{"unknown media type", 99, "", "", "[Replying to a media message]\n"},
+		{"text quote wins over media label", 2, "actual text body", "", "[Replying to: \"actual text body\"]\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			raw, _ := json.Marshal(&protocol.TQuote{
+				CliMsgType: tc.cliMsgType, Msg: tc.msg, Attach: tc.attach,
+			})
+			if got := quoteContextPrefix(raw); got != tc.want {
+				t.Errorf("got %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestExtractAttachBody(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ name, attach, want string }{
