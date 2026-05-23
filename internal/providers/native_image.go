@@ -83,10 +83,7 @@ type NativeImageResult struct {
 	Usage *Usage
 }
 
-// SizeFromAspect returns conservative ~1K dims (16-divisible) accepted across
-// gpt-image-1/1.5/2. For native 2K on gpt-image-2, use SizeFromAspectForModel.
-// Codex rejects non-16-divisible dims with "Width and height must both be
-// divisible by 16."
+// Conservative 1K bucket; for model-aware 2K use SizeFromAspectForModel.
 func SizeFromAspect(aspectRatio string) string {
 	switch aspectRatio {
 	case "16:9":
@@ -102,10 +99,6 @@ func SizeFromAspect(aspectRatio string) string {
 	}
 }
 
-// SizeFromAspectForModel picks native-resolution dims per model family.
-// gpt-image-2 supports native 2K (both edges 16-mult, total px 655k–8.3M);
-// gpt-image-1.5 is locked to 3 canonical sizes (1024², 1024×1536, 1536×1024);
-// unknown models fall through to the 1K SizeFromAspect default.
 func SizeFromAspectForModel(aspectRatio, model string) string {
 	switch {
 	case strings.HasPrefix(model, "gpt-image-2"):
@@ -124,8 +117,6 @@ func SizeFromAspectForModel(aspectRatio, model string) string {
 			return SizeFromAspect(aspectRatio)
 		}
 	case strings.HasPrefix(model, "gpt-image-1.5"):
-		// 1.5 accepts only 3 canonical sizes. 3:4 / 9:16 → portrait 2:3;
-		// 4:3 / 16:9 → landscape 3:2 (closest legal match).
 		switch aspectRatio {
 		case "3:4", "9:16":
 			return "1024x1536"

@@ -139,8 +139,7 @@ func TestCodexGenerateImage_BuildsNativeRequest(t *testing.T) {
 	if typ, _ := tool["type"].(string); typ != "image_generation" {
 		t.Errorf("tools[0].type = %q, want %q", typ, "image_generation")
 	}
-	// size should map to 1792x1024 for 16:9
-	wantSize := SizeFromAspect("16:9")
+	wantSize := SizeFromAspectForModel("16:9", DefaultImageModel)
 	if size, _ := tool["size"].(string); size != wantSize {
 		t.Errorf("tools[0].size = %q, want %q", size, wantSize)
 	}
