@@ -648,6 +648,7 @@ type RunResult struct {
 	Thinking       string           `json:"thinking,omitempty"`       // reasoning content from thinking models (Claude, o3, DeepSeek-R1, Kimi)
 	RunID          string           `json:"runId"`
 	Iterations     int              `json:"iterations"`
+	ToolCalls      int              `json:"toolCalls,omitempty"`
 	Usage          *providers.Usage `json:"usage,omitempty"`
 	Media          []MediaResult    `json:"media,omitempty"`          // media files from tool results (MEDIA: prefix)
 	Deliverables   []string         `json:"deliverables,omitempty"`   // actual content from tool outputs (for team task results)

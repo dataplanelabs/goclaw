@@ -372,6 +372,7 @@ func extractReactionExtras(payload any) ReactionExtras {
 	out := ReactionExtras{
 		DurationMs: payloadInt(m["duration_ms"]),
 		Iterations: payloadInt(m["iterations"]),
+		ToolCalls:  payloadInt(m["tool_calls"]),
 	}
 	if c, ok := m["content"].(string); ok {
 		out.OutputChars = len(c)

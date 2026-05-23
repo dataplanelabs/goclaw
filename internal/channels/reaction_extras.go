@@ -8,6 +8,7 @@ import "context"
 type ReactionExtras struct {
 	DurationMs  int
 	Iterations  int
+	ToolCalls   int
 	OutputChars int
 }
 

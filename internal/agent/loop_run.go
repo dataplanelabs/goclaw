@@ -220,6 +220,7 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 			"content":     result.Content,
 			"duration_ms": int(elapsed.Milliseconds()),
 			"iterations":  result.Iterations,
+			"tool_calls":  result.ToolCalls,
 		}
 		if result.Thinking != "" {
 			completedPayload["thinking"] = result.Thinking
