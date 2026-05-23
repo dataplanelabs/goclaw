@@ -536,25 +536,80 @@ func TestHandleDM_QuoteDisabledByConfig(t *testing.T) {
 	}
 }
 
-func TestHandleDM_NoQuoteStampsNothing(t *testing.T) {
+// When QuoteUserMessage is enabled and the inbound has no quote, the channel
+// synthesizes reply_to_quote_payload from the inbound itself so the bot's
+// outbound reply can quote-bubble the user's plain message. Without this the
+// toggle silently no-oped for normal chat (trace 019e56c8).
+func TestHandleDM_NoQuoteSynthesizesSelfQuote(t *testing.T) {
 	t.Parallel()
 	ch, mb := newHandlerTestChannel(t)
 	text := "plain hi"
 
 	ch.handleDM(protocol.NewUserMessage("self-uid", protocol.TMessage{
-		MsgID:   "plain-msg",
+		MsgID:    "7858722000001",
+		CliMsgID: json.Number("1700000000001"),
+		UIDFrom:  "456",
+		IDTo:     "self-uid",
+		TS:       "1700000000",
+		MsgType:  "chat.text",
+		Content:  protocol.Content{String: &text},
+	}))
+
+	got := drainInbound(t, mb)
+	if got.Metadata["reply_to_message_id"] != "7858722000001" {
+		t.Errorf("reply_to_message_id = %q, want 7858722000001 (inbound MsgID)", got.Metadata["reply_to_message_id"])
+	}
+	payload := got.Metadata["reply_to_quote_payload"]
+	if payload == "" {
+		t.Fatal("reply_to_quote_payload must be synthesized from inbound")
+	}
+	var q protocol.TQuote
+	if err := json.Unmarshal([]byte(payload), &q); err != nil {
+		t.Fatalf("payload not valid TQuote JSON: %v", err)
+	}
+	if q.OwnerID.String() != "456" {
+		t.Errorf("OwnerID = %q, want 456 (sender)", q.OwnerID.String())
+	}
+	if q.GlobalMsgID.String() != "7858722000001" {
+		t.Errorf("GlobalMsgID = %q, want 7858722000001", q.GlobalMsgID.String())
+	}
+	if q.Msg != "plain hi" {
+		t.Errorf("Msg = %q, want plain hi", q.Msg)
+	}
+	if q.CliMsgType != 1 {
+		t.Errorf("CliMsgType = %d, want 1 (text)", q.CliMsgType)
+	}
+}
+
+// Same but when QuoteUserMessage is DISABLED — nothing should be stamped
+// even for plain messages.
+func TestHandleDM_NoQuoteQuoteDisabledStampsNothing(t *testing.T) {
+	t.Parallel()
+	mb := bus.New()
+	disabled := false
+	ch, err := New(config.ZaloPersonalConfig{
+		Enabled:          true,
+		DMPolicy:         "open",
+		QuoteUserMessage: &disabled,
+	}, mb, nil, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	text := "plain hi"
+
+	ch.handleDM(protocol.NewUserMessage("self-uid", protocol.TMessage{
+		MsgID:   "7858722000001",
 		UIDFrom: "456",
 		IDTo:    "self-uid",
 		Content: protocol.Content{String: &text},
-		// Quote: nil
 	}))
 
 	got := drainInbound(t, mb)
 	if _, ok := got.Metadata["reply_to_message_id"]; ok {
-		t.Errorf("reply_to_message_id must not be stamped without Quote, got %v", got.Metadata)
+		t.Errorf("reply_to_message_id must not be stamped when QuoteUserMessage=false, got %v", got.Metadata)
 	}
 	if _, ok := got.Metadata["reply_to_quote_payload"]; ok {
-		t.Errorf("reply_to_quote_payload must not be stamped without Quote, got %v", got.Metadata)
+		t.Errorf("reply_to_quote_payload must not be stamped when QuoteUserMessage=false, got %v", got.Metadata)
 	}
 }
 
