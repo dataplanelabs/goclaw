@@ -76,7 +76,7 @@ func (p *CodexProvider) buildNativeImageRequestBody(model string, req NativeImag
 				"action":        "generate",
 				"model":         req.ImageModel,
 				"output_format": req.OutputFormat,
-				"size":          SizeFromAspect(req.AspectRatio),
+				"size":          SizeFromAspectForModel(req.AspectRatio, req.ImageModel),
 			},
 		},
 		"tool_choice": map[string]any{
