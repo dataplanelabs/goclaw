@@ -205,7 +205,11 @@ var coreToolSummaries = map[string]string{
 	"read_video":             "Analyze video — call with media_id from <media:video> tags",
 	"create_video":           "Generate videos from text descriptions using AI",
 	"read_document":          "Analyze documents (PDF, DOCX) from <media:document> tags. If fails, use a skill instead. Path is directly accessible",
-	"create_image":           "Generate images from text descriptions using AI",
+	"create_image": "Generate images from text descriptions using AI. " +
+		"When the user attaches a photo AND asks to edit/restyle/dress/place that subject, ALWAYS pass that image's ID in reference_image_ids " +
+		"(IDs visible in <media:image id='...'> tags from the current turn). " +
+		"Omit reference_image_ids for pure text-to-image. " +
+		"For best face preservation, prefer gemini-3.1-flash-image-preview, gpt-image-2, or image-01 (MiniMax) when configured.",
 	"create_audio":           "Generate music or sound effects from text descriptions using AI",
 	"knowledge_graph_search": "Find people, projects, and their connections — use for relationship questions (who works with whom, project dependencies) that memory_search may miss",
 	"team_tasks":             "Team task board — track progress, manage dependencies (spawn auto-creates delegation tasks)",

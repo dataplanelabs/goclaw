@@ -52,7 +52,9 @@ func NewCreateImageTool(registry *providers.Registry) *CreateImageTool {
 func (t *CreateImageTool) Name() string { return "create_image" }
 
 func (t *CreateImageTool) Description() string {
-	return "Generate an image from a text description using an image generation model. Returns a MEDIA: path to the generated image file."
+	return "Generate an image from a text description using an image generation model. " +
+		"Optionally pass reference_image_ids (IDs from <media:image id='...'> tags) to use attached photos " +
+		"as reference for face / composition / style preservation. Returns a MEDIA: path to the generated image file."
 }
 
 func (t *CreateImageTool) Parameters() map[string]any {
@@ -71,6 +73,11 @@ func (t *CreateImageTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Short descriptive filename (no extension). Example: 'sunset-beach', 'company-logo'.",
 			},
+			"reference_image_ids": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Optional. Media IDs from <media:image id='...'> tags in the current turn, used as reference images for face/composition/style preservation. Pass exact ID(s); first ID is the primary reference. Max 4 IDs total (provider-aware: Gemini up to 4, OpenRouter up to 4, OpenAI gpt-image-* up to 4 in this gateway, MiniMax 1 — character only). DashScope and BytePlus do NOT currently support refs and will silently fall back to text-only. Animated GIFs and SVG are not supported.",
+			},
 		},
 		"required": []string{"prompt"},
 	}
@@ -87,20 +94,43 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Res
 	}
 	filenameHint, _ := args["filename_hint"].(string)
 
+	// Resolve reference image IDs to loaded bytes (optional opt-in).
+	// Empty/absent → behavior unchanged (text-only generation).
+	var refImages []providers.ImageContent
+	if idsAny, ok := args["reference_image_ids"]; ok {
+		ids := toStringSlice(idsAny)
+		if len(ids) > 0 {
+			availableRefs := MediaImageRefsFromCtx(ctx)
+			refImages = resolveRefImageIDs(ctx, ids, availableRefs, maxRefImages)
+			slog.Info("create_image: reference images resolved",
+				"requested", len(ids), "loaded", len(refImages))
+		}
+	}
+
 	chain := ResolveMediaProviderChain(ctx, "create_image", "", "",
 		imageGenProviderPriority, imageGenModelDefaults, t.registry)
 
-	// Inject prompt and aspect_ratio into each chain entry's params
+	// Inject prompt, aspect_ratio, and reference_images into each chain entry's params.
+	// `reference_images` is always written as a typed `[]providers.ImageContent`
+	// (nil when no refs). Per-provider consumers must use
+	//   refs, _ := params["reference_images"].([]providers.ImageContent)
+	// and treat len(refs)==0 as the text-only path (do NOT range or index).
 	for i := range chain {
 		if chain[i].Params == nil {
 			chain[i].Params = make(map[string]any)
 		}
 		chain[i].Params["prompt"] = prompt
 		chain[i].Params["aspect_ratio"] = aspectRatio
+		chain[i].Params["reference_images"] = refImages
 	}
 
 	chainResult, err := ExecuteWithChain(ctx, chain, t.registry, t.callProvider)
 	if err != nil {
+		if len(refImages) > 0 {
+			return ErrorResult(fmt.Sprintf(
+				"image generation with reference images failed (chain exhausted). "+
+					"Configured providers may not support image-to-image edits. Underlying error: %v", err))
+		}
 		return ErrorResult(fmt.Sprintf("image generation failed: %v", err))
 	}
 
@@ -201,24 +231,78 @@ func (t *CreateImageTool) callProvider(ctx context.Context, cp credentialProvide
 		return t.callGeminiNativeImageGen(ctx, cp.APIKey(), cp.APIBase(), model, prompt, params)
 	case "openrouter":
 		return t.callImageGenAPI(ctx, cp.APIKey(), cp.APIBase(), model, prompt, aspectRatio, params)
+	case "openai":
+		// Route to /v1/images/edits (multipart) when refs present; otherwise
+		// /v1/images/generations (JSON). NOTE: this branch only fires for
+		// API-key-backed OpenAI providers. OAuth-backed providers (Codex,
+		// ChatGPTOAuthRouter) short-circuit above on `_native_provider` and
+		// route through NativeImageProvider.GenerateImage — currently edit-
+		// unsupported (see Phase 06 investigation).
+		if refImages, _ := params["reference_images"].([]providers.ImageContent); len(refImages) > 0 {
+			return callOpenAIImageEdit(ctx, cp.APIKey(), cp.APIBase(), model, prompt, params)
+		}
+		return t.callStandardImageGenAPI(ctx, cp.APIKey(), cp.APIBase(), model, prompt, params)
 	case "minimax":
 		return callMinimaxImageGen(ctx, cp.APIKey(), cp.APIBase(), model, prompt, params)
 	case "dashscope":
+		warnIfRefsDropped(params, providerName, "dashscope refs path pending Phase 04")
 		return callDashScopeImageGen(ctx, cp.APIKey(), cp.APIBase(), model, prompt, params)
 	case "byteplus":
+		warnIfRefsDropped(params, providerName, "byteplus refs path pending Phase 04")
 		return callBytePlusImageGen(ctx, cp.APIKey(), cp.APIBase(), model, prompt, params)
 	default:
+		warnIfRefsDropped(params, providerName, "openai-compat fallthrough does not forward refs")
 		return t.callStandardImageGenAPI(ctx, cp.APIKey(), cp.APIBase(), model, prompt, params)
+	}
+}
+
+// warnIfRefsDropped logs (best-effort) when a provider call function will
+// silently ignore reference_images, so operators can see the gap in logs.
+// Used by call paths that have no refs implementation yet.
+func warnIfRefsDropped(params map[string]any, providerName, reason string) {
+	if refs, _ := params["reference_images"].([]providers.ImageContent); len(refs) > 0 {
+		slog.Warn("create_image: reference images dropped (provider has no refs support)",
+			"provider", providerName, "count", len(refs), "reason", reason)
 	}
 }
 
 // callImageGenAPI calls the OpenAI-compatible chat completions endpoint with image modalities.
 // Works with OpenRouter (modalities: ["image","text"]).
+//
+// When params["reference_images"] holds ≥1 ImageContent, content becomes an
+// array of {type:"text"} + {type:"image_url"} parts (data URL); refs are capped
+// at openRouterRefCap. NO automatic model upgrade — caller's model is preserved
+// (see plan codex review #5).
 func (t *CreateImageTool) callImageGenAPI(ctx context.Context, apiKey, apiBase, model, prompt, aspectRatio string, params map[string]any) ([]byte, *providers.Usage, error) {
+	refImages, _ := params["reference_images"].([]providers.ImageContent)
+	if len(refImages) > openRouterRefCap {
+		slog.Warn("create_image: truncating reference images for OpenRouter",
+			"provided", len(refImages), "cap", openRouterRefCap)
+		refImages = refImages[:openRouterRefCap]
+	}
+
+	var content any = prompt
+	if len(refImages) > 0 {
+		parts := make([]map[string]any, 0, len(refImages)+1)
+		parts = append(parts, map[string]any{
+			"type": "text",
+			"text": prompt,
+		})
+		for _, img := range refImages {
+			parts = append(parts, map[string]any{
+				"type": "image_url",
+				"image_url": map[string]any{
+					"url": fmt.Sprintf("data:%s;base64,%s", img.MimeType, img.Data),
+				},
+			})
+		}
+		content = parts
+	}
+
 	body := map[string]any{
 		"model": model,
 		"messages": []map[string]any{
-			{"role": "user", "content": prompt},
+			{"role": "user", "content": content},
 		},
 		"modalities": []string{"image", "text"},
 	}
@@ -318,6 +402,11 @@ func (t *CreateImageTool) callStandardImageGenAPI(ctx context.Context, apiKey, a
 
 // callGeminiNativeImageGen uses the native Gemini generateContent API with responseModalities.
 // Gemini image models require this endpoint — they don't support OpenAI-compat endpoints.
+//
+// When params["reference_images"] holds ≥1 ImageContent, inline_data parts are
+// appended after the text part (text-first per Gemini docs). Refs are capped
+// at geminiRefCap (4 — Gemini face-preservation limit). NO automatic model
+// upgrade — caller's model is preserved (see plan codex review #5).
 func (t *CreateImageTool) callGeminiNativeImageGen(ctx context.Context, apiKey, apiBase, model, prompt string, params map[string]any) ([]byte, *providers.Usage, error) {
 	// Derive native Gemini base from OpenAI-compat base (strip /openai suffix)
 	nativeBase := strings.TrimRight(apiBase, "/")
@@ -325,9 +414,27 @@ func (t *CreateImageTool) callGeminiNativeImageGen(ctx context.Context, apiKey, 
 
 	url := fmt.Sprintf("%s/models/%s:generateContent?key=%s", nativeBase, model, apiKey)
 
+	refImages, _ := params["reference_images"].([]providers.ImageContent)
+	if len(refImages) > geminiRefCap {
+		slog.Warn("create_image: truncating reference images for Gemini",
+			"provided", len(refImages), "cap", geminiRefCap)
+		refImages = refImages[:geminiRefCap]
+	}
+
+	parts := make([]map[string]any, 0, 1+len(refImages))
+	parts = append(parts, map[string]any{"text": prompt})
+	for _, img := range refImages {
+		parts = append(parts, map[string]any{
+			"inline_data": map[string]any{
+				"mime_type": img.MimeType,
+				"data":      img.Data,
+			},
+		})
+	}
+
 	body := map[string]any{
 		"contents": []map[string]any{
-			{"parts": []map[string]any{{"text": prompt}}},
+			{"parts": parts},
 		},
 		"generationConfig": map[string]any{
 			"responseModalities": []string{"TEXT", "IMAGE"},
@@ -494,4 +601,129 @@ func truncateBytes(b []byte, max int) string {
 		return string(b)
 	}
 	return string(b[:max]) + "..."
+}
+
+// --- Reference image helpers (Phase 01 of image-gen reference-images plan) ---
+
+const (
+	// maxRefImages caps total references at the Gemini face limit. Per-provider
+	// call functions cap further (MiniMax 1, DashScope 3, OpenAI 16).
+	maxRefImages = 4
+	// maxRefImageBytes is the per-image byte cap before base64 expansion.
+	// 5MB matches read_image's image-load expectations and provider edit endpoints.
+	maxRefImageBytes = 5 * 1024 * 1024
+	// maxRefImagesAggregateBytes bounds the total reference payload to keep
+	// multipart/JSON bodies sane when many refs supplied.
+	maxRefImagesAggregateBytes = 20 * 1024 * 1024
+
+	// Per-provider caps applied inside each call function. The tool-layer cap
+	// (maxRefImages) is the primary safeguard; these are belt-and-suspenders
+	// in case future code reaches the providers with more refs than expected.
+	geminiRefCap     = 4  // Gemini face-preservation limit (verified 2026-05).
+	openRouterRefCap = 4  // Matches Gemini face limit for OR-routed Gemini models.
+)
+
+// allowedRefMIMEs whitelists reference-image MIME types. GIF is omitted because
+// most edit endpoints reject animated GIFs (and frame extraction is out of scope).
+var allowedRefMIMEs = map[string]bool{
+	"image/jpeg": true,
+	"image/jpg":  true,
+	"image/png":  true,
+	"image/webp": true,
+}
+
+// toStringSlice coerces []any or []string into []string. Empty strings dropped.
+func toStringSlice(v any) []string {
+	switch s := v.(type) {
+	case []string:
+		out := make([]string, 0, len(s))
+		for _, item := range s {
+			if item != "" {
+				out = append(out, item)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(s))
+		for _, item := range s {
+			if str, ok := item.(string); ok && str != "" {
+				out = append(out, str)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// resolveRefImageIDs looks up image MediaRefs by ID, validates MIME and size,
+// loads file bytes, base64-encodes, and returns []ImageContent.
+//
+// Refs that don't resolve, fail validation, or fail to load are dropped with a
+// warn log. Duplicates are deduped (first occurrence wins) and order is preserved.
+//
+// Tenant scope: `refs` originates from MediaImageRefsFromCtx(ctx), which is
+// populated only by the tenant-scoped persistence layer in loop_input_media.
+// Cross-tenant lookup is impossible — IDs outside the current-turn upload set
+// fall through to the "not found" branch.
+//
+// Logging hygiene: only logs id/mime/size — never the base64 Data.
+// Allocates a fresh slice — does NOT alias the input refs.
+func resolveRefImageIDs(_ context.Context, ids []string, refs []providers.MediaRef, maxRefs int) []providers.ImageContent {
+	refByID := make(map[string]providers.MediaRef, len(refs))
+	for _, r := range refs {
+		refByID[r.ID] = r
+	}
+	seen := make(map[string]bool, len(ids))
+	out := make([]providers.ImageContent, 0, len(ids))
+	var aggregateBytes int64
+	for _, id := range ids {
+		if seen[id] {
+			slog.Warn("create_image: duplicate reference image ID skipped", "id", id)
+			continue
+		}
+		seen[id] = true
+		if len(out) >= maxRefs {
+			slog.Warn("create_image: reference images truncated at cap", "cap", maxRefs, "requested", len(ids))
+			break
+		}
+		ref, ok := refByID[id]
+		if !ok {
+			slog.Warn("create_image: reference image ID not found in current-turn refs", "id", id)
+			continue
+		}
+		if !allowedRefMIMEs[ref.MimeType] {
+			slog.Warn("create_image: skipping reference image with unsupported MIME", "id", id, "mime", ref.MimeType)
+			continue
+		}
+		if ref.Path == "" {
+			slog.Warn("create_image: reference image has no path", "id", id)
+			continue
+		}
+		fi, err := os.Stat(ref.Path)
+		if err != nil {
+			slog.Warn("create_image: failed to stat reference image", "id", id, "error", err)
+			continue
+		}
+		if fi.Size() > maxRefImageBytes {
+			slog.Warn("create_image: reference image exceeds per-image byte cap",
+				"id", id, "size", fi.Size(), "cap", maxRefImageBytes)
+			continue
+		}
+		if aggregateBytes+fi.Size() > maxRefImagesAggregateBytes {
+			slog.Warn("create_image: aggregate reference image bytes exceeded; stopping",
+				"accumulated", aggregateBytes, "cap", maxRefImagesAggregateBytes)
+			break
+		}
+		data, err := os.ReadFile(ref.Path)
+		if err != nil {
+			slog.Warn("create_image: failed to read reference image", "id", id, "error", err)
+			continue
+		}
+		aggregateBytes += int64(len(data))
+		out = append(out, providers.ImageContent{
+			MimeType: ref.MimeType,
+			Data:     base64.StdEncoding.EncodeToString(data),
+		})
+	}
+	return out
 }

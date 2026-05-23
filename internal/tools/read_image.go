@@ -27,6 +27,21 @@ func MediaImagesFromCtx(ctx context.Context) []providers.ImageContent {
 	return v
 }
 
+const ctxMediaImageRefs toolContextKey = "tool_media_image_refs"
+
+// WithMediaImageRefs stores image MediaRefs (id-indexed metadata) for image-gen
+// tools to look up bytes on demand. Parallel to WithMediaImages (which stores
+// already-loaded bytes for vision tools).
+func WithMediaImageRefs(ctx context.Context, refs []providers.MediaRef) context.Context {
+	return context.WithValue(ctx, ctxMediaImageRefs, refs)
+}
+
+// MediaImageRefsFromCtx retrieves stored image refs from context.
+func MediaImageRefsFromCtx(ctx context.Context) []providers.MediaRef {
+	v, _ := ctx.Value(ctxMediaImageRefs).([]providers.MediaRef)
+	return v
+}
+
 // --- ReadImageTool ---
 
 // visionProviderPriority is the order in which providers are tried for vision.
