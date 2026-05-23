@@ -44,6 +44,10 @@ var ErrQuoteRejected = errors.New("zalo_personal: quote rejected by server")
 // failures that should bubble up so callers can reauth or back off rather
 // than silently retrying without the quote.
 //
+// Applied to BOTH outer-envelope codes and inner-envelope codes (the latter
+// surfaced as *InnerError from decryptDataField). The inner-envelope path is
+// the common case for /quote rejections — outer almost always returns 0.
+//
 // Starter set inferred from common Zalo error conventions and zalo-oa
 // observations; tighten / extend as real codes surface via the
 // zalo_personal.quote.fallback_no_quote warn-log stream.
@@ -227,6 +231,17 @@ func SendMessage(
 
 	plain, err := decryptDataField(sess, *envelope.Data)
 	if err != nil {
+		// Inner-envelope error from /quote endpoint — wrap so the channel-layer
+		// fallback (sendChunkWithQuoteFallback) retries without the quote.
+		// This is the COMMON quote-rejection path; outer-envelope rejections
+		// (handled above) are rare because Zalo wraps app-level errors inside
+		// the encrypted payload.
+		if quote != nil {
+			var ie *InnerError
+			if errors.As(err, &ie) && !nonQuoteErrorCodes[ie.Code] {
+				return "", fmt.Errorf("%w: %w", ErrQuoteRejected, err)
+			}
+		}
 		return "", fmt.Errorf("zalo_personal: decrypt send response: %w", err)
 	}
 

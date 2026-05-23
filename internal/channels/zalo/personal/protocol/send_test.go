@@ -217,6 +217,97 @@ func TestSendMessage_WithQuote_IncludesQmsgParams(t *testing.T) {
 	}
 }
 
+// encryptInnerErrorResponse builds a server response where the OUTER envelope
+// is success (error_code=0) but the encrypted INNER payload carries a non-zero
+// error_code. This matches Zalo's actual /quote rejection wire shape — outer
+// 0, inner 114 ("Tham số không hợp lệ") observed in trace 019e56b6.
+func encryptInnerErrorResponse(t *testing.T, code int, message string) string {
+	t.Helper()
+	innerJSON, _ := json.Marshal(map[string]any{
+		"error_code":    code,
+		"error_message": message,
+	})
+	key, _ := base64.StdEncoding.DecodeString(testKeyB64)
+	enc, err := EncodeAESCBC(key, string(innerJSON), false)
+	if err != nil {
+		t.Fatalf("encode inner response: %v", err)
+	}
+	outer, _ := json.Marshal(map[string]any{"error_code": 0, "data": enc})
+	return string(outer)
+}
+
+// innerErrorServer returns an httptest server whose every response carries an
+// outer-success envelope around an inner error with the given code/message.
+func innerErrorServer(t *testing.T, code int, message string) *httptest.Server {
+	t.Helper()
+	body := encryptInnerErrorResponse(t, code, message)
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+}
+
+// TestSendMessage_QuoteInnerError_WrapsErrQuoteRejected reproduces trace
+// 019e56b6: /quote returns outer envelope ok, inner code 114 ("invalid param").
+// Pre-fix, this surfaced as a generic "decrypt send response" error and the
+// channel-layer fallback (sendChunkWithQuoteFallback) silently skipped retry,
+// dropping the message. The fix wraps inner errors with ErrQuoteRejected so
+// the fallback fires.
+func TestSendMessage_QuoteInnerError_WrapsErrQuoteRejected(t *testing.T) {
+	t.Parallel()
+	srv := innerErrorServer(t, 114, "Tham số không hợp lệ")
+	t.Cleanup(srv.Close)
+	sess := newQuoteTestSession(t, srv)
+
+	q := &SendMessageQuote{OwnerID: "x", MsgID: "y", MsgType: "chat.text", Msg: "z"}
+	_, err := SendMessage(context.Background(), sess, "user-1", ThreadTypeUser, "reply", q)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrQuoteRejected) {
+		t.Errorf("err = %v, want errors.Is(err, ErrQuoteRejected)", err)
+	}
+	var ie *InnerError
+	if !errors.As(err, &ie) || ie.Code != 114 {
+		t.Errorf("expected InnerError{Code:114}, got %v", err)
+	}
+}
+
+// TestSendMessage_QuoteInnerAuthError_NoErrQuoteRejected: inner -100 (session
+// expired) must NOT trigger the quote fallback — bubble up so the channel
+// reauths rather than silently retrying with a dead session.
+func TestSendMessage_QuoteInnerAuthError_NoErrQuoteRejected(t *testing.T) {
+	t.Parallel()
+	srv := innerErrorServer(t, -100, "session expired")
+	t.Cleanup(srv.Close)
+	sess := newQuoteTestSession(t, srv)
+
+	q := &SendMessageQuote{OwnerID: "x", MsgID: "y", MsgType: "chat.text", Msg: "z"}
+	_, err := SendMessage(context.Background(), sess, "user-1", ThreadTypeUser, "reply", q)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrQuoteRejected) {
+		t.Errorf("auth inner error must NOT wrap ErrQuoteRejected; got %v", err)
+	}
+}
+
+// TestSendMessage_NoQuote_InnerErrorNotWrapped: when no quote is attached,
+// inner errors must NEVER be wrapped as ErrQuoteRejected regardless of code.
+func TestSendMessage_NoQuote_InnerErrorNotWrapped(t *testing.T) {
+	t.Parallel()
+	srv := innerErrorServer(t, 114, "Tham số không hợp lệ")
+	t.Cleanup(srv.Close)
+	sess := newQuoteTestSession(t, srv)
+
+	_, err := SendMessage(context.Background(), sess, "user-1", ThreadTypeUser, "reply", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrQuoteRejected) {
+		t.Errorf("no-quote send must NOT wrap ErrQuoteRejected; got %v", err)
+	}
+}
+
 func TestSendMessage_QuoteServerError_WrapsErrQuoteRejected(t *testing.T) {
 	t.Parallel()
 	// Non-zero error_code at the OUTER envelope (no nested encryption needed).

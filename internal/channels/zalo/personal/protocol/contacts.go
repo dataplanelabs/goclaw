@@ -246,9 +246,22 @@ func fetchGroupDetails(ctx context.Context, sess *Session, gridVerMap map[string
 	return groups, nil
 }
 
+// InnerError is returned by decryptDataField when the decrypted inner envelope
+// carries error_code != 0. Callers needing code-specific recovery (e.g.
+// quote-rejection fallback in SendMessage) use errors.As to extract Code/Message.
+type InnerError struct {
+	Code    int
+	Message string
+}
+
+func (e *InnerError) Error() string {
+	return fmt.Sprintf("zalo_personal: inner error code %d: %s", e.Code, e.Message)
+}
+
 // decryptDataField decrypts an encrypted base64 data string from Zalo API response.
 // The decrypted payload is itself a Response envelope: {"error_code":0, "data":...},
 // so this function unwraps the inner envelope and returns the raw data field.
+// Inner-envelope errors are returned as *InnerError so callers can branch on code.
 func decryptDataField(sess *Session, data string) ([]byte, error) {
 	key := SecretKey(sess.SecretKey).Bytes()
 	if key == nil {
@@ -269,7 +282,7 @@ func decryptDataField(sess *Session, data string) ([]byte, error) {
 		return nil, fmt.Errorf("zalo_personal: unwrap inner response: %w", err)
 	}
 	if inner.ErrorCode != 0 {
-		return nil, fmt.Errorf("zalo_personal: inner error code %d: %s", inner.ErrorCode, inner.ErrorMessage)
+		return nil, &InnerError{Code: inner.ErrorCode, Message: inner.ErrorMessage}
 	}
 	return inner.Data, nil
 }
