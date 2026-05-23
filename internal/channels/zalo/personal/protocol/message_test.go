@@ -292,6 +292,155 @@ func TestTMessage_UnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestTMessage_UnmarshalQuote_Text(t *testing.T) {
+	raw := `{
+		"msgId": "999",
+		"uidFrom": "456",
+		"idTo": "789",
+		"dName": "Replier",
+		"ts": "1709300100",
+		"content": "thanks!",
+		"msgType": "chat.message",
+		"cmd": 501,
+		"st": 1,
+		"at": 0,
+		"quote": {
+			"ownerId": "111",
+			"cliMsgId": "1709300000123",
+			"globalMsgId": 9876543210,
+			"cliMsgType": 1,
+			"ts": "1709300000",
+			"msg": "hello world",
+			"attach": "",
+			"fromD": "789",
+			"ttl": 0,
+			"propertyExt": {"color":-16777216,"size":18,"type":0,"subType":0}
+		}
+	}`
+
+	var msg TMessage
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg.Quote == nil {
+		t.Fatal("Quote should not be nil")
+	}
+	q := msg.Quote
+	if q.OwnerID != "111" {
+		t.Errorf("OwnerID = %q, want 111", q.OwnerID)
+	}
+	if q.CliMsgID.String() != "1709300000123" {
+		t.Errorf("CliMsgID = %q, want 1709300000123", q.CliMsgID.String())
+	}
+	if q.GlobalMsgID.String() != "9876543210" {
+		t.Errorf("GlobalMsgID = %q, want 9876543210", q.GlobalMsgID.String())
+	}
+	if q.CliMsgType != 1 {
+		t.Errorf("CliMsgType = %d, want 1", q.CliMsgType)
+	}
+	if q.TS.String() != "1709300000" {
+		t.Errorf("TS = %q, want 1709300000", q.TS.String())
+	}
+	if q.Msg != "hello world" {
+		t.Errorf("Msg = %q, want 'hello world'", q.Msg)
+	}
+	if q.FromD != "789" {
+		t.Errorf("FromD = %q, want 789", q.FromD)
+	}
+	if q.TTL != 0 {
+		t.Errorf("TTL = %d, want 0", q.TTL)
+	}
+	if len(q.PropertyExt) == 0 {
+		t.Error("PropertyExt should be preserved")
+	}
+	// Re-marshal PropertyExt to ensure it survived byte-equal.
+	var ext map[string]any
+	if err := json.Unmarshal(q.PropertyExt, &ext); err != nil {
+		t.Errorf("PropertyExt is not valid JSON: %v", err)
+	}
+	if ext["size"].(float64) != 18 {
+		t.Errorf("PropertyExt.size = %v, want 18", ext["size"])
+	}
+}
+
+func TestTMessage_UnmarshalQuote_Media(t *testing.T) {
+	// Media quote: msg is empty placeholder, attach carries opaque JSON string.
+	raw := `{
+		"msgId": "1000",
+		"uidFrom": "456",
+		"idTo": "789",
+		"ts": "1709300200",
+		"content": "see this",
+		"msgType": "chat.message",
+		"cmd": 501,
+		"st": 1,
+		"at": 0,
+		"quote": {
+			"ownerId": "111",
+			"cliMsgId": "1709300050000",
+			"globalMsgId": "9876543299",
+			"cliMsgType": 2,
+			"ts": "1709300050",
+			"msg": "",
+			"attach": "{\"hdUrl\":\"https://example.com/photo.jpg\",\"width\":1080,\"height\":720}",
+			"fromD": "789",
+			"ttl": 0
+		}
+	}`
+
+	var msg TMessage
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg.Quote == nil {
+		t.Fatal("Quote should not be nil")
+	}
+	if msg.Quote.CliMsgType != 2 {
+		t.Errorf("CliMsgType = %d, want 2 (image)", msg.Quote.CliMsgType)
+	}
+	// Attach should carry the JSON string verbatim.
+	wantAttach := `{"hdUrl":"https://example.com/photo.jpg","width":1080,"height":720}`
+	if msg.Quote.Attach != wantAttach {
+		t.Errorf("Attach = %q\nwant %q", msg.Quote.Attach, wantAttach)
+	}
+	// PropertyExt absent → nil RawMessage.
+	if msg.Quote.PropertyExt != nil {
+		t.Errorf("PropertyExt should be nil when absent, got %s", msg.Quote.PropertyExt)
+	}
+	// GlobalMsgID came in as string this time — json.Number handles both.
+	if msg.Quote.GlobalMsgID.String() != "9876543299" {
+		t.Errorf("GlobalMsgID = %q, want 9876543299", msg.Quote.GlobalMsgID.String())
+	}
+}
+
+func TestTMessage_UnmarshalNoQuote(t *testing.T) {
+	raw := `{
+		"msgId": "1",
+		"uidFrom": "2",
+		"idTo": "3",
+		"ts": "1709300000",
+		"content": "no quote here",
+		"msgType": "chat.message",
+		"cmd": 501,
+		"st": 1,
+		"at": 0
+	}`
+	var msg TMessage
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg.Quote != nil {
+		t.Errorf("Quote should be nil for non-quoted message, got %+v", msg.Quote)
+	}
+}
+
+func TestTQuote_GlobalMsgIDString_Nil(t *testing.T) {
+	var q *TQuote
+	if got := q.GlobalMsgIDString(); got != "" {
+		t.Errorf("GlobalMsgIDString() on nil = %q, want empty string", got)
+	}
+}
+
 func TestTGroupMessage_WithMentions(t *testing.T) {
 	raw := `{
 		"msgId": "gm1",

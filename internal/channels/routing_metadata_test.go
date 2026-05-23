@@ -38,6 +38,28 @@ func TestCopyFinalRoutingMeta_PreservesPlaceholderAndPancakeMode(t *testing.T) {
 	}
 }
 
+// TestCopyRoutingMeta_PreservesZaloPersonalQuotePayload verifies that the
+// zalo_personal quote-payload metadata key survives both the intermediate
+// block-reply path and the final-reply path. Without this the Phase 4 outbound
+// Send() would receive an empty payload and the entire feature would silently
+// degrade to non-quoted sends.
+func TestCopyRoutingMeta_PreservesZaloPersonalQuotePayload(t *testing.T) {
+	src := map[string]string{
+		"reply_to_message_id":    "9876543210",
+		"reply_to_quote_payload": `{"ownerId":"111","msg":"hello"}`,
+	}
+
+	got := copyRoutingMeta(src)
+	if got["reply_to_quote_payload"] != src["reply_to_quote_payload"] {
+		t.Errorf("copyRoutingMeta lost reply_to_quote_payload: got %q", got["reply_to_quote_payload"])
+	}
+
+	final := CopyFinalRoutingMeta(src)
+	if final["reply_to_quote_payload"] != src["reply_to_quote_payload"] {
+		t.Errorf("CopyFinalRoutingMeta lost reply_to_quote_payload: got %q", final["reply_to_quote_payload"])
+	}
+}
+
 // TestCopyRoutingMeta_PreservesPancakePrivateReplyKeys verifies the metadata
 // keys used by the private_reply DM (post_id, display_name, sender_id)
 // survive inbound→outbound copy.

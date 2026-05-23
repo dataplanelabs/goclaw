@@ -527,9 +527,16 @@ func processNormalMessage(
 
 // buildOutboundReplyMeta clones routing metadata and stamps reply_to_message_id
 // on group inbounds (always) and DM inbounds for channels that opt into the
-// DMQuoteChannel capability.
+// DMQuoteChannel capability. Channels that stamp reply_to_message_id themselves
+// on inbound (e.g. zalo_personal forwarding a TQuote.GlobalMsgID rather than
+// the current message's ID) take precedence — the helper preserves the
+// channel-stamped value instead of overwriting it with the current message's ID.
 func buildOutboundReplyMeta(in map[string]string, channelName string, isGroup bool, mgr *channels.Manager) map[string]string {
 	out := channels.CopyFinalRoutingMeta(in)
+	if v := in["reply_to_message_id"]; v != "" {
+		out["reply_to_message_id"] = v
+		return out
+	}
 	mid := in["message_id"]
 	if mid == "" {
 		return out

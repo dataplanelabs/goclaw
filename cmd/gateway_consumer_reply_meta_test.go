@@ -75,6 +75,42 @@ func TestBuildOutboundReplyMeta_NoMessageID(t *testing.T) {
 	}
 }
 
+// TestBuildOutboundReplyMeta_ChannelStampedReplyToWins verifies that when a
+// channel stamps reply_to_message_id on inbound metadata (e.g. zalo_personal
+// forwarding TQuote.GlobalMsgID), the gateway preserves it instead of
+// overwriting with the current inbound message_id.
+func TestBuildOutboundReplyMeta_ChannelStampedReplyToWins(t *testing.T) {
+	t.Parallel()
+	mgr := channels.NewManager(bus.New())
+	mgr.RegisterChannel("zalo_personal", &quoteOptInChannel{name: "zalo_personal"})
+
+	in := map[string]string{
+		"message_id":          "current-msg",
+		"reply_to_message_id": "quoted-msg-from-channel",
+	}
+	out := buildOutboundReplyMeta(in, "zalo_personal", false, mgr)
+	if out["reply_to_message_id"] != "quoted-msg-from-channel" {
+		t.Errorf("channel-stamped reply_to_message_id should win, got %q", out["reply_to_message_id"])
+	}
+}
+
+// TestBuildOutboundReplyMeta_GroupChannelStampedReplyToWins: same precedence
+// rule must apply to group inbounds — channel value wins over current message_id.
+func TestBuildOutboundReplyMeta_GroupChannelStampedReplyToWins(t *testing.T) {
+	t.Parallel()
+	mgr := channels.NewManager(bus.New())
+	mgr.RegisterChannel("zalo_personal", &quoteOptInChannel{name: "zalo_personal"})
+
+	in := map[string]string{
+		"message_id":          "current-group-msg",
+		"reply_to_message_id": "quoted-group-msg",
+	}
+	out := buildOutboundReplyMeta(in, "zalo_personal", true, mgr)
+	if out["reply_to_message_id"] != "quoted-group-msg" {
+		t.Errorf("channel-stamped reply_to_message_id should win on group too, got %q", out["reply_to_message_id"])
+	}
+}
+
 func TestBuildOutboundReplyMeta_NilManager(t *testing.T) {
 	t.Parallel()
 	out := buildOutboundReplyMeta(map[string]string{"message_id": "x"}, "anything", false, nil)
