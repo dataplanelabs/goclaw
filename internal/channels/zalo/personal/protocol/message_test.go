@@ -329,8 +329,8 @@ func TestTMessage_UnmarshalQuote_Text(t *testing.T) {
 	if q == nil {
 		t.Fatal("Quote should not be nil")
 	}
-	if q.OwnerID != "111" {
-		t.Errorf("OwnerID = %q, want 111", q.OwnerID)
+	if q.OwnerID.String() != "111" {
+		t.Errorf("OwnerID = %q, want 111", q.OwnerID.String())
 	}
 	if q.CliMsgID.String() != "1709300000123" {
 		t.Errorf("CliMsgID = %q, want 1709300000123", q.CliMsgID.String())

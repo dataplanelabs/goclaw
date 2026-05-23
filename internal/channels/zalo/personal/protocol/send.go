@@ -78,7 +78,7 @@ func FromInboundQuote(q *TQuote) *SendMessageQuote {
 		return nil
 	}
 	return &SendMessageQuote{
-		OwnerID:     q.OwnerID,
+		OwnerID:     q.OwnerID.String(),
 		MsgID:       q.GlobalMsgID.String(),
 		CliMsgID:    q.CliMsgID.String(),
 		MsgType:     classifyQuoteMsgType(q.CliMsgType),

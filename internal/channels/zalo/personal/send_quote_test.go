@@ -125,7 +125,7 @@ func decryptCapturedForm(t *testing.T, body []byte) map[string]any {
 func makeQuotePayload(t *testing.T, globalMsgID, msg string) string {
 	t.Helper()
 	q := protocol.TQuote{
-		OwnerID:     "111",
+		OwnerID:     json.Number("111"),
 		GlobalMsgID: json.Number(globalMsgID),
 		CliMsgID:    json.Number("1709300000123"),
 		CliMsgType:  1,
