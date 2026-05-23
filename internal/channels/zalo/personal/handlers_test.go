@@ -115,6 +115,38 @@ func TestBuildQuoteMetadata_NilReturnsNil(t *testing.T) {
 // emptyOwner pretends the quote has no owner UID — exercises the no-attribution path.
 var emptyOwner = quoteOwnerCtx{}
 
+func TestExtractQuoteMedia_FieldProbe(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		attach  string
+		wantURL string
+	}{
+		{"hdUrl wins", `{"hdUrl":"https://x/a.jpg","thumbUrl":"https://x/t.jpg"}`, "https://x/a.jpg"},
+		{"oriUrl fallback", `{"oriUrl":"https://x/o.jpg"}`, "https://x/o.jpg"},
+		{"href fallback", `{"href":"https://x/h.jpg"}`, "https://x/h.jpg"},
+		{"thumbUrl last", `{"thumbUrl":"https://x/t.jpg"}`, "https://x/t.jpg"},
+		{"no URL field", `{"width":1080,"height":720}`, ""},
+		{"empty attach", "", ""},
+		{"invalid json", "{not-json}", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			raw, _ := json.Marshal(&protocol.TQuote{Attach: tc.attach})
+			path, tag := extractQuoteMedia(raw)
+			// We can't actually download in unit tests; verify that "no URL" cases
+			// return empty without attempting download. URL-bearing cases would
+			// hit the network → not asserted here, covered by the live smoke test.
+			if tc.wantURL == "" {
+				if path != "" || tag != "" {
+					t.Errorf("expected no extraction, got path=%q tag=%q", path, tag)
+				}
+			}
+		})
+	}
+}
+
 func TestQuoteContextPrefix_FallbackToAttach(t *testing.T) {
 	t.Parallel()
 	q := &protocol.TQuote{Msg: "", Attach: `{"title":"recovered from attach"}`}

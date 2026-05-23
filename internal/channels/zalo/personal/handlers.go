@@ -112,6 +112,72 @@ func quoteContextPrefix(raw json.RawMessage, owner quoteOwnerCtx) string {
 	return formatReplyingTo(who, noun, body)
 }
 
+// attachMediaURLFields lists the JSON keys Zalo uses inside TQuote.Attach to
+// point at the original media file. Order matters — prefer the highest-quality
+// available so the agent's vision/regen uses the best source.
+var attachMediaURLFields = []string{"hdUrl", "oriUrl", "href", "normalUrl", "thumbUrl", "thumb"}
+
+// extractQuoteMedia downloads the media file referenced inside TQuote.Attach
+// when the quoted message has one (image / video / file). Returns the local
+// file path + agent-facing <media:*> tag, or empty when no media URL extractable.
+//
+// Without this, when a user quotes one of the bot's earlier images saying
+// "fix this", the agent only sees "[Replying to your image]" and has to guess
+// the reference from session memory — frequently hallucinating an old image_id
+// that no longer resolves.
+func extractQuoteMedia(rawQuote json.RawMessage) (string, string) {
+	if len(rawQuote) == 0 || string(rawQuote) == "null" {
+		return "", ""
+	}
+	var q protocol.TQuote
+	if json.Unmarshal(rawQuote, &q) != nil {
+		return "", ""
+	}
+	attach := strings.TrimSpace(q.Attach)
+	if attach == "" || attach == "null" {
+		return "", ""
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal([]byte(attach), &obj) != nil {
+		return "", ""
+	}
+	var url string
+	for _, key := range attachMediaURLFields {
+		val, ok := obj[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if json.Unmarshal(val, &s) != nil {
+			continue
+		}
+		if s = strings.TrimSpace(s); s != "" {
+			url = s
+			break
+		}
+	}
+	if url == "" {
+		return "", ""
+	}
+	filePath, err := downloadFile(context.Background(), url)
+	if err != nil {
+		slog.Warn("zalo_personal.quote.media_download_failed", "url", url, "err", err)
+		return "", ""
+	}
+	mimeType := media.DetectMIMEType(filePath)
+	mediaKind := media.MediaKindFromMime(mimeType)
+	// Force image kind for known image-type quotes when MIME sniff fails.
+	if mediaKind != media.TypeImage && q.CliMsgType == 2 {
+		mediaKind = media.TypeImage
+	}
+	tag := media.BuildMediaTags([]media.MediaInfo{{
+		Type:        mediaKind,
+		FilePath:    filePath,
+		ContentType: mimeType,
+	}})
+	return filePath, tag
+}
+
 // whoAuthored returns a human-readable phrase for who wrote the quoted message:
 //   - "your"                              → bot's earlier message (agent is "you")
 //   - "their own"                         → current sender quoted themselves
@@ -274,6 +340,10 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 	if prefix := quoteContextPrefix(msg.Data.Quote, c.quoteOwnerCtxFor(senderID, nil)); prefix != "" {
 		content = prefix + content
 	}
+	if path, tag := extractQuoteMedia(msg.Data.Quote); path != "" {
+		content = content + "\n" + tag
+		media = append(media, path)
+	}
 	senderName := msg.Data.DName
 	if senderName != "" {
 		content = fmt.Sprintf("[From: %s]\n%s", senderName, content)
@@ -360,6 +430,10 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 
 	if prefix := quoteContextPrefix(msg.Data.Quote, c.quoteOwnerCtxFor(senderID, c.groupNameResolver(threadID))); prefix != "" {
 		content = prefix + content
+	}
+	if path, tag := extractQuoteMedia(msg.Data.Quote); path != "" {
+		content = content + "\n" + tag
+		media = append(media, path)
 	}
 	annotated := fmt.Sprintf("[From: %s]\n%s", senderName, content)
 	finalContent := annotated
