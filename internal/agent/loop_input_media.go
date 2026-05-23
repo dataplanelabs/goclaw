@@ -45,6 +45,29 @@ func collectRefsByKind(messages []providers.Message, currentRefs []providers.Med
 	return refs
 }
 
+// collectUserUploadedRefs gathers MediaRefs from USER-role messages only —
+// excludes assistant-generated outputs. Used for create_image refs where the
+// LLM must reference user-attached photos, never its own prior outputs.
+func collectUserUploadedRefs(messages []providers.Message, currentRefs []providers.MediaRef, kind string) []providers.MediaRef {
+	var refs []providers.MediaRef
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != "user" {
+			continue
+		}
+		for _, ref := range messages[i].MediaRefs {
+			if ref.Kind == kind {
+				refs = append(refs, ref)
+			}
+		}
+	}
+	for _, ref := range currentRefs {
+		if ref.Kind == kind {
+			refs = append(refs, ref)
+		}
+	}
+	return refs
+}
+
 // enrichInputMedia processes incoming media (images, documents, audio, video),
 // persists them, enriches messages with media tags, and populates context
 // with refs for tool access. Returns updated context, modified messages, and current-turn media refs.
@@ -110,9 +133,10 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 		ctx = l.loadHistoricalImagesForTool(ctx, mediaRefs, messages)
 	}
 
-	// Image refs across history + current turn — lets create_image resolve
-	// reference_image_ids the LLM picked up from earlier turns.
-	if imgRefs := collectRefsByKind(messages, mediaRefs, "image"); len(imgRefs) > 0 {
+	// Image refs for create_image: user-uploaded only across history + current.
+	// Excludes assistant-generated outputs so the bot can't accidentally use its
+	// own prior generations as reference material.
+	if imgRefs := collectUserUploadedRefs(messages, mediaRefs, "image"); len(imgRefs) > 0 {
 		ctx = tools.WithMediaImageRefs(ctx, imgRefs)
 	}
 
