@@ -252,6 +252,89 @@ func TestSendMessage_AuthErrorDoesNotWrapErrQuoteRejected(t *testing.T) {
 	}
 }
 
+// Inner-envelope error 114 ("Tham số không hợp lệ") rides under a clean
+// outer envelope (error_code=0). Without typed-error wrapping in
+// decryptDataField the channel layer's silent retry never fired and the
+// reply silently failed — verified live on v3.18.3.
+func TestSendMessage_InnerEnvelopeError_WrapsErrQuoteRejected(t *testing.T) {
+	t.Parallel()
+	srv, _ := innerErrorServer(t, 114, "Tham số không hợp lệ")
+	sess := newQuoteTestSession(t, srv)
+
+	q := &SendMessageQuote{OwnerID: "x", MsgID: "y", MsgType: "chat.text", Msg: "z"}
+	_, err := SendMessage(context.Background(), sess, "user-1", ThreadTypeUser, "reply", q)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrQuoteRejected) {
+		t.Errorf("err = %v, want errors.Is(err, ErrQuoteRejected)", err)
+	}
+	var innerErr *InnerEnvelopeError
+	if !errors.As(err, &innerErr) || innerErr.Code != 114 {
+		t.Errorf("err must carry InnerEnvelopeError{Code:114}, got %v", err)
+	}
+}
+
+// Same wire shape as the 114 case but with -100 (session expired). Auth /
+// session-expired codes in the inner envelope must still bubble unwrapped so
+// the channel surfaces reauth instead of silently retrying with a dead
+// session.
+func TestSendMessage_InnerEnvelopeAuthError_DoesNotWrap(t *testing.T) {
+	t.Parallel()
+	srv, _ := innerErrorServer(t, -100, "session expired")
+	sess := newQuoteTestSession(t, srv)
+
+	q := &SendMessageQuote{OwnerID: "x", MsgID: "y", MsgType: "chat.text", Msg: "z"}
+	_, err := SendMessage(context.Background(), sess, "user-1", ThreadTypeUser, "reply", q)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrQuoteRejected) {
+		t.Errorf("inner auth error must NOT wrap ErrQuoteRejected; got %v", err)
+	}
+}
+
+// Inner-envelope errors on plain (no-quote) sends must NOT be wrapped as
+// ErrQuoteRejected — the retry path is meaningless without a quote.
+func TestSendMessage_InnerEnvelopeError_NoQuote_DoesNotWrap(t *testing.T) {
+	t.Parallel()
+	srv, _ := innerErrorServer(t, 114, "Tham số không hợp lệ")
+	sess := newQuoteTestSession(t, srv)
+
+	_, err := SendMessage(context.Background(), sess, "user-1", ThreadTypeUser, "hi", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrQuoteRejected) {
+		t.Errorf("plain send must not wrap ErrQuoteRejected; got %v", err)
+	}
+}
+
+// innerErrorServer returns a test server whose responses pass the OUTER
+// envelope check (error_code:0) but encrypt an INNER envelope carrying the
+// given non-zero code. Mirrors how Zalo /quote rejected requests in trace
+// captured on 2026-05-23.
+func innerErrorServer(t *testing.T, innerCode int, innerMsg string) (*httptest.Server, *[]captured) {
+	t.Helper()
+	innerJSON := []byte(`{"error_code":` + strconv.Itoa(innerCode) + `,"error_message":"` + innerMsg + `","data":null}`)
+	key, _ := base64.StdEncoding.DecodeString(testKeyB64)
+	enc, err := EncodeAESCBC(key, string(innerJSON), false)
+	if err != nil {
+		t.Fatalf("encode inner: %v", err)
+	}
+	outer, _ := json.Marshal(map[string]any{"error_code": 0, "data": enc})
+
+	var cap []captured
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		cap = append(cap, captured{path: r.URL.Path, body: body})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(outer)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &cap
+}
+
 func TestSendMessage_NoQuote_ErrorBubblesUnwrapped(t *testing.T) {
 	t.Parallel()
 	srv, _ := captureServer(t, "", 999)

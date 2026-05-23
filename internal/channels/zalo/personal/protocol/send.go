@@ -227,6 +227,16 @@ func SendMessage(
 
 	plain, err := decryptDataField(sess, *envelope.Data)
 	if err != nil {
+		// Quote rejections can ride in the inner envelope (observed code 114
+		// "Tham số không hợp lệ") with a clean outer envelope, so apply the
+		// same ErrQuoteRejected wrapping the outer-envelope check uses.
+		// Without this the silent fallback retry in send.go never fires.
+		if quote != nil {
+			var innerErr *InnerEnvelopeError
+			if errors.As(err, &innerErr) && !nonQuoteErrorCodes[innerErr.Code] {
+				return "", fmt.Errorf("%w: %w", ErrQuoteRejected, err)
+			}
+		}
 		return "", fmt.Errorf("zalo_personal: decrypt send response: %w", err)
 	}
 
