@@ -261,6 +261,7 @@ func convertRunResult(pr *pipeline.RunResult) *RunResult {
 		Thinking:       pr.Thinking,
 		RunID:          pr.RunID,
 		Iterations:     pr.Iterations,
+		ToolCalls:      pr.ToolCalls,
 		Usage:          &pr.TotalUsage,
 		Media:          media,
 		Deliverables:   pr.Deliverables,

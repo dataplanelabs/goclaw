@@ -178,7 +178,7 @@ func (c *Channel) recordReactionFeedback(ev ReactionEvent) {
 	sentiment := reactionSentiment(ev.Code)
 	reactorName := channels.SanitizeDisplayName(ev.DName)
 	if reactorName == "" {
-		reactorName = ev.UIDFrom
+		reactorName = "Someone"
 	}
 
 	slog.Info("zalo_personal.reaction.feedback",

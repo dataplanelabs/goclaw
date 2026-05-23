@@ -52,33 +52,33 @@ func reactionMetaTableLookup(code string) (struct{}, bool) {
 
 var _ channels.ReactionChannel = (*Channel)(nil)
 
-// Thresholds chosen so a casual chat answer (single iteration, fast,
-// short) gets no heart, while anything involving a tool, a long run,
-// or a substantial reply does. Errors always react.
+// Thresholds chosen so a casual chat answer (one LLM call, no tools,
+// short reply) gets no heart, while anything involving tools, a long
+// run, or a substantial reply does. Errors always react.
 const (
-	reactDoneMinIterations = 3
-	reactDoneDurationMs    = 30000
-	reactDoneOutputChars   = 500
+	reactDoneMinToolCalls = 1
+	reactDoneDurationMs   = 30000
+	reactDoneOutputChars  = 500
 )
 
 // shouldReactOnDone decides whether the heart on a completed run is
 // worth firing — based on whether the run was non-trivial. Errors are
 // gated separately (always react).
-func (c *Channel) shouldReactOnDone(ctx context.Context) bool {
+func (c *Channel) shouldReactOnDone(ctx context.Context) (bool, string) {
 	e, ok := channels.ReactionExtrasFromCtx(ctx)
 	if !ok {
-		return true
+		return true, "no_extras"
 	}
-	if e.Iterations > reactDoneMinIterations {
-		return true
+	if e.ToolCalls >= reactDoneMinToolCalls {
+		return true, "tool_use"
 	}
 	if e.DurationMs >= reactDoneDurationMs {
-		return true
+		return true, "duration"
 	}
 	if e.OutputChars >= reactDoneOutputChars {
-		return true
+		return true, "output_len"
 	}
-	return false
+	return false, "trivial"
 }
 
 type personalReactionController struct {
@@ -187,13 +187,18 @@ func (rc *personalReactionController) applyReactionLocked(ctx context.Context, i
 		Type:     threadType,
 	}
 	if _, err := protocol.AddReaction(ctx, sess, dest, icon); err != nil {
-		slog.Debug("zalo_personal.reaction.set_failed",
+		slog.Warn("zalo_personal.reaction.set_failed",
 			"thread_id", rc.threadID,
 			"source_message_id", rc.sourceMessageID,
 			"icon", icon,
 			"error", err)
 		return
 	}
+	slog.Info("zalo_personal.reaction.set",
+		"thread_id", rc.threadID,
+		"source_message_id", rc.sourceMessageID,
+		"icon", icon,
+	)
 	rc.currentIcon = icon
 }
 
@@ -244,8 +249,22 @@ func (c *Channel) OnReactionEvent(ctx context.Context, chatID, messageID, status
 	if chatID == "" || messageID == "" {
 		return nil
 	}
-	if status == "done" && !c.shouldReactOnDone(ctx) {
-		return nil
+	if status == "done" {
+		ok, reason := c.shouldReactOnDone(ctx)
+		extras, _ := channels.ReactionExtrasFromCtx(ctx)
+		slog.Info("zalo_personal.reaction.gate",
+			"channel", c.Name(),
+			"chat_id", chatID,
+			"message_id", messageID,
+			"decision", reason,
+			"will_react", ok,
+			"tool_calls", extras.ToolCalls,
+			"duration_ms", extras.DurationMs,
+			"output_chars", extras.OutputChars,
+		)
+		if !ok {
+			return nil
+		}
 	}
 	select {
 	case <-c.stopCh:
