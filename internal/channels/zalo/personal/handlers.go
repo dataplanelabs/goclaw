@@ -328,6 +328,58 @@ func buildQuoteMetadata(raw json.RawMessage) map[string]string {
 	}
 }
 
+// inboundMsgTypeToCli inverts classifyQuoteMsgType so we can synthesize a
+// TQuote.CliMsgType from the inbound TMessage.MsgType string. Unknown types
+// default to text (1) since classifyQuoteMsgType's text branch is the most
+// permissive on the Zalo /quote endpoint.
+func inboundMsgTypeToCli(msgType string) int {
+	switch strings.ToLower(msgType) {
+	case "chat.photo", "photo":
+		return 2
+	case "chat.sticker", "sticker":
+		return 3
+	case "chat.voice", "voice":
+		return 5
+	case "chat.todo", "todo":
+		return 19
+	}
+	return 1
+}
+
+// buildSelfQuoteMetadata synthesizes reply_to_quote_payload from the inbound
+// MESSAGE ITSELF (not from any quote it carries). Used when QuoteUserMessage
+// is enabled and the user sent a plain message — without this the bot's
+// outbound Send sees no quote payload and falls through to plain send, so
+// the "Quote user message" toggle silently no-ops for normal conversation.
+func buildSelfQuoteMetadata(data *protocol.TMessage, senderID string) map[string]string {
+	if data == nil || data.MsgID == "" {
+		return nil
+	}
+	msgBody := data.Content.Text()
+	attach := ""
+	if msgBody == "" && data.Content.Raw != nil {
+		attach = string(data.Content.Raw)
+	}
+	q := protocol.TQuote{
+		OwnerID:     json.Number(senderID),
+		CliMsgID:    data.CliMsgID,
+		GlobalMsgID: json.Number(data.MsgID),
+		CliMsgType:  inboundMsgTypeToCli(data.MsgType),
+		TS:          json.Number(data.TS),
+		Msg:         msgBody,
+		Attach:      attach,
+	}
+	payload, err := json.Marshal(&q)
+	if err != nil {
+		slog.Warn("zalo_personal.quote.self_marshal_failed", "err", err, "msg_id", data.MsgID)
+		return nil
+	}
+	return map[string]string{
+		"reply_to_message_id":    data.MsgID,
+		"reply_to_quote_payload": string(payload),
+	}
+}
+
 func (c *Channel) handleMessage(msg protocol.Message) {
 	if msg.IsSelf() {
 		return
@@ -390,7 +442,11 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		"display_name": channels.SanitizeDisplayName(senderName),
 	}
 	if c.quoteUserMessageEnabled() {
-		maps.Copy(metadata, buildQuoteMetadata(msg.Data.Quote))
+		if qm := buildQuoteMetadata(msg.Data.Quote); qm != nil {
+			maps.Copy(metadata, qm)
+		} else if qm := buildSelfQuoteMetadata(&msg.Data, senderID); qm != nil {
+			maps.Copy(metadata, qm)
+		}
 	}
 	c.HandleMessage(senderID, threadID, content, media, metadata, "direct")
 }
@@ -482,7 +538,11 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		"display_name": channels.SanitizeDisplayName(senderName),
 	}
 	if c.quoteUserMessageEnabled() {
-		maps.Copy(metadata, buildQuoteMetadata(msg.Data.Quote))
+		if qm := buildQuoteMetadata(msg.Data.Quote); qm != nil {
+			maps.Copy(metadata, qm)
+		} else if qm := buildSelfQuoteMetadata(&msg.Data.TMessage, senderID); qm != nil {
+			maps.Copy(metadata, qm)
+		}
 	}
 	c.HandleMessage(senderID, threadID, finalContent, allMedia, metadata, "group")
 
