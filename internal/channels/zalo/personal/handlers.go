@@ -21,6 +21,34 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
+// First match wins; Zalo's quote-reply frame puts the user's new text in `title`.
+var quotedReplyTextFields = []string{"title", "text", "msg", "content", "body", "description"}
+
+func extractTextFromRawContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return ""
+	}
+	for _, key := range quotedReplyTextFields {
+		val, ok := obj[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if err := json.Unmarshal(val, &s); err != nil {
+			continue
+		}
+		s = strings.TrimSpace(s)
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
 // buildQuoteMetadata returns the two metadata keys that carry an inbound
 // TQuote downstream: reply_to_message_id (the quoted message's global ID, for
 // gateway routing) and reply_to_quote_payload (the full JSON-serialized TQuote
@@ -228,8 +256,16 @@ func extractContentAndMedia(content protocol.Content) (string, []string) {
 	if text := content.Text(); text != "" {
 		return text, nil
 	}
+	// Quote-reply Content arrives as a JSON object, not a plain string.
+	if text := extractTextFromRawContent(content.Raw); text != "" {
+		return text, nil
+	}
 	att := content.ParseAttachment()
 	if att == nil || att.Href == "" {
+		if len(content.Raw) > 0 {
+			slog.Warn("zalo_personal: unparseable content shape (message dropped)",
+				"content_raw", string(content.Raw))
+		}
 		return "", nil
 	}
 
