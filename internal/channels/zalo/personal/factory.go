@@ -21,12 +21,13 @@ type zaloCreds struct {
 
 // zaloInstanceConfig maps the config JSONB from the channel_instances table.
 type zaloInstanceConfig struct {
-	DMPolicy       string   `json:"dm_policy,omitempty"`
-	GroupPolicy    string   `json:"group_policy,omitempty"`
-	RequireMention *bool    `json:"require_mention,omitempty"`
-	HistoryLimit   int      `json:"history_limit,omitempty"`
-	AllowFrom      []string `json:"allow_from,omitempty"`
-	BlockReply     *bool    `json:"block_reply,omitempty"`
+	DMPolicy         string   `json:"dm_policy,omitempty"`
+	GroupPolicy      string   `json:"group_policy,omitempty"`
+	RequireMention   *bool    `json:"require_mention,omitempty"`
+	HistoryLimit     int      `json:"history_limit,omitempty"`
+	AllowFrom        []string `json:"allow_from,omitempty"`
+	BlockReply       *bool    `json:"block_reply,omitempty"`
+	QuoteUserMessage *bool    `json:"quote_user_message,omitempty"`
 }
 
 // Factory creates a Zalo Personal channel from DB instance data.
@@ -56,12 +57,13 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 
 	zaloCfg := config.ZaloPersonalConfig{
 		Enabled:        true,
-		AllowFrom:      ic.AllowFrom,
-		DMPolicy:       ic.DMPolicy,
-		GroupPolicy:    ic.GroupPolicy,
-		RequireMention: ic.RequireMention,
-		HistoryLimit:   ic.HistoryLimit,
-		BlockReply:     ic.BlockReply,
+		AllowFrom:        ic.AllowFrom,
+		DMPolicy:         ic.DMPolicy,
+		GroupPolicy:      ic.GroupPolicy,
+		RequireMention:   ic.RequireMention,
+		HistoryLimit:     ic.HistoryLimit,
+		BlockReply:       ic.BlockReply,
+		QuoteUserMessage: ic.QuoteUserMessage,
 	}
 
 	ch, err := New(zaloCfg, msgBus, pairingSvc, nil)

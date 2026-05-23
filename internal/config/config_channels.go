@@ -197,6 +197,7 @@ type ZaloPersonalConfig struct {
 	HistoryLimit    int                 `json:"history_limit,omitempty"`    // max pending group messages for context (default 50, 0=disabled)
 	CredentialsPath string              `json:"credentials_path,omitempty"` // path to saved cookies JSON
 	BlockReply      *bool               `json:"block_reply,omitempty"`      // override gateway block_reply (nil = inherit)
+	QuoteUserMessage *bool `json:"quote_user_message,omitempty"` // default false (opt-in); set true to render bot replies as native Zalo quote bubbles when user quoted
 }
 
 type FeishuConfig struct {
