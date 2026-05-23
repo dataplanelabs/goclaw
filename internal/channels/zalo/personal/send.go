@@ -145,12 +145,18 @@ func (c *Channel) sendChunkedText(ctx context.Context, sess *protocol.Session, c
 		if i == 0 {
 			q = quote
 		}
-		if _, err := c.sendChunkWithQuoteFallback(ctx, sess, chatID, threadType, chunk, q); err != nil {
+		msgID, err := c.sendChunkWithQuoteFallback(ctx, sess, chatID, threadType, chunk, q)
+		if err != nil {
 			return err
+		}
+		if c.outboundCache != nil && msgID != "" {
+			c.outboundCache.set(msgID, previewText(chunk, outboundPreviewMaxChars))
 		}
 	}
 	return nil
 }
+
+const outboundPreviewMaxChars = 200
 
 // sendChunkWithQuoteFallback sends a single text chunk with an optional quote.
 // On ErrQuoteRejected (quote source deleted, expired, cross-thread, etc.) it

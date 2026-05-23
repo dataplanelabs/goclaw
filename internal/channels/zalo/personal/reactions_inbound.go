@@ -183,10 +183,11 @@ func (c *Channel) recordReactionFeedback(ev ReactionEvent) {
 		return
 	}
 
-	summary := fmt.Sprintf("%s reacted %s (%s) on your message %s", reactorName, icon, sentiment, ev.MsgID)
-	if ev.Code == protocol.ReactionNone {
-		summary = fmt.Sprintf("%s removed their reaction on your message %s", reactorName, ev.MsgID)
+	preview := ""
+	if c.outboundCache != nil {
+		preview = c.outboundCache.get(ev.MsgID)
 	}
+	summary := buildReactionSummary(reactorName, icon, sentiment, ev.MsgID, preview, ev.Code == protocol.ReactionNone)
 
 	sessionKey := sessions.BuildSessionKey(c.AgentID(), c.Type(), sessions.PeerKindFromGroup(ev.ThreadType == protocol.ThreadTypeGroup), ev.ThreadID)
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
@@ -214,6 +215,19 @@ func reactionThreadTypeName(t protocol.ThreadType) string {
 		return "group"
 	}
 	return "direct"
+}
+
+func buildReactionSummary(reactorName, icon, sentiment, msgID, preview string, removed bool) string {
+	if removed {
+		if preview != "" {
+			return fmt.Sprintf(`%s removed their reaction on your reply: %q`, reactorName, preview)
+		}
+		return fmt.Sprintf("%s removed their reaction on message %s", reactorName, msgID)
+	}
+	if preview != "" {
+		return fmt.Sprintf(`%s reacted %s (%s) on your reply: %q`, reactorName, icon, sentiment, preview)
+	}
+	return fmt.Sprintf("%s reacted %s (%s) on message %s", reactorName, icon, sentiment, msgID)
 }
 
 func reactionSentiment(code string) string {
