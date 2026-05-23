@@ -216,6 +216,40 @@ func init() {
 		MsgSTTWhatsappPrivacyWarning: "Enabling STT for WhatsApp breaks end-to-end encryption for voice messages sent to this agent.",
 		MsgVoiceMessageFallback:      "[Voice message]",
 
+		// Workstation
+		MsgWorkstationNotFound:     "workstation not found: %s",
+		MsgWorkstationKeyExists:    "workstation key already in use: %s",
+		MsgInvalidBackend:          "invalid backend type: %s (must be ssh|docker)",
+		MsgWorkstationInactive:     "workstation is inactive: %s",
+		MsgInvalidMetadataShape:    "invalid metadata for %s backend: %s",
+		MsgWorkstationRequired:     "no workstation bound to agent; pass workstation_id",
+		MsgWorkstationAccessDenied: "agent %s not authorized for workstation %s",
+		MsgBackendNotReady:         "workstation backend not ready: %s",
+
+		// Webhooks
+		MsgWebhookAuthFailed:              "webhook authentication failed",
+		MsgWebhookHMACInvalid:             "HMAC signature is invalid",
+		MsgWebhookHMACTimestampSkew:       "request timestamp outside acceptable window",
+		MsgWebhookBearerRequiredHMAC:      "this webhook requires HMAC authentication",
+		MsgWebhookRevoked:                 "webhook has been revoked",
+		MsgWebhookKindMismatch:            "request kind does not match webhook configuration",
+		MsgWebhookRateLimited:             "webhook rate limit exceeded",
+		MsgWebhookBodyTooLarge:            "request body exceeds size limit",
+		MsgWebhookIdempotencyConflict:     "idempotency key conflict: request body mismatch",
+		MsgWebhookTenantMismatch:          "webhook tenant mismatch",
+		MsgWebhookAgentNotFound:           "webhook agent not found",
+		MsgWebhookChannelNotFound:         "webhook channel not found",
+		MsgWebhookMediaSSRFBlocked:        "media URL blocked by SSRF policy",
+		MsgWebhookMediaTooLarge:           "media file exceeds size limit",
+		MsgWebhookMediaMIMEDenied:         "media MIME type is not allowed",
+		MsgWebhookCallbackURLInvalid:      "callback URL is invalid or blocked",
+		MsgWebhookLLMTimeout:              "LLM processing timed out",
+		MsgWebhookLaneSaturated:           "webhook processing lane is at capacity",
+		MsgWebhookLocalhostOnlyViolation:  "this webhook is restricted to localhost callers",
+		MsgWebhookMediaChannelUnsupported: "channel does not support media attachments",
+		MsgWebhookIPDenied:                "request origin is not in the IP allowlist",
+		MsgWebhookEncryptionUnavailable:   "webhook encryption key not configured; set GOCLAW_ENCRYPTION_KEY to enable webhooks",
+
 		// Hooks
 		MsgHookInvalidMatcher:          "invalid matcher regex: %s",
 		MsgHookCommandDisabledStandard: "command-type hooks are only available on Lite edition",
@@ -254,7 +288,56 @@ func init() {
 		MsgZaloOAReauthDueSoon:        "Refresh token expires in %d day(s); re-authorize the OA to avoid downtime",
 		MsgZaloOAUnsupportedAttachment: "(File %q (%s) cannot be delivered via Zalo OA — only PDF/DOC/DOCX are accepted. Content described above.)",
 
+		// Workstation permissions (Phase 6)
+		MsgWorkstationCmdDenied:    "command denied by workstation policy: %s",
+		MsgWorkstationEnvDenied:    "env var denied by policy: %s",
+		MsgWorkstationInputInvalid: "command contains invalid characters: %s",
+		MsgWorkstationRateLimit:    "workstation rate limit exceeded",
+		MsgWorkstationPermNotFound: "permission entry not found: %s",
+		// Workstation activity (Phase 7)
+		MsgWorkstationActivityTitle: "Recent Activity",
+		MsgWorkstationActionExec:    "Exec",
+		MsgWorkstationActionDeny:    "Denied",
+
+		// Package updates (Phase 4+5)
+		MsgPackageNotInstalled:  "Package %s is not installed",
+		MsgPackageUpdateLocked:  "Package %s is being updated by another request",
+		MsgReleaseNotFound:      "Release %s not found for %s",
+		MsgAssetNotFound:        "No compatible asset for %s/%s",
+		MsgChecksumMismatch:     "Checksum mismatch for %s",
+		MsgUpdateSwapFailed:     "Failed to install %s; previous version restored",
+		MsgUpdateManifestDesync: "Binary updated but manifest save failed — manual recovery required for %s",
+		MsgUpdateCacheStale:     "Updates cache stale; run refresh before applying an update",
+
+		// Grant env validation
+		MsgGrantEnvDeniedKeys:   "env keys not allowed: %s",
+		MsgGrantEnvValueInvalid: "invalid env value: %s",
+		MsgGrantEnvTooManyKeys:  "too many env keys: max 50",
+		MsgGrantEnvRevealLimit:  "rate limit exceeded for env reveal — try again later",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",
+
+		// Package update source labels
+		MsgPackagesUpdatesSourceGithub: "GitHub",
+		MsgPackagesUpdatesSourcePip:    "pip",
+		MsgPackagesUpdatesSourceNpm:    "npm",
+		MsgPackagesUpdatesSourceApk:    "apk",
+
+		// Package update availability messages
+		MsgPackagesUpdatesUnavailablePip: "pip not installed on this system",
+		MsgPackagesUpdatesUnavailableNpm: "npm not installed on this system",
+		MsgPackagesUpdatesUnavailableApk: "apk not available on this system",
+
+		// Package update failure reasons
+		MsgPackagesUpdatesReasonDependencyConflict: "Dependency conflict",
+		MsgPackagesUpdatesReasonPermission:         "Permission denied",
+		MsgPackagesUpdatesReasonNetwork:            "Network error",
+		MsgPackagesUpdatesReasonNotFound:           "Package not found",
+		MsgPackagesUpdatesReasonTargetMissing:      "Version not available",
+		MsgPackagesUpdatesReasonExternallyManaged:  "Environment externally managed",
+		MsgPackagesUpdatesReasonLocked:             "Package database is locked",
+		MsgPackagesUpdatesReasonDiskFull:           "Disk full",
+		MsgPackagesUpdatesReasonHelperUnavailable:  "Privileged helper unavailable",
 	})
 }
