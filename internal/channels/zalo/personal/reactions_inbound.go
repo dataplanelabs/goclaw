@@ -134,13 +134,16 @@ func (c *Channel) onReactionEvent(ev ReactionEvent) {
 	if ev.IsHistoric {
 		return
 	}
-	if ev.IsSelf && !c.config.ListenSelfReactions {
+	mode := c.reactionsMode()
+	if mode == reactionsModeSilent {
 		return
 	}
-	switch c.reactionsMode() {
-	case reactionsModeSilent:
-		return
-	case reactionsModeFeedback:
+	if ev.IsSelf {
+		if mode == reactionsModeFeedback || !c.config.ListenSelfReactions {
+			return
+		}
+	}
+	if mode == reactionsModeFeedback {
 		c.recordReactionFeedback(ev)
 		return
 	}
@@ -151,7 +154,23 @@ func (c *Channel) onReactionEvent(ev ReactionEvent) {
 	c.reactionCoalescer.Submit(ev)
 }
 
+func (c *Channel) isSelfReactor(uid string) bool {
+	if uid == "" {
+		return false
+	}
+	if uid == protocol.DefaultUIDSelf {
+		return true
+	}
+	if sess := c.session(); sess != nil && sess.UID != "" && sess.UID == uid {
+		return true
+	}
+	return false
+}
+
 func (c *Channel) recordReactionFeedback(ev ReactionEvent) {
+	if c.isSelfReactor(ev.UIDFrom) {
+		return
+	}
 	icon := ev.Code
 	if u := protocol.ReactionCodeToUnicode(ev.Code); u != "" {
 		icon = u
