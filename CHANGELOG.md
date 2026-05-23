@@ -35,6 +35,14 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **create_image/create_audio/create_video: duplicate media delivery** — when the
+  agent called `create_*` followed by `message(MEDIA:<path>)`, the file shipped
+  twice (once via the auto-attached `result.Media`, once via the explicit message
+  send). `message`'s self-send dedup guard checks `DeliveredMedia.IsDelivered`,
+  but the `create_*` tools never marked their generated files. Now mirror the
+  `filesystem_write(deliver=true)` pattern: call `dm.Mark(path)` after building
+  the result.
+
 - **Zalo Personal: chunked upload for images/files > 512KB** — the file-service
   rejects any single chunk over 512KB with inner error code 201
   (*"Dung lượng chunk upload không được vượt quá 512K"*). `UploadImage` and
