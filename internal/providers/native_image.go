@@ -84,6 +84,8 @@ type NativeImageResult struct {
 
 // SizeFromAspect converts a common aspect ratio string to a pixel dimension
 // string expected by image generation APIs (e.g. "1792x1024").
+// All returned dimensions are multiples of 16 — codex/openai-image require it
+// and reject e.g. 1365 with "Width and height must both be divisible by 16".
 // Falls back to "1024x1024" for unrecognised ratios.
 func SizeFromAspect(aspectRatio string) string {
 	switch aspectRatio {
@@ -92,9 +94,9 @@ func SizeFromAspect(aspectRatio string) string {
 	case "9:16":
 		return "1024x1792"
 	case "3:4":
-		return "1024x1365"
+		return "1024x1360"
 	case "4:3":
-		return "1365x1024"
+		return "1360x1024"
 	default:
 		return "1024x1024"
 	}

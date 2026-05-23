@@ -35,6 +35,16 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **create_image: 3:4 / 4:3 aspect rejected by codex (`divisible by 16`)** —
+  `SizeFromAspect` returned `1024x1365` / `1365x1024` for 3:4 / 4:3; 1365 % 16 = 5
+  so the codex native-image endpoint 400'd. Bumped to `1024x1360` / `1360x1024`
+  (both dimensions 16-divisible, ratio 0.7529 ≈ 0.75).
+
+- **create_image: DashScope (wan2.x) rejected string `messages.content`** —
+  the multimodal-generation endpoint requires `content` as a list of parts;
+  string form returned `400 InvalidParameter: Input should be a valid list:
+  input.messages.0.content`. Now sends `[{"text": prompt}]`.
+
 - **Zalo Personal media-with-caption attachments dropped (regression of #14)** —
   inbound `{title, href}` frames (image/video/audio/file with caption) were caught
   by the quote-reply text probe before `ParseAttachment` ran, so the agent received
