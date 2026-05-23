@@ -56,8 +56,9 @@ var _ channels.ReactionChannel = (*Channel)(nil)
 // short) gets no heart, while anything involving a tool, a long run,
 // or a substantial reply does. Errors always react.
 const (
-	reactDoneDurationMs  = 5000
-	reactDoneOutputChars = 200
+	reactDoneMinIterations = 3
+	reactDoneDurationMs    = 30000
+	reactDoneOutputChars   = 500
 )
 
 // shouldReactOnDone decides whether the heart on a completed run is
@@ -68,7 +69,7 @@ func (c *Channel) shouldReactOnDone(ctx context.Context) bool {
 	if !ok {
 		return true
 	}
-	if e.Iterations > 1 {
+	if e.Iterations > reactDoneMinIterations {
 		return true
 	}
 	if e.DurationMs >= reactDoneDurationMs {
