@@ -768,6 +768,17 @@ Zalo Personal uses an unofficial, reverse-engineered protocol. The account used 
 - Special handling for error code 3000: 60-second initial delay
 - Typing controller per thread
 
+### Polls + Reactions
+
+Polls and reactions are first-class for Zalo Personal:
+
+- **6 agent tools:** `zalo_personal_create_poll`, `_get_poll`, `_vote_poll`, `_lock_poll`, `_add_poll_options`, `_react`. Each gates on `ToolChannelTypeFromCtx(ctx) == "zalo_personal"`.
+- **Inbound reactions** arrive on WS `cmd=612` (real-time) and `cmd=610/611` (historical replay on reconnect). They are coalesced over a 30s sliding window per `(thread_id, sender_uid, target_msg_id)` and synthesized as `[reaction] Name reacted ❤️ to message X` lines with metadata keys `zalo_event`, `reaction_code`, `target_msg_id`, `target_cli_msg_id`, `synthetic="true"`.
+- **Self-reactions suppressed** by default (opt in via per-instance `listen_self_reactions: true`).
+- **Kill switches:** per-instance `disable_polls` and `disable_reactions` block both the outbound tools and inbound synthesis.
+
+The reaction tool accepts unicode emoji (`❤️`), English friendly names (`heart`, `like`, `thumbs_up`), or raw Zalo codes (`/-heart`). Empty string removes any prior reaction.
+
 ---
 
 ## 12. Channel-Isolated Workspaces

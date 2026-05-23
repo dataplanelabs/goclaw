@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+
+	"github.com/nextlevelbuilder/goclaw/internal/channels"
 )
 
 type ZaloPersonalReactTool struct {
@@ -12,6 +14,10 @@ type ZaloPersonalReactTool struct {
 func NewZaloPersonalReactTool() *ZaloPersonalReactTool { return &ZaloPersonalReactTool{} }
 
 func (t *ZaloPersonalReactTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) { t.actionFn = fn }
+
+func (t *ZaloPersonalReactTool) RequiredChannelTypes() []string {
+	return []string{channels.TypeZaloPersonal}
+}
 
 func (t *ZaloPersonalReactTool) Name() string { return "zalo_personal_react" }
 

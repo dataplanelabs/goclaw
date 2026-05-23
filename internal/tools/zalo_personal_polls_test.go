@@ -262,7 +262,9 @@ func TestToolNamesMatchExpected(t *testing.T) {
 	}
 }
 
-// Compile-time assert each tool implements ZaloPersonalActionAware.
+// Compile-time assert each tool implements ZaloPersonalActionAware + ChannelAware.
+// Missing ChannelAware would silently leak these tools into every agent's LLM
+// tool list (loop_tool_filter.go uses it to filter per-request).
 var _ = func() bool {
 	var _ ZaloPersonalActionAware = (*ZaloPersonalCreatePollTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalGetPollTool)(nil)
@@ -270,8 +272,32 @@ var _ = func() bool {
 	var _ ZaloPersonalActionAware = (*ZaloPersonalLockPollTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalAddPollOptionsTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalReactTool)(nil)
+	var _ ChannelAware = (*ZaloPersonalCreatePollTool)(nil)
+	var _ ChannelAware = (*ZaloPersonalGetPollTool)(nil)
+	var _ ChannelAware = (*ZaloPersonalVotePollTool)(nil)
+	var _ ChannelAware = (*ZaloPersonalLockPollTool)(nil)
+	var _ ChannelAware = (*ZaloPersonalAddPollOptionsTool)(nil)
+	var _ ChannelAware = (*ZaloPersonalReactTool)(nil)
 	return true
 }()
+
+func TestAllToolsDeclareZaloPersonalChannelType(t *testing.T) {
+	t.Parallel()
+	tools := []ChannelAware{
+		NewZaloPersonalCreatePollTool(),
+		NewZaloPersonalGetPollTool(),
+		NewZaloPersonalVotePollTool(),
+		NewZaloPersonalLockPollTool(),
+		NewZaloPersonalAddPollOptionsTool(),
+		NewZaloPersonalReactTool(),
+	}
+	for _, tl := range tools {
+		types := tl.RequiredChannelTypes()
+		if len(types) != 1 || types[0] != channels.TypeZaloPersonal {
+			t.Errorf("%T: RequiredChannelTypes()=%v, want [%s]", tl, types, channels.TypeZaloPersonal)
+		}
+	}
+}
 
 // Silence unused-import warnings if test branches go away later.
 var _ = fmt.Sprintf

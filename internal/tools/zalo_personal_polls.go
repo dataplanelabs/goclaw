@@ -46,6 +46,10 @@ func NewZaloPersonalCreatePollTool() *ZaloPersonalCreatePollTool { return &ZaloP
 
 func (t *ZaloPersonalCreatePollTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) { t.actionFn = fn }
 
+func (t *ZaloPersonalCreatePollTool) RequiredChannelTypes() []string {
+	return []string{channels.TypeZaloPersonal}
+}
+
 func (t *ZaloPersonalCreatePollTool) Name() string { return "zalo_personal_create_poll" }
 
 func (t *ZaloPersonalCreatePollTool) Description() string {
@@ -115,7 +119,10 @@ type ZaloPersonalGetPollTool struct{ actionFn ZaloPersonalActionFn }
 
 func NewZaloPersonalGetPollTool() *ZaloPersonalGetPollTool { return &ZaloPersonalGetPollTool{} }
 func (t *ZaloPersonalGetPollTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) { t.actionFn = fn }
-func (t *ZaloPersonalGetPollTool) Name() string                                    { return "zalo_personal_get_poll" }
+func (t *ZaloPersonalGetPollTool) RequiredChannelTypes() []string {
+	return []string{channels.TypeZaloPersonal}
+}
+func (t *ZaloPersonalGetPollTool) Name() string { return "zalo_personal_get_poll" }
 func (t *ZaloPersonalGetPollTool) Description() string {
 	return "Read the current state of a Zalo Personal poll: options, vote counts, locked flag."
 }
@@ -151,7 +158,10 @@ type ZaloPersonalVotePollTool struct{ actionFn ZaloPersonalActionFn }
 
 func NewZaloPersonalVotePollTool() *ZaloPersonalVotePollTool { return &ZaloPersonalVotePollTool{} }
 func (t *ZaloPersonalVotePollTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) { t.actionFn = fn }
-func (t *ZaloPersonalVotePollTool) Name() string                                    { return "zalo_personal_vote_poll" }
+func (t *ZaloPersonalVotePollTool) RequiredChannelTypes() []string {
+	return []string{channels.TypeZaloPersonal}
+}
+func (t *ZaloPersonalVotePollTool) Name() string { return "zalo_personal_vote_poll" }
 func (t *ZaloPersonalVotePollTool) Description() string {
 	return "Vote on a Zalo Personal poll. Pass empty option_ids to unvote."
 }
@@ -188,7 +198,10 @@ type ZaloPersonalLockPollTool struct{ actionFn ZaloPersonalActionFn }
 
 func NewZaloPersonalLockPollTool() *ZaloPersonalLockPollTool { return &ZaloPersonalLockPollTool{} }
 func (t *ZaloPersonalLockPollTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) { t.actionFn = fn }
-func (t *ZaloPersonalLockPollTool) Name() string                                    { return "zalo_personal_lock_poll" }
+func (t *ZaloPersonalLockPollTool) RequiredChannelTypes() []string {
+	return []string{channels.TypeZaloPersonal}
+}
+func (t *ZaloPersonalLockPollTool) Name() string { return "zalo_personal_lock_poll" }
 func (t *ZaloPersonalLockPollTool) Description() string {
 	return "Close a Zalo Personal poll so no more votes are accepted."
 }
@@ -225,6 +238,9 @@ func NewZaloPersonalAddPollOptionsTool() *ZaloPersonalAddPollOptionsTool {
 }
 func (t *ZaloPersonalAddPollOptionsTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) {
 	t.actionFn = fn
+}
+func (t *ZaloPersonalAddPollOptionsTool) RequiredChannelTypes() []string {
+	return []string{channels.TypeZaloPersonal}
 }
 func (t *ZaloPersonalAddPollOptionsTool) Name() string {
 	return "zalo_personal_add_poll_options"
