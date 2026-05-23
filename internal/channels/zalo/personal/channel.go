@@ -30,6 +30,12 @@ type Channel struct {
 	reactionCoalescer *reactionCoalescer
 	episodicStore     store.EpisodicStore
 
+	reactions      sync.Map
+	reactionWG     sync.WaitGroup
+	reactionCtx    context.Context
+	reactionCancel context.CancelFunc
+	lastReplyChars sync.Map
+
 	preloadedCreds *protocol.Credentials
 
 	stopCh   chan struct{}
@@ -68,6 +74,7 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 	ch.SetHistoryLimit(historyLimit)
 	ch.SetRequireMention(requireMention)
 	ch.reactionCoalescer = newReactionCoalescer(reactionCoalesceWindow, ch.emitCoalescedReaction)
+	ch.reactionCtx, ch.reactionCancel = context.WithCancel(context.Background())
 	return ch, nil
 }
 
@@ -168,11 +175,12 @@ func (c *Channel) Stop(_ context.Context) error {
 		ln.Stop()
 	}
 	if c.reactionCoalescer != nil {
-		// Cancel pending sleepers; do NOT flush emitted events because Stop()
-		// means we're tearing down the agent path — synthetic reactions would
-		// land in a dead HandleMessage call.
 		c.reactionCoalescer.Cancel()
 	}
+	if c.reactionCancel != nil {
+		c.reactionCancel()
+	}
+	c.reactionWG.Wait()
 	c.SetRunning(false)
 	return nil
 }

@@ -72,8 +72,7 @@ func wireExtraTools(
 	toolsReg.Register(tools.NewZaloPersonalVotePollTool())
 	toolsReg.Register(tools.NewZaloPersonalLockPollTool())
 	toolsReg.Register(tools.NewZaloPersonalAddPollOptionsTool())
-	toolsReg.Register(tools.NewZaloPersonalReactTool())
-	slog.Info("zalo_personal poll + react tools registered", "count", 6)
+	slog.Info("zalo_personal poll tools registered", "count", 5)
 
 	// Register legacy tool aliases (backward-compat names from policy.go).
 	for alias, canonical := range tools.LegacyToolAliases() {

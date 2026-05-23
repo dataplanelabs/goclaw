@@ -15,7 +15,6 @@ type ZaloPersonalAction interface {
 	VotePoll(ctx context.Context, pollID int64, optionIDs []int64) (ZaloPollState, error)
 	LockPoll(ctx context.Context, pollID int64) error
 	AddPollOptions(ctx context.Context, pollID int64, newOptions []string, votedOptionIDs []int64) (ZaloPollState, error)
-	React(ctx context.Context, chatID, msgID, cliMsgID, reactionInput, threadTypeHint string) error
 	IsRunning() bool
 	IsGroup(chatID string) bool
 }

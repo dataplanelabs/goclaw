@@ -32,6 +32,10 @@ type zaloInstanceConfig struct {
 	DisableReactions    bool     `json:"disable_reactions,omitempty"`
 	ListenSelfReactions bool     `json:"listen_self_reactions,omitempty"`
 	ReactionsMode       string   `json:"reactions_mode,omitempty"`
+
+	ReactionLevel              string `json:"reaction_level,omitempty"`
+	ReactionTerminalDelayMinMs int    `json:"reaction_terminal_delay_min_ms,omitempty"`
+	ReactionTerminalDelayMaxMs int    `json:"reaction_terminal_delay_max_ms,omitempty"`
 }
 
 // Factory creates a Zalo Personal channel from DB instance data.
@@ -72,6 +76,10 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 		DisableReactions:    ic.DisableReactions,
 		ListenSelfReactions: ic.ListenSelfReactions,
 		ReactionsMode:       ic.ReactionsMode,
+
+		ReactionLevel:              ic.ReactionLevel,
+		ReactionTerminalDelayMinMs: ic.ReactionTerminalDelayMinMs,
+		ReactionTerminalDelayMaxMs: ic.ReactionTerminalDelayMaxMs,
 	}
 
 	ch, err := New(zaloCfg, msgBus, pairingSvc, nil)

@@ -199,8 +199,13 @@ type ZaloPersonalConfig struct {
 	BlockReply          *bool               `json:"block_reply,omitempty"`        // override gateway block_reply (nil = inherit)
 	QuoteUserMessage    *bool               `json:"quote_user_message,omitempty"` // default false (opt-in); set true to render bot replies as native Zalo quote bubbles when user quoted
 	DisablePolls        bool                `json:"disable_polls,omitempty"`         // kill switch for the 5 poll tools
-	DisableReactions    bool                `json:"disable_reactions,omitempty"`     // kill switch for the react tool AND inbound reaction synthesis
+	DisableReactions    bool                `json:"disable_reactions,omitempty"`     // kill switch for the inbound reaction feedback path
 	ListenSelfReactions bool                `json:"listen_self_reactions,omitempty"` // opt-in: surface reactions to the bot's own messages
+	// Outbound deterministic reactions on user messages (thinking/done/error).
+	// off (default), minimal (terminal only), full (intermediate + terminal).
+	ReactionLevel              string `json:"reaction_level,omitempty"`
+	ReactionTerminalDelayMinMs int    `json:"reaction_terminal_delay_min_ms,omitempty"`
+	ReactionTerminalDelayMaxMs int    `json:"reaction_terminal_delay_max_ms,omitempty"`
 	// ReactionsMode controls what happens when an inbound reaction is observed.
 	//   "silent"   — drop without logging
 	//   "feedback" (default) — log the reaction as signal but do NOT trigger an agent run
