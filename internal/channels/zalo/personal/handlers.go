@@ -97,6 +97,7 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 
 	metadata := map[string]string{
 		"message_id":   msg.Data.MsgID,
+		"cli_msg_id":   msg.Data.CliMsgID.String(),
 		"platform":     channels.TypeZaloPersonal,
 		"display_name": channels.SanitizeDisplayName(senderName),
 	}
@@ -178,6 +179,7 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 
 	metadata := map[string]string{
 		"message_id":   msg.Data.MsgID,
+		"cli_msg_id":   msg.Data.CliMsgID.String(),
 		"platform":     channels.TypeZaloPersonal,
 		"group_id":     threadID,
 		"display_name": channels.SanitizeDisplayName(senderName),

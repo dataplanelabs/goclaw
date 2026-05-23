@@ -31,6 +31,7 @@ type ZpwServiceMapV3 struct {
 	File      []string `json:"file"`
 	Profile   []string `json:"profile"`
 	GroupPoll []string `json:"group_poll"`
+	Reaction  []string `json:"reaction"`
 	// Only fields needed for GoClaw; Zalo returns many more.
 }
 
@@ -134,4 +135,52 @@ type QRUserInfo struct {
 type UserInfo struct {
 	Name   string `json:"name"`
 	Avatar string `json:"avatar"`
+}
+
+// --- Poll types (faithful to zca-js src/apis/createPoll.ts + src/models). ---
+
+// CreatePollOptions mirrors zca-js CreatePollOptions. Zero values are omitted
+// from the encrypted payload so Zalo applies its own defaults.
+type CreatePollOptions struct {
+	Question          string   `json:"question"`
+	Options           []string `json:"options"`
+	ExpiredTime       int64    `json:"expired_time,omitempty"`       // ms; 0 = no expiration
+	AllowMultiChoices bool     `json:"allow_multi_choices,omitempty"`
+	AllowAddNewOption bool     `json:"allow_add_new_option,omitempty"`
+	HideVotePreview   bool     `json:"is_hide_vote_preview,omitempty"`
+	IsAnonymous       bool     `json:"is_anonymous,omitempty"`
+}
+
+// PollOption is a single answer slot on a poll.
+type PollOption struct {
+	OptionID   int64    `json:"option_id"`
+	Content    string   `json:"content"`
+	VotedUsers []string `json:"voted_users,omitempty"`
+	VoteCount  int      `json:"vote_count"`
+	Voted      bool     `json:"voted,omitempty"`
+}
+
+// PollDetail is the full poll-state response. Field shape inferred from
+// zca-js usage; verify against a live response during Phase 2 (Locked may
+// instead be encoded as `state: 1`).
+type PollDetail struct {
+	PollID            json.Number  `json:"poll_id"`
+	Question          string       `json:"question"`
+	Options           []PollOption `json:"options"`
+	ExpiredTime       int64        `json:"expired_time"`
+	PollType          int          `json:"poll_type"`
+	AllowMultiChoices bool         `json:"allow_multi_choices"`
+	AllowAddNewOption bool         `json:"allow_add_new_option"`
+	HideVotePreview   bool         `json:"is_hide_vote_preview"`
+	IsAnonymous       bool         `json:"is_anonymous"`
+	GroupID           string       `json:"group_id"`
+	CreatorID         string       `json:"creator_id"`
+	CreatedTime       int64        `json:"created_time"`
+	Locked            bool         `json:"locked,omitempty"`
+}
+
+// AddPollOptionsItem is one entry in addPollOptions's new_options payload.
+type AddPollOptionsItem struct {
+	Voted   bool   `json:"voted"`
+	Content string `json:"content"`
 }
