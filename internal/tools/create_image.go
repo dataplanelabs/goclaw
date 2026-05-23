@@ -221,6 +221,15 @@ func (t *CreateImageTool) callProvider(ctx context.Context, cp credentialProvide
 	// Must check before the cp==nil guard — these providers intentionally have no APIKey/APIBase.
 	if rawProvider, ok := params["_native_provider"]; ok {
 		if np, ok := rawProvider.(providers.NativeImageProvider); ok {
+			// Codex Responses API image_generation tool action="generate" cannot
+			// accept input_image parts — generating text-only would silently
+			// ignore the user's selfie. Skip so the chain falls through to a
+			// provider that supports edits (OpenRouter, OpenAI /v1/images/edits, etc).
+			if refs, _ := params["reference_images"].([]providers.ImageContent); len(refs) > 0 {
+				slog.Warn("create_image: native provider does not support reference images, falling through",
+					"provider", providerName, "ref_count", len(refs))
+				return nil, nil, fmt.Errorf("provider %q (native) does not support reference images; configure an edits-capable provider (openrouter / openai / gemini) earlier in the chain", providerName)
+			}
 			prompt := GetParamString(params, "prompt", "")
 			aspectRatio := GetParamString(params, "aspect_ratio", "1:1")
 			imageModel := GetParamString(params, "image_model", "")
