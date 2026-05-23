@@ -27,6 +27,7 @@ type zaloInstanceConfig struct {
 	HistoryLimit        int      `json:"history_limit,omitempty"`
 	AllowFrom           []string `json:"allow_from,omitempty"`
 	BlockReply          *bool    `json:"block_reply,omitempty"`
+	QuoteUserMessage    *bool    `json:"quote_user_message,omitempty"`
 	DisablePolls        bool     `json:"disable_polls,omitempty"`
 	DisableReactions    bool     `json:"disable_reactions,omitempty"`
 	ListenSelfReactions bool     `json:"listen_self_reactions,omitempty"`
@@ -65,6 +66,7 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 		RequireMention:      ic.RequireMention,
 		HistoryLimit:        ic.HistoryLimit,
 		BlockReply:          ic.BlockReply,
+		QuoteUserMessage:    ic.QuoteUserMessage,
 		DisablePolls:        ic.DisablePolls,
 		DisableReactions:    ic.DisableReactions,
 		ListenSelfReactions: ic.ListenSelfReactions,
@@ -118,6 +120,7 @@ func FactoryWithPendingStore(pendingStore store.PendingMessageStore) channels.Ch
 			RequireMention:      ic.RequireMention,
 			HistoryLimit:        ic.HistoryLimit,
 			BlockReply:          ic.BlockReply,
+			QuoteUserMessage:    ic.QuoteUserMessage,
 			DisablePolls:        ic.DisablePolls,
 			DisableReactions:    ic.DisableReactions,
 			ListenSelfReactions: ic.ListenSelfReactions,

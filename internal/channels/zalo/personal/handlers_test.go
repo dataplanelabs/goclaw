@@ -12,15 +12,28 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 )
 
-// _ assertion: zalo_personal Channel must implement DMQuoteChannel so the
-// gateway helper stamps reply_to_message_id on outbound DM metadata.
 var _ channels.DMQuoteChannel = (*Channel)(nil)
 
-func TestChannel_QuoteInboundOnDM_True(t *testing.T) {
+func TestChannel_QuoteInboundOnDM_HonorsConfig(t *testing.T) {
 	t.Parallel()
-	c := &Channel{}
-	if !c.QuoteInboundOnDM() {
-		t.Fatal("zalo_personal must opt into DMQuoteChannel (native quote bubble support)")
+	off, on := false, true
+	cases := []struct {
+		name string
+		ptr  *bool
+		want bool
+	}{
+		{"unset_defaults_off", nil, false},
+		{"explicit_true", &on, true},
+		{"explicit_false", &off, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := &Channel{config: config.ZaloPersonalConfig{QuoteUserMessage: tc.ptr}}
+			if got := c.QuoteInboundOnDM(); got != tc.want {
+				t.Errorf("QuoteInboundOnDM = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -102,10 +115,12 @@ func TestBuildQuoteMetadata_RoundTrip(t *testing.T) {
 func newHandlerTestChannel(t *testing.T) (*Channel, *bus.MessageBus) {
 	t.Helper()
 	mb := bus.New()
+	enabled := true
 	ch, err := New(config.ZaloPersonalConfig{
-		Enabled:     true,
-		DMPolicy:    "open",
-		GroupPolicy: "open",
+		Enabled:          true,
+		DMPolicy:         "open",
+		GroupPolicy:      "open",
+		QuoteUserMessage: &enabled,
 	}, mb, nil, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -156,6 +171,39 @@ func TestHandleDM_StampsQuoteMetadata(t *testing.T) {
 	// Sanity: existing keys still present.
 	if got.Metadata["message_id"] != "current-msg" {
 		t.Errorf("message_id = %q, want current-msg", got.Metadata["message_id"])
+	}
+}
+
+// TestHandleDM_QuoteDisabledByConfig: when QuoteUserMessage is false (default),
+// the handler must NOT stamp quote metadata even when the inbound carries a
+// TQuote — bot replies stay plain regardless of user's quote action.
+func TestHandleDM_QuoteDisabledByConfig(t *testing.T) {
+	t.Parallel()
+	mb := bus.New()
+	disabled := false
+	ch, err := New(config.ZaloPersonalConfig{
+		Enabled: true, DMPolicy: "open", GroupPolicy: "open",
+		QuoteUserMessage: &disabled,
+	}, mb, nil, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	text := "hi"
+	ch.handleDM(protocol.NewUserMessage("self-uid", protocol.TMessage{
+		MsgID: "m1", UIDFrom: "456", IDTo: "self-uid",
+		Content: protocol.Content{String: &text},
+		Quote: &protocol.TQuote{
+			OwnerID: "111", GlobalMsgID: json.Number("9876543210"), Msg: "x",
+		},
+	}))
+
+	got := drainInbound(t, mb)
+	if _, ok := got.Metadata["reply_to_quote_payload"]; ok {
+		t.Errorf("reply_to_quote_payload must not be stamped when QuoteUserMessage=false, got %v", got.Metadata)
+	}
+	if _, ok := got.Metadata["reply_to_message_id"]; ok {
+		t.Errorf("reply_to_message_id must not be stamped when QuoteUserMessage=false, got %v", got.Metadata)
 	}
 }
 
