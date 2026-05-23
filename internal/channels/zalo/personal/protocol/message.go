@@ -28,7 +28,24 @@ type TMessage struct {
 	CMD      int         `json:"cmd"`
 	ST       int         `json:"st"`
 	AT       int         `json:"at"`
-	Quote    *TQuote     `json:"quote,omitempty"`
+	// Held as raw JSON so a polymorphic / unexpected quote shape (e.g. attach
+	// as object instead of string) never fails the parent TMessage unmarshal
+	// and silently drops the entire message in handleUserMessages.
+	Quote json.RawMessage `json:"quote,omitempty"`
+}
+
+// ParseQuote decodes the lazy Quote raw JSON into TQuote. Returns nil, nil if
+// no quote is attached. Returns nil, err on parse failure — caller decides
+// whether to drop quote metadata or fall back to a minimal stamp.
+func (m *TMessage) ParseQuote() (*TQuote, error) {
+	if len(m.Quote) == 0 || string(m.Quote) == "null" {
+		return nil, nil
+	}
+	var q TQuote
+	if err := json.Unmarshal(m.Quote, &q); err != nil {
+		return nil, err
+	}
+	return &q, nil
 }
 
 // TQuote represents a quoted message attached to a TMessage (when a user replies

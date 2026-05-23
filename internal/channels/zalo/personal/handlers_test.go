@@ -112,15 +112,11 @@ func TestBuildQuoteMetadata_NilReturnsNil(t *testing.T) {
 // contains invalid JSON, json.Marshal fails — the helper must return nil
 // (no half-stamp) so the outbound reply gracefully degrades to a plain send
 // rather than carrying a stale reply_to_message_id with no payload.
-func TestBuildQuoteMetadata_InvalidPropertyExtReturnsNil(t *testing.T) {
+func TestBuildQuoteMetadata_UnparseableQuoteReturnsNil(t *testing.T) {
 	t.Parallel()
-	bad := &protocol.TQuote{
-		OwnerID:     "111",
-		GlobalMsgID: json.Number("9876543210"),
-		PropertyExt: json.RawMessage(`not-valid-json{`),
-	}
-	if got := buildQuoteMetadata(bad); got != nil {
-		t.Errorf("buildQuoteMetadata with invalid PropertyExt should return nil, got %v", got)
+	raw := json.RawMessage(`{"ownerId":"111","cliMsgId":"not-a-number"}`)
+	if got := buildQuoteMetadata(raw); got != nil {
+		t.Errorf("buildQuoteMetadata with unparseable quote should return nil, got %v", got)
 	}
 }
 
@@ -139,8 +135,9 @@ func TestBuildQuoteMetadata_RoundTrip(t *testing.T) {
 		TTL:         0,
 		PropertyExt: propertyExt,
 	}
+	rawQuote, _ := json.Marshal(original)
 
-	meta := buildQuoteMetadata(original)
+	meta := buildQuoteMetadata(rawQuote)
 	if meta["reply_to_message_id"] != "9876543210" {
 		t.Errorf("reply_to_message_id = %q, want 9876543210", meta["reply_to_message_id"])
 	}
@@ -208,13 +205,13 @@ func TestHandleDM_StampsQuoteMetadata(t *testing.T) {
 	t.Parallel()
 	ch, mb := newHandlerTestChannel(t)
 	text := "thanks!"
-	quote := &protocol.TQuote{
+	quote, _ := json.Marshal(&protocol.TQuote{
 		OwnerID:     "111",
 		GlobalMsgID: json.Number("9876543210"),
 		CliMsgID:    json.Number("1709300000"),
 		Msg:         "hello there",
 		FromD:       "789",
-	}
+	})
 
 	ch.handleDM(protocol.NewUserMessage("self-uid", protocol.TMessage{
 		MsgID:   "current-msg",
@@ -254,12 +251,13 @@ func TestHandleDM_QuoteDisabledByConfig(t *testing.T) {
 	}
 
 	text := "hi"
+	quote, _ := json.Marshal(&protocol.TQuote{
+		OwnerID: "111", GlobalMsgID: json.Number("9876543210"), Msg: "x",
+	})
 	ch.handleDM(protocol.NewUserMessage("self-uid", protocol.TMessage{
 		MsgID: "m1", UIDFrom: "456", IDTo: "self-uid",
 		Content: protocol.Content{String: &text},
-		Quote: &protocol.TQuote{
-			OwnerID: "111", GlobalMsgID: json.Number("9876543210"), Msg: "x",
-		},
+		Quote:   quote,
 	}))
 
 	got := drainInbound(t, mb)
@@ -302,11 +300,11 @@ func TestHandleGroupMessage_StampsQuoteMetadata(t *testing.T) {
 	ch.SetRequireMention(false)
 
 	text := "group reply"
-	quote := &protocol.TQuote{
+	quote, _ := json.Marshal(&protocol.TQuote{
 		OwnerID:     "111",
 		GlobalMsgID: json.Number("9876543299"),
 		Msg:         "original group msg",
-	}
+	})
 
 	ch.handleGroupMessage(protocol.NewGroupMessage("self-uid", protocol.TGroupMessage{
 		TMessage: protocol.TMessage{
