@@ -3,6 +3,8 @@ package personal
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +114,61 @@ func TestBuildQuoteMetadata_NilReturnsNil(t *testing.T) {
 // contains invalid JSON, json.Marshal fails — the helper must return nil
 // (no half-stamp) so the outbound reply gracefully degrades to a plain send
 // rather than carrying a stale reply_to_message_id with no payload.
+func TestQuoteContextPrefix(t *testing.T) {
+	t.Parallel()
+	mk := func(msg string) json.RawMessage {
+		b, _ := json.Marshal(&protocol.TQuote{Msg: msg})
+		return b
+	}
+	long := strings.TrimSpace(strings.Repeat("lorem ipsum ", 50))
+	cases := []struct {
+		name string
+		raw  json.RawMessage
+		want string
+	}{
+		{"empty", nil, ""},
+		{"null", json.RawMessage("null"), ""},
+		{"blank msg", mk("   "), ""},
+		{"short", mk("hello world"), "[Replying to: \"hello world\"]\n"},
+		{"full body preserved (no truncation)", mk(long), fmt.Sprintf("[Replying to: %q]\n", long)},
+		{"invalid json", json.RawMessage("not-json"), ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quoteContextPrefix(tc.raw); got != tc.want {
+				t.Errorf("got %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHandleDM_QuoteContextInjectedIntoAgentInput(t *testing.T) {
+	t.Parallel()
+	ch, mb := newHandlerTestChannel(t)
+	text := "follow-up question"
+	quoted := "earlier bot reply being referenced"
+	quote, _ := json.Marshal(&protocol.TQuote{
+		OwnerID: "self-uid", GlobalMsgID: json.Number("9876543210"),
+		Msg: quoted,
+	})
+	ch.handleDM(protocol.NewUserMessage("self-uid", protocol.TMessage{
+		MsgID: "m-current", UIDFrom: "456", IDTo: "self-uid", DName: "Alice",
+		Content: protocol.Content{String: &text},
+		Quote:   quote,
+	}))
+	got := drainInbound(t, mb)
+	if !strings.Contains(got.Content, "[Replying to:") {
+		t.Errorf("agent input missing quote prefix:\n%s", got.Content)
+	}
+	if !strings.Contains(got.Content, quoted) {
+		t.Errorf("agent input missing quoted body:\n%s", got.Content)
+	}
+	if !strings.Contains(got.Content, text) {
+		t.Errorf("agent input missing user's new text:\n%s", got.Content)
+	}
+}
+
 func TestBuildQuoteMetadata_UnparseableQuoteReturnsNil(t *testing.T) {
 	t.Parallel()
 	raw := json.RawMessage(`{"ownerId":"111","cliMsgId":"not-a-number"}`)
