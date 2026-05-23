@@ -14,6 +14,50 @@ import (
 
 var _ channels.DMQuoteChannel = (*Channel)(nil)
 
+func TestExtractTextFromRawContent(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"empty", "", ""},
+		{"plain object with title", `{"title":"review quote nay","params":{"id":"x"}}`, "review quote nay"},
+		{"text field", `{"text":"hello there"}`, "hello there"},
+		{"msg field", `{"msg":"hi","other":1}`, "hi"},
+		{"first match wins (title beats text)", `{"text":"second","title":"first"}`, "first"},
+		{"whitespace trimmed", `{"title":"   spaced   "}`, "spaced"},
+		{"no text field", `{"href":"https://x.com/y.jpg","width":100}`, ""},
+		{"invalid json", `not-json`, ""},
+		{"null", `null`, ""},
+		{"non-object array", `[1,2,3]`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := extractTextFromRawContent(json.RawMessage(tc.raw))
+			if got != tc.want {
+				t.Errorf("extractTextFromRawContent(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExtractContentAndMedia_QuotedReplyShape(t *testing.T) {
+	t.Parallel()
+	var c protocol.Content
+	if err := json.Unmarshal([]byte(`{"title":"review quote nay","params":{"id":"x"}}`), &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got, media := extractContentAndMedia(c)
+	if got != "review quote nay" {
+		t.Errorf("content = %q, want 'review quote nay'", got)
+	}
+	if media != nil {
+		t.Errorf("media = %v, want nil", media)
+	}
+}
+
 func TestChannel_QuoteInboundOnDM_HonorsConfig(t *testing.T) {
 	t.Parallel()
 	off, on := false, true

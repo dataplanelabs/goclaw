@@ -189,15 +189,18 @@ type ZaloOAConfig struct {
 }
 
 type ZaloPersonalConfig struct {
-	Enabled         bool                `json:"enabled"`
-	AllowFrom       FlexibleStringSlice `json:"allow_from"`
-	DMPolicy        string              `json:"dm_policy,omitempty"`        // "pairing" (default), "allowlist", "open", "disabled"
-	GroupPolicy     string              `json:"group_policy,omitempty"`     // "open" (default), "allowlist", "disabled"
-	RequireMention  *bool               `json:"require_mention,omitempty"`  // require @bot mention in groups (default true)
-	HistoryLimit    int                 `json:"history_limit,omitempty"`    // max pending group messages for context (default 50, 0=disabled)
-	CredentialsPath string              `json:"credentials_path,omitempty"` // path to saved cookies JSON
-	BlockReply      *bool               `json:"block_reply,omitempty"`      // override gateway block_reply (nil = inherit)
-	QuoteUserMessage *bool `json:"quote_user_message,omitempty"` // default false (opt-in); set true to render bot replies as native Zalo quote bubbles when user quoted
+	Enabled             bool                `json:"enabled"`
+	AllowFrom           FlexibleStringSlice `json:"allow_from"`
+	DMPolicy            string              `json:"dm_policy,omitempty"`          // "pairing" (default), "allowlist", "open", "disabled"
+	GroupPolicy         string              `json:"group_policy,omitempty"`       // "open" (default), "allowlist", "disabled"
+	RequireMention      *bool               `json:"require_mention,omitempty"`    // require @bot mention in groups (default true)
+	HistoryLimit        int                 `json:"history_limit,omitempty"`      // max pending group messages for context (default 50, 0=disabled)
+	CredentialsPath     string              `json:"credentials_path,omitempty"`   // path to saved cookies JSON
+	BlockReply          *bool               `json:"block_reply,omitempty"`        // override gateway block_reply (nil = inherit)
+	QuoteUserMessage    *bool               `json:"quote_user_message,omitempty"` // default false (opt-in); set true to render bot replies as native Zalo quote bubbles when user quoted
+	DisablePolls        bool                `json:"disable_polls,omitempty"`         // kill switch for the 5 poll tools
+	DisableReactions    bool                `json:"disable_reactions,omitempty"`     // kill switch for the react tool AND inbound reaction synthesis
+	ListenSelfReactions bool                `json:"listen_self_reactions,omitempty"` // opt-in: surface reactions to the bot's own messages
 }
 
 type FeishuConfig struct {

@@ -17,17 +17,18 @@ type Message interface {
 
 // TMessage is the raw JSON message payload from Zalo WebSocket.
 type TMessage struct {
-	MsgID   string  `json:"msgId"`
-	UIDFrom string  `json:"uidFrom"`
-	IDTo    string  `json:"idTo"`
-	DName   string  `json:"dName"`
-	TS      string  `json:"ts"`
-	Content Content `json:"content"`
-	MsgType string  `json:"msgType"`
-	CMD     int     `json:"cmd"`
-	ST      int     `json:"st"`
-	AT      int     `json:"at"`
-	Quote   *TQuote `json:"quote,omitempty"`
+	MsgID    string      `json:"msgId"`
+	CliMsgID json.Number `json:"cliMsgId,omitempty"`
+	UIDFrom  string      `json:"uidFrom"`
+	IDTo     string      `json:"idTo"`
+	DName    string      `json:"dName"`
+	TS       string      `json:"ts"`
+	Content  Content     `json:"content"`
+	MsgType  string      `json:"msgType"`
+	CMD      int         `json:"cmd"`
+	ST       int         `json:"st"`
+	AT       int         `json:"at"`
+	Quote    *TQuote     `json:"quote,omitempty"`
 }
 
 // TQuote represents a quoted message attached to a TMessage (when a user replies

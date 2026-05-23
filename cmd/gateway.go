@@ -479,6 +479,33 @@ func runGateway() {
 		}
 	}
 
+	// Wire Zalo Personal action resolver onto the 6 zalo_personal_* tools.
+	zpActionFn := func(ctx context.Context, channelName string) (tools.ZaloPersonalAction, error) {
+		ch, ok := channelMgr.GetChannel(channelName)
+		if !ok {
+			return nil, fmt.Errorf("channel %q not found", channelName)
+		}
+		zp, ok := ch.(*zalopersonal.Channel)
+		if !ok {
+			return nil, fmt.Errorf("channel %q is not zalo_personal (got %T)", channelName, ch)
+		}
+		return zp, nil
+	}
+	for _, name := range []string{
+		"zalo_personal_create_poll",
+		"zalo_personal_get_poll",
+		"zalo_personal_vote_poll",
+		"zalo_personal_lock_poll",
+		"zalo_personal_add_poll_options",
+		"zalo_personal_react",
+	} {
+		if t, ok := toolsReg.Get(name); ok {
+			if za, ok := t.(tools.ZaloPersonalActionAware); ok {
+				za.SetZaloPersonalActionFn(zpActionFn)
+			}
+		}
+	}
+
 	// Load channel instances from DB.
 	var instanceLoader *channels.InstanceLoader
 	if pgStores.ChannelInstances != nil {
