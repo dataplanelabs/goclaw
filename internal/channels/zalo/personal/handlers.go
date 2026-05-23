@@ -53,7 +53,9 @@ func extractTextFromRawContent(raw json.RawMessage) string {
 // TQuote downstream: reply_to_message_id (the quoted message's global ID, for
 // gateway routing) and reply_to_quote_payload (the full JSON-serialized TQuote
 // quoteContextPrefix returns a "[Replying to ...]" line the agent can read.
-// Tries q.Msg first, falls back to q.Attach (Zalo packs rich messages there).
+// Tries q.Msg → caption-from-attach → media-type placeholder so the agent
+// always knows the user is replying to something specific even for media-only
+// quotes (image / sticker / voice / file).
 func quoteContextPrefix(raw json.RawMessage) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		return ""
@@ -67,14 +69,39 @@ func quoteContextPrefix(raw json.RawMessage) string {
 		slog.Warn("zalo_personal.quote.parse_failed", "err", err, "raw_preview", preview)
 		return ""
 	}
-	body := strings.TrimSpace(q.Msg)
-	if body == "" {
-		body = extractAttachBody(q.Attach)
+	if body := strings.TrimSpace(q.Msg); body != "" {
+		return fmt.Sprintf("[Replying to: %q]\n", body)
 	}
-	if body == "" {
+	if caption := extractAttachBody(q.Attach); caption != "" {
+		if label := mediaLabel(q.CliMsgType); label != "" {
+			return fmt.Sprintf("[Replying to %s: %q]\n", label, caption)
+		}
+		return fmt.Sprintf("[Replying to: %q]\n", caption)
+	}
+	if label := mediaLabel(q.CliMsgType); label != "" {
+		return fmt.Sprintf("[Replying to %s]\n", label)
+	}
+	return ""
+}
+
+func mediaLabel(cliMsgType int) string {
+	switch cliMsgType {
+	case 2:
+		return "an image"
+	case 3:
+		return "a sticker"
+	case 5:
+		return "a voice message"
+	case 19:
+		return "a checklist"
+	case 1:
+		return ""
+	default:
+		if cliMsgType > 0 {
+			return "a media message"
+		}
 		return ""
 	}
-	return fmt.Sprintf("[Replying to: %q]\n", body)
 }
 
 func extractAttachBody(attach string) string {
