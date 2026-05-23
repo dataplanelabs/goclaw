@@ -225,7 +225,6 @@ func TestParametersAreValidJSONSchema(t *testing.T) {
 		NewZaloPersonalVotePollTool(),
 		NewZaloPersonalLockPollTool(),
 		NewZaloPersonalAddPollOptionsTool(),
-		NewZaloPersonalReactTool(),
 	}
 	for _, tl := range tools {
 		p := tl.Parameters()
@@ -253,7 +252,6 @@ func TestToolNamesMatchExpected(t *testing.T) {
 		NewZaloPersonalVotePollTool().Name():       "zalo_personal_vote_poll",
 		NewZaloPersonalLockPollTool().Name():       "zalo_personal_lock_poll",
 		NewZaloPersonalAddPollOptionsTool().Name(): "zalo_personal_add_poll_options",
-		NewZaloPersonalReactTool().Name():          "zalo_personal_react",
 	}
 	for name, want := range got {
 		if name != want {
@@ -271,13 +269,11 @@ var _ = func() bool {
 	var _ ZaloPersonalActionAware = (*ZaloPersonalVotePollTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalLockPollTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalAddPollOptionsTool)(nil)
-	var _ ZaloPersonalActionAware = (*ZaloPersonalReactTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalCreatePollTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalGetPollTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalVotePollTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalLockPollTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalAddPollOptionsTool)(nil)
-	var _ ChannelAware = (*ZaloPersonalReactTool)(nil)
 	return true
 }()
 
@@ -289,7 +285,6 @@ func TestAllToolsDeclareZaloPersonalChannelType(t *testing.T) {
 		NewZaloPersonalVotePollTool(),
 		NewZaloPersonalLockPollTool(),
 		NewZaloPersonalAddPollOptionsTool(),
-		NewZaloPersonalReactTool(),
 	}
 	for _, tl := range tools {
 		types := tl.RequiredChannelTypes()

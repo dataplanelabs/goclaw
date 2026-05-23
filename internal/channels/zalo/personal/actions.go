@@ -3,7 +3,6 @@ package personal
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
@@ -90,44 +89,6 @@ func (c *Channel) AddPollOptions(ctx context.Context, pollID int64, newOptions [
 		PollID:  fmt.Sprintf("%d", pollID),
 		Options: optionsToState(opts),
 	}, nil
-}
-
-// React adds (or removes) a reaction. threadTypeHint: "user" | "group" | ""
-// (auto-detect). Auto-detect falls back to IsGroupApproved, which can
-// misroute for never-before-seen chats — tools should pass the explicit hint
-// from inbound metadata when available.
-func (c *Channel) React(ctx context.Context, chatID, msgID, cliMsgID, reactionInput, threadTypeHint string) error {
-	sess := c.session()
-	if !c.IsRunning() || sess == nil {
-		return fmt.Errorf("zalo_personal: channel not running")
-	}
-	if c.config.DisableReactions {
-		return fmt.Errorf("zalo_personal: reactions disabled by config")
-	}
-	code, ok := protocol.ResolveReactionCode(reactionInput)
-	if !ok {
-		return fmt.Errorf("zalo_personal: unknown reaction %q (use unicode emoji like ❤️, English name like 'heart', or raw Zalo code)", reactionInput)
-	}
-
-	threadType := protocol.ThreadTypeUser
-	switch strings.ToLower(strings.TrimSpace(threadTypeHint)) {
-	case "group":
-		threadType = protocol.ThreadTypeGroup
-	case "user", "direct", "dm":
-		threadType = protocol.ThreadTypeUser
-	default:
-		if c.IsGroupApproved(chatID) {
-			threadType = protocol.ThreadTypeGroup
-		}
-	}
-
-	_, err := protocol.AddReaction(ctx, sess, protocol.ReactionDest{
-		MsgID:    msgID,
-		CliMsgID: cliMsgID,
-		ThreadID: chatID,
-		Type:     threadType,
-	}, code)
-	return err
 }
 
 // IsGroup mirrors the ZaloPersonalAction surface.
