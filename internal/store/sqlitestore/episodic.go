@@ -129,8 +129,12 @@ func (s *SQLiteEpisodicStore) ListBySourceType(ctx context.Context, agentID, use
 		       turn_count, token_count, l0_abstract, source_id, source_type,
 		       created_at, expires_at, recall_count, recall_score, last_recalled_at
 		FROM episodic_summaries
-		WHERE agent_id = ? AND user_id = ? AND source_type = ? AND tenant_id = ?`
-	args := []any{agentID, userID, sourceType, tenantID.String()}
+		WHERE agent_id = ? AND source_type = ? AND tenant_id = ?`
+	args := []any{agentID, sourceType, tenantID.String()}
+	if userID != "" {
+		q += ` AND user_id = ?`
+		args = append(args, userID)
+	}
 	if !since.IsZero() {
 		q += ` AND created_at >= ?`
 		args = append(args, since.UTC().Format(time.RFC3339Nano))
