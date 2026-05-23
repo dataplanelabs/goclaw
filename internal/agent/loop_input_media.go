@@ -85,12 +85,6 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 				imageRefs = append(imageRefs, ref)
 			}
 		}
-		// Expose current-turn image refs to create_image (id-indexed lookup).
-		// Parallel to WithMediaImages (loaded bytes for vision); refs let
-		// create_image load bytes on demand when LLM passes reference_image_ids.
-		if len(imageRefs) > 0 {
-			ctx = tools.WithMediaImageRefs(ctx, imageRefs)
-		}
 		if deferToReadImageTool {
 			// File-ref mode: images primarily accessed via read_image(path=...).
 			// Still load into context as fallback — if LLM omits the path param,
@@ -114,6 +108,12 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 	// when LLM calls read_image without the path param.
 	if l.mediaStore != nil {
 		ctx = l.loadHistoricalImagesForTool(ctx, mediaRefs, messages)
+	}
+
+	// Image refs across history + current turn — lets create_image resolve
+	// reference_image_ids the LLM picked up from earlier turns.
+	if imgRefs := collectRefsByKind(messages, mediaRefs, "image"); len(imgRefs) > 0 {
+		ctx = tools.WithMediaImageRefs(ctx, imgRefs)
 	}
 
 	// 2b. Collect document MediaRefs (historical + current) for read_document tool.

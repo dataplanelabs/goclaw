@@ -35,6 +35,14 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **create_image: image refs now span the whole session** — `WithMediaImageRefs`
+  registered only the current turn's uploads (docs/audio/video already used a
+  history-aware collector; image was the outlier). After the user sent a selfie
+  then said "khong giong" with no new photo, the LLM recalled the prior ID but
+  `MediaImageRefsFromCtx` returned empty → resolved to zero refs → text-only
+  generation → random face. Now images use the same `collectRefsByKind` path as
+  other media; any ID anywhere in the session resolves to its persisted file.
+
 - **create_image: stale `reference_image_ids` silently dropped → random output** —
   when the LLM passed a UUID from a previous turn (common with chatty models),
   `resolveRefImageIDs` returned zero refs and the chain ran text-only, producing
