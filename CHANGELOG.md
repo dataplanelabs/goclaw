@@ -35,6 +35,16 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **create_image: filter ref pool to user-uploaded images only** — PR #37 made
+  `WithMediaImageRefs` history-aware via `collectRefsByKind`, but that helper
+  collected MediaRefs from ALL message roles — including assistant messages
+  carrying previously-generated images from `create_image`. When the LLM
+  passed a stale ID, the auto-bind fallback picked the 4 most-recent IDs,
+  which were the bot's own prior output images (`rainy-run-face-v5`, `v4`, etc),
+  not the user's selfie. Result: the bot fed its hallucinated face back into
+  the next generation. Added `collectUserUploadedRefs` that filters to
+  `Role == "user"` messages so bot outputs can never be re-used as input refs.
+
 - **create_image: image refs now span the whole session** — `WithMediaImageRefs`
   registered only the current turn's uploads (docs/audio/video already used a
   history-aware collector; image was the outlier). After the user sent a selfie
