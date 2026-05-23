@@ -35,6 +35,13 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Zalo Personal media-with-caption attachments dropped (regression of #14)** —
+  inbound `{title, href}` frames (image/video/audio/file with caption) were caught
+  by the quote-reply text probe before `ParseAttachment` ran, so the agent received
+  caption-only and `read_image`/media tools saw "No images available". Attachment
+  detection now runs before the title probe; caption text is prepended to the
+  `<media:*>` tag. Applies to DM and group paths.
+
 - **Upstream critical security remediation** — hardens gateway no-token fallback,
   Feishu/Lark and Pancake webhooks, sandbox path/write handling, tenant-admin
   checks for mutable HTTP surfaces, and Lite hook schema migration verification.
