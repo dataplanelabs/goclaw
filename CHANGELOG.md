@@ -35,6 +35,15 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **create_image: stale `reference_image_ids` silently dropped → random output** —
+  when the LLM passed a UUID from a previous turn (common with chatty models),
+  `resolveRefImageIDs` returned zero refs and the chain ran text-only, producing
+  an image that ignored the user's photo. Two-step fix: (1) if requested IDs
+  fail to resolve but the current turn DOES have attached images, auto-bind to
+  those (LLM clearly intended a ref, just got the ID wrong); (2) if no current
+  refs exist either, return a tool error telling the agent to ask the user to
+  resend the image instead of silently fabricating.
+
 - **create_image/create_audio/create_video: duplicate media delivery** — when the
   agent called `create_*` followed by `message(MEDIA:<path>)`, the file shipped
   twice (once via the auto-attached `result.Media`, once via the explicit message

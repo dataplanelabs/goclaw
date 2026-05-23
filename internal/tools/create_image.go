@@ -94,8 +94,6 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Res
 	}
 	filenameHint, _ := args["filename_hint"].(string)
 
-	// Resolve reference image IDs to loaded bytes (optional opt-in).
-	// Empty/absent → behavior unchanged (text-only generation).
 	var refImages []providers.ImageContent
 	if idsAny, ok := args["reference_image_ids"]; ok {
 		ids := toStringSlice(idsAny)
@@ -104,6 +102,23 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Res
 			refImages = resolveRefImageIDs(ctx, ids, availableRefs, maxRefImages)
 			slog.Info("create_image: reference images resolved",
 				"requested", len(ids), "loaded", len(refImages))
+
+			// LLMs sometimes pass UUIDs from prior turns. Auto-bind to current
+			// turn's images instead of silently producing a random face.
+			if len(refImages) == 0 && len(availableRefs) > 0 {
+				fallback := make([]string, 0, len(availableRefs))
+				for _, r := range availableRefs {
+					fallback = append(fallback, r.ID)
+				}
+				refImages = resolveRefImageIDs(ctx, fallback, availableRefs, maxRefImages)
+				slog.Warn("create_image: requested IDs not in current turn — auto-bound to current refs",
+					"requested_ids", ids, "available_ids", fallback, "loaded", len(refImages))
+			}
+
+			if len(refImages) == 0 {
+				return ErrorResult(fmt.Sprintf(
+					"reference_image_ids %v could not be resolved and no images are attached to the current turn. Ask the user to resend the image before retrying.", ids))
+			}
 		}
 	}
 
