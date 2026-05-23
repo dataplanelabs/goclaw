@@ -1,8 +1,6 @@
 package protocol
 
-import (
-	"testing"
-)
+import "testing"
 
 func TestResolveReactionCode_UnicodeRoundtrip(t *testing.T) {
 	for unicode, want := range unicodeToZalo {
@@ -21,19 +19,18 @@ func TestResolveReactionCode_UnicodeRoundtrip(t *testing.T) {
 }
 
 func TestResolveReactionCode_EnglishName(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
+	cases := []struct{ in, want string }{
 		{"heart", ReactionHeart},
 		{"HEART", ReactionHeart},
 		{" heart ", ReactionHeart},
 		{"like", ReactionLike},
 		{"thumbs_up", ReactionLike},
 		{"thumbsup", ReactionLike},
-		{"thumbs_down", ReactionDislike},
-		{"laugh", ReactionTearsOfJoy},
+		{"laugh", ReactionHaha},
 		{"angry", ReactionAngry},
+		{"wow", ReactionWow},
+		{"cry", ReactionCry},
+		{"worry", ReactionWorry},
 		{"remove", ReactionNone},
 		{"none", ReactionNone},
 		{"unreact", ReactionNone},
@@ -95,8 +92,7 @@ func TestLookupReactionMeta_UnknownCode(t *testing.T) {
 }
 
 func TestCatalogCount(t *testing.T) {
-	// 54 reactions as of 2026-05-23. Bump when adding new wired codes.
-	const want = 54
+	const want = 7
 	if got := len(reactionMetaTable); got != want {
 		t.Errorf("reactionMetaTable has %d entries, want %d", got, want)
 	}
@@ -110,9 +106,6 @@ func TestReactionCodeToUnicode_Heart(t *testing.T) {
 }
 
 func TestReactionCodeToUnicode_AllMappedCodesRoundtrip(t *testing.T) {
-	// Every Zalo code that appears as a value in unicodeToZalo must have a
-	// non-empty reverse lookup. First-write-wins decides which unicode wins
-	// when multiple map to the same code; only the existence matters here.
 	wanted := make(map[string]bool)
 	for _, code := range unicodeToZalo {
 		wanted[code] = true
@@ -121,14 +114,5 @@ func TestReactionCodeToUnicode_AllMappedCodesRoundtrip(t *testing.T) {
 		if got := ReactionCodeToUnicode(code); got == "" {
 			t.Errorf("ReactionCodeToUnicode(%q) returned empty; expected a unicode pair", code)
 		}
-	}
-}
-
-func TestReactionCodeToUnicode_UnmappedCode(t *testing.T) {
-	// /-li (sun) is in reactionMetaTable but the unicodeToZalo map points
-	// ☀️ at ReactionSun, so it DOES roundtrip. Pick a code that is in the
-	// catalog but NOT a value in unicodeToZalo, like /-shit or /-fade.
-	if got := ReactionCodeToUnicode(ReactionShit); got != "" {
-		t.Errorf("ReactionCodeToUnicode(%q) = %q, want empty (no unicode mapping)", ReactionShit, got)
 	}
 }

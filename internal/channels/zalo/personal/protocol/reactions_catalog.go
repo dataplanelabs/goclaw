@@ -1,66 +1,18 @@
 package protocol
 
-// Zalo reaction wire codes + unicode/English translators. Drift detector
-// in TestCatalogCount.
-
 import "strings"
 
+// Basic reaction set — mirrors the 7 codes Zalo OA exposes (haha/worry/cry/
+// like/heart/angry/wow) plus the empty NONE removal marker.
 const (
-	ReactionNone        = ""
-	ReactionHeart       = "/-heart"
-	ReactionLike        = "/-strong"
-	ReactionHaha        = ":>"
-	ReactionWow         = ":o"
-	ReactionCry         = ":-(("
-	ReactionAngry       = ":-h"
-	ReactionKiss        = ":-*"
-	ReactionTearsOfJoy  = ":')"
-	ReactionShit        = "/-shit"
-	ReactionRose        = "/-rose"
-	ReactionBrokenHeart = "/-break"
-	ReactionDislike     = "/-weak"
-	ReactionLove        = ";xx"
-	ReactionConfused    = ";-/"
-	ReactionWink        = ";-)"
-	ReactionFade        = "/-fade"
-	ReactionSun         = "/-li"
-	ReactionBirthday    = "/-bd"
-	ReactionBomb        = "/-bome"
-	ReactionOK          = "/-ok"
-	ReactionPeace       = "/-v"
-	ReactionThanks      = "/-thanks"
-	ReactionPunch       = "/-punch"
-	ReactionShare       = "/-share"
-	ReactionPray        = "_()_"
-	ReactionNo          = "/-no"
-	ReactionBad         = "/-bad"
-	ReactionLoveYou     = "/-loveu"
-	ReactionSad         = "--b"
-	ReactionVerySad     = ":(("
-	ReactionCool        = "x-)"
-	ReactionNerd        = "8-)"
-	ReactionBigSmile    = ";-d"
-	ReactionSunglasses  = "b-)"
-	ReactionNeutral     = ":--|"
-	ReactionSadFace     = "p-("
-	ReactionBye         = ":-bye"
-	ReactionSleepy      = "|-)"
-	ReactionWipe        = ":wipe"
-	ReactionDig         = ":-dig"
-	ReactionAnguish     = "&-("
-	ReactionHandclap    = ":handclap"
-	ReactionAngryFace   = ">-|"
-	ReactionFChair      = ":-f"
-	ReactionLChair      = ":-l"
-	ReactionRChair      = ":-r"
-	ReactionSilent      = ";-x"
-	ReactionSurprise    = ":-o"
-	ReactionEmbarrassed = ";-s"
-	ReactionAfraid      = ";-a"
-	ReactionSad2        = ":-<"
-	ReactionBigLaugh    = ":))"
-	ReactionRich        = "$-)"
-	ReactionBeer        = "/-beer"
+	ReactionNone  = ""
+	ReactionHaha  = ":>"
+	ReactionWorry = "--b"
+	ReactionCry   = ":-(("
+	ReactionLike  = "/-strong"
+	ReactionHeart = "/-heart"
+	ReactionAngry = ":-h"
+	ReactionWow   = ":o"
 )
 
 type reactionMeta struct {
@@ -69,60 +21,13 @@ type reactionMeta struct {
 }
 
 var reactionMetaTable = map[string]reactionMeta{
-	ReactionHaha:        {0, 6},
-	ReactionSad:         {1, 6},
-	ReactionCry:         {2, 6},
-	ReactionLike:        {3, 6},
-	ReactionDislike:     {4, 6},
-	ReactionHeart:       {5, 6},
-	ReactionTearsOfJoy:  {7, 6},
-	ReactionKiss:        {8, 6},
-	ReactionVerySad:     {16, 6},
-	ReactionAngry:       {20, 6},
-	ReactionCool:        {21, 6},
-	ReactionNerd:        {22, 6},
-	ReactionBigSmile:    {23, 6},
-	ReactionSunglasses:  {26, 6},
-	ReactionLove:        {29, 6},
-	ReactionNeutral:     {30, 6},
-	ReactionWow:         {32, 6},
-	ReactionSadFace:     {35, 6},
-	ReactionBye:         {36, 6},
-	ReactionSleepy:      {38, 6},
-	ReactionWipe:        {39, 6},
-	ReactionDig:         {42, 6},
-	ReactionAnguish:     {44, 6},
-	ReactionWink:        {45, 6},
-	ReactionHandclap:    {46, 6},
-	ReactionAngryFace:   {47, 6},
-	ReactionFChair:      {48, 6},
-	ReactionLChair:      {49, 6},
-	ReactionRChair:      {50, 6},
-	ReactionConfused:    {51, 6},
-	ReactionSilent:      {52, 6},
-	ReactionSurprise:    {53, 6},
-	ReactionEmbarrassed: {54, 6},
-	ReactionAfraid:      {60, 6},
-	ReactionSad2:        {61, 6},
-	ReactionBigLaugh:    {62, 6},
-	ReactionRich:        {63, 6},
-	ReactionBrokenHeart: {65, 6},
-	ReactionShit:        {66, 6},
-	ReactionSun:         {67, 6},
-	ReactionOK:          {68, 6},
-	ReactionPeace:       {69, 6},
-	ReactionThanks:      {70, 6},
-	ReactionPunch:       {71, 6},
-	ReactionShare:       {72, 6},
-	ReactionPray:        {73, 6},
-	ReactionBeer:        {99, 6},
-	ReactionRose:        {120, 6},
-	ReactionFade:        {121, 6},
-	ReactionBirthday:    {126, 6},
-	ReactionBomb:        {127, 6},
-	ReactionNo:          {131, 6},
-	ReactionBad:         {132, 6},
-	ReactionLoveYou:     {133, 6},
+	ReactionHaha:  {0, 6},
+	ReactionWorry: {1, 6},
+	ReactionCry:   {2, 6},
+	ReactionLike:  {3, 6},
+	ReactionHeart: {5, 6},
+	ReactionAngry: {20, 6},
+	ReactionWow:   {32, 6},
 }
 
 // LookupReactionMeta returns {-1, 6} for unknown codes — Zalo's marker for
@@ -135,78 +40,42 @@ func LookupReactionMeta(code string) reactionMeta {
 }
 
 var unicodeToZalo = map[string]string{
-	"❤️":  ReactionHeart,
-	"❤":   ReactionHeart,
-	"👍":  ReactionLike,
-	"👎":  ReactionDislike,
-	"😂":  ReactionTearsOfJoy,
-	"😅":  ReactionTearsOfJoy,
-	"😍":  ReactionLove,
-	"😘":  ReactionKiss,
-	"😢":  ReactionCry,
-	"😭":  ReactionVerySad,
-	"😡":  ReactionAngry,
-	"😠":  ReactionAngryFace,
-	"😮":  ReactionWow,
-	"😯":  ReactionSurprise,
-	"😱":  ReactionWow,
-	"😞":  ReactionSad,
-	"😔":  ReactionSadFace,
-	"😴":  ReactionSleepy,
-	"😎":  ReactionSunglasses,
-	"🤓":  ReactionNerd,
-	"🤔":  ReactionConfused,
-	"😏":  ReactionWink,
-	"🙄":  ReactionNeutral,
-	"😶":  ReactionSilent,
-	"🎉":  ReactionBirthday,
-	"🎂":  ReactionBirthday,
-	"🙏":  ReactionPray,
-	"🙏🏻": ReactionThanks,
-	"👏":  ReactionHandclap,
-	"🌹":  ReactionRose,
-	"🍺":  ReactionBeer,
-	"💣":  ReactionBomb,
-	"💔":  ReactionBrokenHeart,
-	"👋":  ReactionBye,
-	"✌️":  ReactionPeace,
-	"☀️":  ReactionSun,
+	"❤️": ReactionHeart,
+	"❤":  ReactionHeart,
+	"👍": ReactionLike,
+	"😂": ReactionHaha,
+	"😢": ReactionCry,
+	"😭": ReactionCry,
+	"😡": ReactionAngry,
+	"😠": ReactionAngry,
+	"😮": ReactionWow,
+	"😯": ReactionWow,
+	"😱": ReactionWow,
+	"😞": ReactionWorry,
+	"😔": ReactionWorry,
 }
 
 var englishNameToZalo = map[string]string{
 	"heart":       ReactionHeart,
-	"love":        ReactionLove,
+	"love":        ReactionHeart,
 	"like":        ReactionLike,
 	"thumbs_up":   ReactionLike,
 	"thumbsup":    ReactionLike,
-	"dislike":     ReactionDislike,
-	"thumbs_down": ReactionDislike,
 	"haha":        ReactionHaha,
-	"laugh":       ReactionTearsOfJoy,
+	"laugh":       ReactionHaha,
 	"wow":         ReactionWow,
-	"surprise":    ReactionSurprise,
+	"surprise":    ReactionWow,
 	"cry":         ReactionCry,
-	"sad":         ReactionSad,
-	"very_sad":    ReactionVerySad,
+	"sad":         ReactionCry,
+	"worry":       ReactionWorry,
 	"angry":       ReactionAngry,
-	"kiss":        ReactionKiss,
-	"rose":        ReactionRose,
-	"thanks":      ReactionThanks,
-	"pray":        ReactionPray,
-	"ok":          ReactionOK,
-	"peace":       ReactionPeace,
-	"share":       ReactionShare,
-	"birthday":    ReactionBirthday,
-	"bomb":        ReactionBomb,
 	"remove":      ReactionNone,
 	"none":        ReactionNone,
 	"unreact":     ReactionNone,
 }
 
-// ResolveReactionCode accepts unicode emoji, English friendly name, or a raw
-// Zalo code and returns the canonical Zalo reaction string. The boolean is
-// false when the input is unrecognized (caller should refuse the request and
-// surface a helpful error rather than send rType=-1).
+// ResolveReactionCode accepts unicode emoji, English friendly name, or raw
+// Zalo code. Returns (code, true) on success; ("", false) when unknown.
 func ResolveReactionCode(input string) (string, bool) {
 	if input == "" {
 		return ReactionNone, true
@@ -223,9 +92,6 @@ func ResolveReactionCode(input string) (string, bool) {
 	return "", false
 }
 
-// zaloToUnicode is the reverse of unicodeToZalo. Built once at package init so
-// runtime lookups are O(1); first-write-wins means each Zalo code gets a single
-// canonical unicode (good enough for human display).
 var zaloToUnicode = func() map[string]string {
 	out := make(map[string]string, len(unicodeToZalo))
 	for u, z := range unicodeToZalo {
@@ -236,10 +102,8 @@ var zaloToUnicode = func() map[string]string {
 	return out
 }()
 
-// ReactionCodeToUnicode returns a canonical unicode emoji for a Zalo reaction
-// code, or "" if the code is not in the unicode map. Used by the channel layer
-// to format synthetic inbound reaction lines (single source of truth for the
-// unicode↔Zalo mapping).
+// ReactionCodeToUnicode returns a canonical unicode emoji for a Zalo code,
+// or "" if no mapping exists. Used by the synthetic inbound formatter.
 func ReactionCodeToUnicode(code string) string {
 	return zaloToUnicode[code]
 }
