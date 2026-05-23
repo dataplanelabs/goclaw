@@ -1,14 +1,18 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"image/jpeg"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/disintegration/imaging"
+	_ "github.com/gen2brain/jpegxl" // register JXL decoder so loadImageFromPath can re-encode .jxl as JPEG
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 )
 
@@ -186,20 +190,22 @@ func (t *ReadImageTool) callProvider(ctx context.Context, cp credentialProvider,
 }
 
 // loadImageFromPath reads an image file from the workspace and returns it as ImageContent.
+// JPEG XL inputs are transparently decoded and re-encoded as JPEG so the vision
+// providers (Anthropic / OpenAI / Gemini), which don't accept image/jxl, see a
+// supported format.
 func (t *ReadImageTool) loadImageFromPath(ctx context.Context, path string) ([]providers.ImageContent, error) {
-	// Infer MIME type from extension
 	ext := strings.ToLower(filepath.Ext(path))
 	mimeTypes := map[string]string{
 		".jpg": "image/jpeg", ".jpeg": "image/jpeg",
 		".png": "image/png", ".gif": "image/gif",
 		".webp": "image/webp", ".bmp": "image/bmp",
+		".jxl": "image/jxl",
 	}
 	mime, ok := mimeTypes[ext]
 	if !ok {
-		return nil, fmt.Errorf("unsupported image format: %s (supported: jpg, png, gif, webp, bmp)", ext)
+		return nil, fmt.Errorf("unsupported image format: %s (supported: jpg, png, gif, webp, bmp, jxl)", ext)
 	}
 
-	// Resolve path within workspace (respect workspace restriction).
 	workspace := ToolWorkspaceFromCtx(ctx)
 	resolved, err := resolvePathWithAllowed(path, workspace, effectiveRestrict(ctx, true), allowedWithTeamWorkspace(ctx, nil))
 	if err != nil {
@@ -209,13 +215,29 @@ func (t *ReadImageTool) loadImageFromPath(ctx context.Context, path string) ([]p
 		return nil, err
 	}
 
-	// Pre-check file size before loading into memory.
 	fi, err := os.Stat(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat image file: %w", err)
 	}
 	if fi.Size() > maxImageFileBytes {
 		return nil, fmt.Errorf("image file too large (%d bytes, max %d)", fi.Size(), maxImageFileBytes)
+	}
+
+	// JXL → JPEG re-encode so providers accept it. image/jxl is not in any
+	// major vision provider's supported list (Anthropic/OpenAI/Gemini all reject).
+	if mime == "image/jxl" {
+		img, err := imaging.Open(resolved, imaging.AutoOrientation(true))
+		if err != nil {
+			return nil, fmt.Errorf("decode jxl: %w", err)
+		}
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
+			return nil, fmt.Errorf("encode jpeg: %w", err)
+		}
+		return []providers.ImageContent{{
+			MimeType: "image/jpeg",
+			Data:     base64.StdEncoding.EncodeToString(buf.Bytes()),
+		}}, nil
 	}
 
 	data, err := os.ReadFile(resolved)

@@ -114,10 +114,67 @@ func quoteContextPrefix(raw json.RawMessage, owner quoteOwnerCtx, mediaAttached 
 	return formatReplyingTo(who, noun, body, mediaAttached)
 }
 
-// attachMediaURLFields lists the JSON keys Zalo uses inside TQuote.Attach to
-// point at the original media file. Order matters — prefer the highest-quality
-// available so the agent's vision/regen uses the best source.
-var attachMediaURLFields = []string{"hdUrl", "oriUrl", "href", "normalUrl", "thumbUrl", "thumb"}
+// attachMediaURLFields lists the JSON keys Zalo uses to point at media. Order
+// prefers non-.jxl-bearing fields: Zalo's CDN serves hdUrl as JPEG XL (.jxl),
+// which forces a 150-400ms WASM decode in agent.SanitizeImage. The picker
+// below skips JXL when an alternative exists; the decoder still handles JXL
+// correctly when no alternative is available.
+var attachMediaURLFields = []string{"normalUrl", "oriUrl", "href", "hdUrl", "thumbUrl", "thumb"}
+
+// urlIsJXL reports whether the URL serves the JPEG XL HD variant. Used to skip
+// JXL URLs when a JPEG alternative is offered — avoids a WASM decode pass in
+// agent.SanitizeImage that the decoder would otherwise handle.
+func urlIsJXL(u string) bool {
+	if u == "" {
+		return false
+	}
+	path := u
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path = path[:i]
+	}
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".jxl") || strings.Contains(lower, "/jxl/")
+}
+
+// pickInboundImageURL returns the best image URL from a Zalo attachment raw
+// JSON, preferring non-.jxl candidates from order. Falls back to the first
+// available URL (even .jxl) when nothing else is offered, finally to fallback
+// when the raw JSON has no recognized URL field.
+func pickInboundImageURL(raw []byte, fallback string, order []string) string {
+	if len(raw) == 0 {
+		return fallback
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil {
+		return fallback
+	}
+	var urls []string
+	for _, key := range order {
+		val, ok := obj[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if json.Unmarshal(val, &s) != nil {
+			continue
+		}
+		if s = strings.TrimSpace(s); s == "" {
+			continue
+		}
+		urls = append(urls, s)
+	}
+	for _, u := range urls {
+		if !urlIsJXL(u) {
+			return u
+		}
+	}
+	if len(urls) > 0 {
+		slog.Warn("zalo_personal: inbound image only available as .jxl, falling through to in-process WASM decoder",
+			"fallback_url", urls[0])
+		return urls[0]
+	}
+	return fallback
+}
 
 // extractQuoteMedia downloads the media file referenced inside TQuote.Attach
 // when the quoted message has one (image / video / file). Returns the local
@@ -139,25 +196,7 @@ func extractQuoteMedia(rawQuote json.RawMessage) (string, string) {
 	if attach == "" || attach == "null" {
 		return "", ""
 	}
-	var obj map[string]json.RawMessage
-	if json.Unmarshal([]byte(attach), &obj) != nil {
-		return "", ""
-	}
-	var url string
-	for _, key := range attachMediaURLFields {
-		val, ok := obj[key]
-		if !ok {
-			continue
-		}
-		var s string
-		if json.Unmarshal(val, &s) != nil {
-			continue
-		}
-		if s = strings.TrimSpace(s); s != "" {
-			url = s
-			break
-		}
-	}
+	url := pickInboundImageURL([]byte(attach), "", attachMediaURLFields)
 	if url == "" {
 		return "", ""
 	}
@@ -580,6 +619,9 @@ func extractContentAndMedia(content protocol.Content) (string, []string) {
 		return text, nil
 	}
 	if att := content.ParseAttachment(); att != nil && att.Href != "" {
+		if better := pickInboundImageURL(content.Raw, att.Href, attachMediaURLFields); better != "" {
+			att.Href = better
+		}
 		return extractAttachment(content, att)
 	}
 	if text := extractTextFromRawContent(content.Raw); text != "" {

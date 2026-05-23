@@ -115,6 +115,93 @@ func TestBuildQuoteMetadata_NilReturnsNil(t *testing.T) {
 // emptyOwner pretends the quote has no owner UID — exercises the no-attribution path.
 var emptyOwner = quoteOwnerCtx{}
 
+func TestUrlIsJXL(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		url  string
+		want bool
+	}{
+		{"https://cdn.zdn.vn/photo.jxl", true},
+		{"https://cdn.zdn.vn/photo.jxl?w=1080", true},
+		{"https://cdn.zdn.vn/jxl/abcdef", true},
+		{"https://cdn.zdn.vn/photo.JXL", true},
+		{"https://cdn.zdn.vn/photo.jpg", false},
+		{"https://cdn.zdn.vn/jpg/abcdef.jpg", false},
+		{"https://cdn.zdn.vn/photo.jpg?w=1080", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.url, func(t *testing.T) {
+			t.Parallel()
+			if got := urlIsJXL(tc.url); got != tc.want {
+				t.Errorf("urlIsJXL(%q) = %v, want %v", tc.url, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPickInboundImageURL(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		raw      string
+		fallback string
+		want     string
+	}{
+		{
+			"prefers normalUrl JPEG over hdUrl JXL",
+			`{"hdUrl":"https://x/a.jxl","normalUrl":"https://x/n.jpg"}`,
+			"",
+			"https://x/n.jpg",
+		},
+		{
+			"prefers oriUrl over hdUrl when both non-JXL",
+			`{"hdUrl":"https://x/a.jpg","oriUrl":"https://x/o.jpg"}`,
+			"",
+			"https://x/o.jpg",
+		},
+		{
+			"falls back to JXL when only JXL offered",
+			`{"hdUrl":"https://x/a.jxl"}`,
+			"",
+			"https://x/a.jxl",
+		},
+		{
+			"empty raw returns fallback",
+			"",
+			"https://fallback.example/x.jpg",
+			"https://fallback.example/x.jpg",
+		},
+		{
+			"unparseable raw returns fallback",
+			"{not-json",
+			"https://fallback.example/x.jpg",
+			"https://fallback.example/x.jpg",
+		},
+		{
+			"no URL fields returns fallback",
+			`{"width":1080,"height":720}`,
+			"https://fallback.example/x.jpg",
+			"https://fallback.example/x.jpg",
+		},
+		{
+			"normalUrl JXL with thumbUrl JPEG picks JPEG",
+			`{"normalUrl":"https://x/n.jxl","thumbUrl":"https://x/t.jpg"}`,
+			"",
+			"https://x/t.jpg",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := pickInboundImageURL([]byte(tc.raw), tc.fallback, attachMediaURLFields)
+			if got != tc.want {
+				t.Errorf("pickInboundImageURL(%q, %q) = %q, want %q", tc.raw, tc.fallback, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestExtractQuoteMedia_FieldProbe(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
