@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels/typing"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -124,7 +126,17 @@ func (c *Channel) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("zalo_personal listener: %w", err)
 	}
-	if err := ln.Start(ctx); err != nil {
+	// Retry listener start on transient errors — primarily CoreDNS cold-miss
+	// SERVFAIL for ws*-msg.chat.zalo.me at pod boot, where DNS hasn't yet
+	// resolved the Zalo WS host. By attempt 2-3, DNS has warmed.
+	if _, err := providers.RetryDo(ctx, providers.RetryConfig{
+		Attempts: 5,
+		MinDelay: 500 * time.Millisecond,
+		MaxDelay: 10 * time.Second,
+		Jitter:   0.1,
+	}, func() (struct{}, error) {
+		return struct{}{}, ln.Start(ctx)
+	}); err != nil {
 		return fmt.Errorf("zalo_personal listener start: %w", err)
 	}
 
