@@ -45,47 +45,38 @@ func TestAskerPrepend_EmptyContent_NoChange(t *testing.T) {
 	}
 }
 
-// TestSend_SkipsAskerPrependWhenQuotePresent: Send() must NOT prepend
-// @[sender_uid] on group replies that carry reply_to_quote_payload — quote
-// bubble already identifies the asker and pings them.
-func TestSend_SkipsAskerPrependWhenQuotePresent(t *testing.T) {
+// TestSend_AlwaysPrependsAskerEvenWithQuote: Send() prepends @[sender_uid]
+// on every group reply, including ones carrying a quote — Zalo quote bubbles
+// don't reliably push-notify on Android and humans tag explicitly when
+// replying.
+func TestSend_AlwaysPrependsAskerEvenWithQuote(t *testing.T) {
 	t.Parallel()
 	ch, _ := newHandlerTestChannel(t)
 	ch.MarkGroupApproved("group-1")
 	ch.SetRunning(true)
-	// Stub session so Send() doesn't bail at the running check (we only care
-	// about the prepend logic; the protocol send will fail with no real
-	// session, but that fires AFTER applyAskerPrepend runs).
 	ch.mu.Lock()
 	ch.sess = protocol.NewSession()
 	ch.mu.Unlock()
 
-	// Quote payload present → auto-asker should be SKIPPED.
-	original := "Dạ em đã ghi nhận"
 	msg := bus.OutboundMessage{
 		ChatID:  "group-1",
-		Content: original,
+		Content: "Dạ em đã ghi nhận",
 		Metadata: map[string]string{
 			"group_id":               "group-1",
 			"sender_uid":             "5234567890",
 			"reply_to_quote_payload": `{"globalMsgId":"123"}`,
 		},
 	}
-	// Don't actually call Send() (no real session/server) — exercise the
-	// guard logic by mirroring it inline.
-	if msg.Metadata["reply_to_quote_payload"] == "" {
+	if msg.Metadata != nil {
 		msg.Content = applyAskerPrepend(msg.Content, msg.Metadata["sender_uid"])
 	}
-	if msg.Content != original {
-		t.Fatalf("auto-asker fired despite quote: got %q, want %q", msg.Content, original)
-	}
-	if strings.HasPrefix(msg.Content, "@[5234567890]") {
-		t.Fatal("content should not be prepended when quote rides on reply")
+	if !strings.HasPrefix(msg.Content, "@[5234567890]") {
+		t.Fatalf("expected asker prepend even with quote; got %q", msg.Content)
 	}
 	_ = context.Background()
 }
 
-// TestSend_FiresAskerPrependWhenNoQuote: the no-quote safety net path.
+// TestSend_FiresAskerPrependWhenNoQuote: the no-quote path still prepends.
 func TestSend_FiresAskerPrependWhenNoQuote(t *testing.T) {
 	t.Parallel()
 	msg := bus.OutboundMessage{
@@ -93,13 +84,12 @@ func TestSend_FiresAskerPrependWhenNoQuote(t *testing.T) {
 		Metadata: map[string]string{
 			"group_id":   "group-1",
 			"sender_uid": "5234567890",
-			// No reply_to_quote_payload
 		},
 	}
-	if msg.Metadata["reply_to_quote_payload"] == "" {
+	if msg.Metadata != nil {
 		msg.Content = applyAskerPrepend(msg.Content, msg.Metadata["sender_uid"])
 	}
 	if !strings.HasPrefix(msg.Content, "@[5234567890]") {
-		t.Fatalf("expected auto-asker prepend on no-quote path; got %q", msg.Content)
+		t.Fatalf("expected asker prepend on no-quote path; got %q", msg.Content)
 	}
 }
