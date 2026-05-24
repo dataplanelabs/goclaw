@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +41,9 @@ type Channel struct {
 
 	preloadedCreds *protocol.Credentials
 
+	groups             *groupCache
+	lastGroupBootstrap atomic.Int64
+
 	stopCh   chan struct{}
 	stopOnce sync.Once
 }
@@ -69,6 +73,7 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 	ch := &Channel{
 		BaseChannel: base,
 		config:      cfg,
+		groups:      newGroupCache(),
 		stopCh:      make(chan struct{}),
 	}
 	ch.SetPairingService(pairingSvc)
@@ -149,6 +154,10 @@ func (c *Channel) Start(ctx context.Context) error {
 
 	c.SetRunning(true)
 	go c.listenLoop(ctx)
+
+	if cc := c.ContactCollector(); cc != nil && shouldBootstrap(&c.lastGroupBootstrap) {
+		go bootstrapGroups(ctx, sess, cc, c.groups, c.Type(), c.Name())
+	}
 
 	slog.Info("zalo_personal listener loop started")
 	return nil

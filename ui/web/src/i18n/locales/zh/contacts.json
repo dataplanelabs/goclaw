@@ -20,7 +20,7 @@
     "title": "各Channel联系人名称权限说明",
     "telegram": "Telegram — 名称和用户名自动获取。",
     "discord": "Discord — 显示名称和用户名自动获取。",
-    "zalo": "Zalo — 显示名称自动获取。",
+    "zalo": "Zalo — 用户和群组名称自动获取。",
     "slack": "Slack — 通过 Slack API 解析显示名称（Bot 需在工作区内）。",
     "feishu": "飞书/Lark — 需要 contact:user.base:readonly 权限。未授权时名称将为空。"
   },
