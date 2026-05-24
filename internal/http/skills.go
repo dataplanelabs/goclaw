@@ -183,7 +183,13 @@ func (h *SkillsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": i18n.T(locale, i18n.MsgNotFound, "skill", id)})
 		return
 	}
-	writeJSON(w, http.StatusOK, skill)
+	// Expose content_hash (= file_hash column) so gcplane can verify dedup
+	// decisions post-upload without a second round-trip to the upload endpoint.
+	hash, _, _ := h.skills.GetSkillHashBySlug(r.Context(), skill.Slug)
+	writeJSON(w, http.StatusOK, struct {
+		*store.SkillInfo
+		ContentHash string `json:"content_hash"`
+	}{SkillInfo: skill, ContentHash: hash})
 }
 
 func (h *SkillsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {

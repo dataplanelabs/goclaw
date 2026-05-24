@@ -431,6 +431,12 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`DROP TABLE IF EXISTS channel_thread_schedules`)
 	}
 
+	if targetVersion < 42 {
+		// Migration 41→42 adds skills.source.
+		db.Exec(`DROP INDEX IF EXISTS idx_skills_source`)
+		db.Exec(`ALTER TABLE skills DROP COLUMN source`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db

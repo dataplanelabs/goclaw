@@ -114,6 +114,8 @@ const (
 	// --- Skills ---
 	MsgSkillsUpdateNotSupported = "error.skills_update_not_supported" // "skills.update not supported for file-based skills"
 	MsgCannotResolveSkillID     = "error.cannot_resolve_skill_id"     // "cannot resolve skill ID for file-based skill"
+	MsgSkillManagedOverwrite    = "error.skill_managed_overwrite"     // "this skill is gcplane-managed; pass force_imperative=true to override (audit-logged)"
+	MsgSkillInvalidSource       = "error.skill_invalid_source"        // "invalid source value; allowed: unknown, cli, gcplane"
 	MsgInvalidVisibility        = "error.invalid_visibility"          // "invalid visibility %q: must be one of private, public"
 
 	// --- Package updates (Phase 4+5) ---

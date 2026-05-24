@@ -27,11 +27,27 @@ import (
 const (
 	uploadDepsInstallTimeout = 5 * time.Minute
 	maxUploadManagerAgentIDs = 100
+
+	// Source attribution sentinels for the upload form field. The DB column
+	// has DEFAULT 'unknown' so legacy rows pre-migration-071 read back as
+	// "unknown" and skip the gcplane-managed overwrite gate.
+	skillSourceUnknown = "unknown"
+	skillSourceCLI     = "cli"
+	skillSourceGcplane = "gcplane"
 )
 
 var (
 	installUploadedSkillDeps = skills.InstallDeps
 	checkUploadedSkillDeps   = skills.CheckSkillDeps
+
+	// validUploadSources enumerates accepted values for the multipart `source`
+	// form field. "bundled" is set only by the in-process seeder, never via
+	// upload — keep it out of this set so the API surface stays minimal.
+	validUploadSources = map[string]bool{
+		skillSourceUnknown: true,
+		skillSourceCLI:     true,
+		skillSourceGcplane: true,
+	}
 )
 
 // handleUpload processes a ZIP file upload containing a skill (must have SKILL.md at root).
@@ -57,6 +73,18 @@ func (h *SkillsHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidRequest, err.Error())})
 		return
 	}
+
+	// Ownership-source attribution: gcplane stamps "gcplane" so the handler
+	// can refuse non-gcplane overwrites of managed skills below.
+	incomingSource := strings.TrimSpace(r.FormValue("source"))
+	if incomingSource == "" {
+		incomingSource = skillSourceUnknown
+	}
+	if !validUploadSources[incomingSource] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgSkillInvalidSource, incomingSource)})
+		return
+	}
+	forceImperative := strings.EqualFold(strings.TrimSpace(r.FormValue("force_imperative")), "true")
 
 	// Save to temp file for zip processing
 	tmp, err := os.CreateTemp("", "skill-upload-*.zip")
@@ -169,6 +197,38 @@ func (h *SkillsHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	uploadLock.Lock()
 	defer uploadLock.Unlock()
 
+	// Source-of-truth ownership gate. A skill stamped source='gcplane' is owned
+	// by the declarative pipeline (gcplane apply against goclaw-config). Reject
+	// CLI / unknown overwrites unless the caller passes force_imperative=true,
+	// which is audit-logged AND broadcast on the msgBus so SIEMs see it as a
+	// distinct security event (not just a normal "skill.uploaded").
+	// Best-effort within a single process: the per-slug sync.Mutex above plus
+	// pg_advisory_xact_lock inside CreateSkillManaged serialize writes within
+	// one goclaw replica, but the gate READ here is OUTSIDE that transaction,
+	// so two replicas can race on a brand-new slug. Multi-replica deployments
+	// should treat the gate as a strong default, not a hard guarantee.
+	if existingSource, ok := h.skills.GetSkillSourceBySlug(r.Context(), slug); ok &&
+		existingSource == skillSourceGcplane && incomingSource != skillSourceGcplane {
+		if !forceImperative {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":      i18n.T(locale, i18n.MsgSkillManagedOverwrite),
+				"error_code": "managed_skill_overwrite",
+				"managed_by": skillSourceGcplane,
+			})
+			return
+		}
+		slog.Warn("security.skill_force_imperative_overwrite",
+			"slug", slug,
+			"tenant_id", store.TenantIDFromContext(r.Context()),
+			"user_id", userID,
+			"remote_ip", r.RemoteAddr,
+			"skill_hash", skillHash,
+			"previous_source", skillSourceGcplane,
+			"new_source", incomingSource,
+		)
+		emitAudit(h.msgBus, r, "skill.force_overwrite", "skill", slug)
+	}
+
 	// Check whether content is unchanged from the current stored version.
 	// Performed under lock to avoid TOCTOU race where concurrent uploads
 	// could both pass the hash check before either creates a new version.
@@ -273,6 +333,7 @@ func (h *SkillsHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		FileSize:    size,
 		FileHash:    &skillHash, // SKILL.md content hash for idempotency (not ZIP hash)
 		Frontmatter: frontmatter,
+		Source:      incomingSource,
 	}
 
 	// Scan and check dependencies

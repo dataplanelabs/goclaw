@@ -113,6 +113,8 @@ func init() {
 		// Skills
 		MsgSkillsUpdateNotSupported: "skills.update không được hỗ trợ với skill dựa trên tệp",
 		MsgCannotResolveSkillID:     "không thể xác định ID skill dựa trên tệp",
+		MsgSkillManagedOverwrite:    "Skill này do gcplane quản lý. Cập nhật qua gcplane apply, hoặc tải lên lại với force_imperative=true (sẽ ghi audit log).",
+		MsgSkillInvalidSource:       "giá trị source không hợp lệ %q; chỉ chấp nhận: unknown, cli, gcplane",
 		MsgInvalidVisibility:        "visibility không hợp lệ %q: phải là private hoặc public",
 
 		// Logs

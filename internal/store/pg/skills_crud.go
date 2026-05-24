@@ -159,21 +159,26 @@ func (s *PGSkillStore) CreateSkillManaged(ctx context.Context, p store.SkillCrea
 		return uuid.Nil, fmt.Errorf("get next version: %w", err)
 	}
 
+	src := p.Source
+	if src == "" {
+		src = "unknown"
+	}
 	id := store.GenNewID()
 	var returnedID uuid.UUID
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO skills (id, name, slug, description, owner_id, tenant_id, visibility, version, status, deps, frontmatter, file_path, file_size, file_hash, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
+		`INSERT INTO skills (id, name, slug, description, owner_id, tenant_id, visibility, version, status, deps, frontmatter, file_path, file_size, file_hash, source, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
 		 ON CONFLICT (tenant_id, slug) DO UPDATE SET
 		   name = EXCLUDED.name, description = EXCLUDED.description,
 		   version = EXCLUDED.version, frontmatter = EXCLUDED.frontmatter,
 		   file_path = EXCLUDED.file_path, deps = EXCLUDED.deps,
 		   file_size = EXCLUDED.file_size, file_hash = EXCLUDED.file_hash,
+		   source = EXCLUDED.source,
 		   visibility = CASE WHEN skills.status IN ('archived', 'deleted') THEN 'private' ELSE skills.visibility END,
 		   status = EXCLUDED.status, updated_at = NOW()
 		 RETURNING id`,
 		id, p.Name, p.Slug, p.Description, p.OwnerID, tenantID, p.Visibility, version,
-		status, depsJSON, fmJSON, p.FilePath, p.FileSize, p.FileHash,
+		status, depsJSON, fmJSON, p.FilePath, p.FileSize, p.FileHash, src,
 	).Scan(&returnedID)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("upsert skill: %w", err)
@@ -220,6 +225,26 @@ func (s *PGSkillStore) GetNextVersion(ctx context.Context, slug string) int {
 	var maxVersion int
 	s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(version), 0) FROM skills WHERE slug = $1 AND tenant_id = $2", slug, tid).Scan(&maxVersion)
 	return maxVersion + 1
+}
+
+// GetSkillSourceBySlug returns the ownership-source attribution of the latest
+// non-deleted skill version for the given slug, scoped to the current tenant.
+// Returns ok=false when no matching row exists. Used by the upload handler to
+// gate overwrites of gcplane-managed skills (source='gcplane').
+func (s *PGSkillStore) GetSkillSourceBySlug(ctx context.Context, slug string) (string, bool) {
+	tid := tenantIDForInsert(ctx)
+	var source string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT source FROM skills
+		 WHERE slug = $1 AND tenant_id = $2 AND status <> 'deleted'
+		 ORDER BY version DESC
+		 LIMIT 1`,
+		slug, tid,
+	).Scan(&source)
+	if err != nil {
+		return "", false
+	}
+	return source, true
 }
 
 // GetSkillHashBySlug returns the file_hash and version of the latest non-deleted skill
