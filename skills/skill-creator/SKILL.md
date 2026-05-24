@@ -162,3 +162,11 @@ Re-publishing the same slug updates the existing skill (upsert — bumps version
 - **Structure**: `references/structure-organization-criteria.md`
 - **Design patterns**: `references/skill-design-patterns.md`
 - **Distribution**: `references/distribution-guide.md`
+
+## Wrapping external CLIs (gh, kubectl, codex, gcplane, ...)
+
+Skills that wrap external CLI tools MUST follow `docs/skill-conventions.md`
+in the goclaw repo — use the `secure_cli_run` agent tool for credentialed
+exec (deny_args, env scrub, audit), and declare `requires.cli` in
+SKILL.md frontmatter for `gcplane validate` version pinning. Bare
+`gh|kubectl|codex|gcplane` invocations in `scripts/` are rejected by CI.
