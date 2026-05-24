@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 40
+const SchemaVersion = 41
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -734,6 +734,22 @@ WHERE id IN (
 	// (idempotent — already created by v33 above, kept for parity with upstream).
 	39: `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_workstation_default
     ON agent_workstation_links(agent_id) WHERE is_default = 1;`,
+
+	// Version 40 → 41: standby mode (mirrors PG 000071).
+	40: `ALTER TABLE channel_instances ADD COLUMN silence_schedule TEXT DEFAULT NULL;
+CREATE TABLE IF NOT EXISTS channel_thread_schedules (
+    channel_instance_id TEXT NOT NULL REFERENCES channel_instances(id) ON DELETE CASCADE,
+    thread_key          TEXT NOT NULL,
+    schedule            TEXT NOT NULL,
+    expires_at          DATETIME,
+    reason              TEXT DEFAULT '',
+    created_by          TEXT DEFAULT '',
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (channel_instance_id, thread_key)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_thread_schedules_expires
+    ON channel_thread_schedules(expires_at) WHERE expires_at IS NOT NULL;`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.

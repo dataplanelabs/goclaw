@@ -348,4 +348,14 @@ const (
 	MsgGrantEnvValueInvalid = "error.grant_env_value_invalid" // "invalid env value: %s"
 	MsgGrantEnvTooManyKeys  = "error.grant_env_too_many_keys" // "too many env keys: max 50"
 	MsgGrantEnvRevealLimit  = "error.grant_env_reveal_limit"  // "rate limit exceeded for env reveal"
+
+	// --- Standby mode ---
+	StandbyToolDescription      = "standby.tool.description"
+	StandbyToolParamDuration    = "standby.tool.param.duration"
+	StandbyToolParamReason      = "standby.tool.param.reason"
+	StandbyErrorInvalidDuration = "standby.error.invalid_duration"
+	StandbyErrorNoChannelCtx    = "standby.error.no_channel_context"
+	StandbyEntered              = "standby.entered"
+	StandbyRPCInvalidSchedule   = "standby.rpc.invalid_schedule"
+	StandbyRPCNoPermission      = "standby.rpc.no_permission"
 )

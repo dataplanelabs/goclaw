@@ -10,6 +10,7 @@ import { ChannelGeneralTab } from "./channel-general-tab";
 import { ChannelCredentialsTab } from "./channel-credentials-tab";
 import { ChannelGroupsTab } from "./channel-groups-tab";
 import { ChannelManagersTab } from "./channel-managers-tab";
+import { ChannelStandbyTab } from "./channel-standby-tab";
 import { ChannelDiagnosticsCard } from "./channel-diagnostics-card";
 import { DetailPageSkeleton } from "@/components/shared/loading-skeleton";
 import { useChannels } from "../hooks/use-channels";
@@ -201,6 +202,9 @@ export function ChannelDetailPage({
               <TabsTrigger value="managers">
                 {t("detail.tabs.managers")}
               </TabsTrigger>
+              <TabsTrigger value="standby">
+                {t("detail.tabs.standby")}
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="general" className="mt-4">
@@ -236,6 +240,10 @@ export function ChannelDetailPage({
                 addManager={addManager}
                 removeManager={removeManager}
               />
+            </TabsContent>
+
+            <TabsContent value="standby" className="mt-4">
+              <ChannelStandbyTab channelInstanceId={instance.id} />
             </TabsContent>
           </Tabs>
         </div>

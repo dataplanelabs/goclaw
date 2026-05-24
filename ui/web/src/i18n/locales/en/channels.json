@@ -115,6 +115,7 @@
     "technicalDetail": "Technical detail",
     "tabs": {
       "general": "General",
+      "standby": "Standby",
       "config": "Config",
       "credentials": "Credentials",
       "groups": "Groups",
@@ -601,5 +602,26 @@
     "cancel": "Cancel",
     "connect": "Connect",
     "connecting": "Connecting…"
+  },
+  "standby": {
+    "title": "Standby Schedule",
+    "description": "Schedule when this channel agent should observe silently without replying. Memory writes still happen; LLM calls and outbound replies are skipped during standby windows.",
+    "rawJsonLabel": "Schedule (JSON)",
+    "rawJsonHint": "default_mode is 'active' or 'standby'. Windows are either recurring (weekday+start+end) or one-shot (from+until). See docs/standby-mode.md.",
+    "save": "Save schedule",
+    "deleteSchedule": "Delete schedule",
+    "deleteConfirm": "Delete the schedule? Channel returns to always-active.",
+    "threadOverrides": "Per-thread overrides",
+    "threadOverridesEmpty": "No per-thread overrides set.",
+    "validationError": "Schedule is invalid: {{error}}",
+    "saved": "Schedule saved",
+    "deleted": "Schedule deleted",
+    "loadError": "Failed to load schedule: {{error}}",
+    "saveError": "Failed to save schedule: {{error}}",
+    "threadKey": "Thread",
+    "expiresAt": "Expires",
+    "reason": "Reason",
+    "createdBy": "Author",
+    "rowDelete": "Delete"
   }
 }

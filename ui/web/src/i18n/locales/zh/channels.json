@@ -115,6 +115,7 @@
     "technicalDetail": "技术细节",
     "tabs": {
       "general": "基本信息",
+      "standby": "待命",
       "config": "配置",
       "credentials": "凭据",
       "groups": "群组",
@@ -487,5 +488,26 @@
     "cancel": "取消",
     "connect": "连接",
     "connecting": "连接中…"
+  },
+  "standby": {
+    "title": "待命调度",
+    "description": "为此频道代理设置静默观察时段。在待命窗口内仍会写入记忆，但不调用 LLM 也不外发回复。",
+    "rawJsonLabel": "调度（JSON）",
+    "rawJsonHint": "default_mode 为 'active' 或 'standby'。窗口可为循环（weekday+start+end）或一次性（from+until）。详见 docs/standby-mode.md。",
+    "save": "保存调度",
+    "deleteSchedule": "删除调度",
+    "deleteConfirm": "删除调度？频道将恢复始终活跃。",
+    "threadOverrides": "按会话覆盖",
+    "threadOverridesEmpty": "尚未设置任何会话覆盖。",
+    "validationError": "调度不合法：{{error}}",
+    "saved": "调度已保存",
+    "deleted": "调度已删除",
+    "loadError": "加载调度失败：{{error}}",
+    "saveError": "保存调度失败：{{error}}",
+    "threadKey": "会话",
+    "expiresAt": "到期",
+    "reason": "原因",
+    "createdBy": "创建者",
+    "rowDelete": "删除"
   }
 }

@@ -115,6 +115,7 @@
     "technicalDetail": "Chi tiết kỹ thuật",
     "tabs": {
       "general": "Chung",
+      "standby": "Chờ",
       "config": "Cấu hình",
       "credentials": "Thông tin xác thực",
       "groups": "Nhóm",
@@ -487,5 +488,26 @@
     "cancel": "Hủy",
     "connect": "Kết nối",
     "connecting": "Đang kết nối…"
+  },
+  "standby": {
+    "title": "Lịch chờ",
+    "description": "Lên lịch khi nào trợ lý chỉ quan sát và không trả lời. Bộ nhớ vẫn được ghi; lệnh gọi LLM và phản hồi đầu ra bị bỏ qua trong các cửa sổ chờ.",
+    "rawJsonLabel": "Lịch (JSON)",
+    "rawJsonHint": "default_mode là 'active' hoặc 'standby'. Cửa sổ có thể lặp lại (weekday+start+end) hoặc một-lần (from+until). Xem docs/standby-mode.md.",
+    "save": "Lưu lịch",
+    "deleteSchedule": "Xóa lịch",
+    "deleteConfirm": "Xóa lịch? Channel sẽ luôn hoạt động.",
+    "threadOverrides": "Ghi đè theo cuộc trò chuyện",
+    "threadOverridesEmpty": "Chưa có ghi đè theo cuộc trò chuyện.",
+    "validationError": "Lịch không hợp lệ: {{error}}",
+    "saved": "Đã lưu lịch",
+    "deleted": "Đã xóa lịch",
+    "loadError": "Tải lịch thất bại: {{error}}",
+    "saveError": "Lưu lịch thất bại: {{error}}",
+    "threadKey": "Cuộc trò chuyện",
+    "expiresAt": "Hết hạn",
+    "reason": "Lý do",
+    "createdBy": "Tác giả",
+    "rowDelete": "Xóa"
   }
 }

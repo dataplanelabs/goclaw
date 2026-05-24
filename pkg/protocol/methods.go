@@ -122,6 +122,15 @@ const (
 	// Channel-family endpoint (no bot/oa suffix): handler dispatches on
 	// the resolved channel_type and serves both zalo_bot and zalo_oa.
 	MethodChannelInstancesZaloWebhookURL = "channels.instances.zalo.webhook_url"
+
+	// Standby schedules (Phase 4)
+	MethodChannelsScheduleGet          = "channels.schedule_get"
+	MethodChannelsScheduleSet          = "channels.schedule_set"
+	MethodChannelsScheduleDelete       = "channels.schedule_delete"
+	MethodChannelsThreadScheduleList   = "channels.thread_schedule_list"
+	MethodChannelsThreadScheduleGet    = "channels.thread_schedule_get"
+	MethodChannelsThreadScheduleSet    = "channels.thread_schedule_set"
+	MethodChannelsThreadScheduleDelete = "channels.thread_schedule_delete"
 )
 
 // Agent links (inter-agent delegation)

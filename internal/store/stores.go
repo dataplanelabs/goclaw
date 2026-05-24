@@ -15,6 +15,7 @@ type Stores struct {
 	Tracing   TracingStore
 	MCP              MCPServerStore
 	ChannelInstances ChannelInstanceStore
+	ChannelSchedules ChannelScheduleStore
 	ConfigSecrets    ConfigSecretsStore
 	AgentLinks       AgentLinkStore
 	Teams            TeamStore

@@ -424,6 +424,13 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`ALTER TABLE skill_agent_grants DROP COLUMN can_manage`)
 	}
 
+	if targetVersion < 41 {
+		// Migration 40→41 adds channel_instances.silence_schedule + channel_thread_schedules table.
+		db.Exec(`ALTER TABLE channel_instances DROP COLUMN silence_schedule`)
+		db.Exec(`DROP INDEX IF EXISTS idx_channel_thread_schedules_expires`)
+		db.Exec(`DROP TABLE IF EXISTS channel_thread_schedules`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db

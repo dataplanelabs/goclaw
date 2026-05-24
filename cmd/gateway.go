@@ -18,6 +18,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/cache"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/discord"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/facebook"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/feishu"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/pancake"
@@ -315,7 +316,18 @@ func runGateway() {
 	var mcpPool *mcpbridge.Pool
 	var mediaStore *media.Store
 	var postTurn tools.PostTurnProcessor
-	contextFileInterceptor, mcpPool, mediaStore, postTurn = wireExtras(pgStores, agentRouter, providerRegistry, modelReg, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, redisClient, domainBus)
+	var standbyRegistry *schedule.ScheduleRegistry
+	contextFileInterceptor, mcpPool, mediaStore, postTurn, standbyRegistry = wireExtras(pgStores, agentRouter, providerRegistry, modelReg, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, redisClient, domainBus)
+
+	// Wire push-reload into the enter_standby tool — registry is built in wireExtras,
+	// tool was registered in setupToolRegistry; close the loop here.
+	if standbyRegistry != nil {
+		if t, ok := toolsReg.Get("enter_standby"); ok {
+			if est, ok := t.(*tools.EnterStandbyTool); ok {
+				est.SetReload(standbyRegistry.Reload)
+			}
+		}
+	}
 	if mcpPool != nil {
 		defer mcpPool.Stop()
 	}
@@ -530,7 +542,7 @@ func runGateway() {
 	registerConfigChannels(cfg, channelMgr, msgBus, pgStores, instanceLoader, audioMgr)
 
 	// Register channels/instances/links/teams RPC methods
-	wireChannelRPCMethods(server, pgStores, channelMgr, agentRouter, msgBus, workspace)
+	wireChannelRPCMethods(server, pgStores, channelMgr, agentRouter, msgBus, workspace, standbyRegistry)
 
 	// Wire channel event subscribers (cache invalidation, pairing, cascade disable)
 	wireChannelEventSubscribers(msgBus, server, pgStores, channelMgr, instanceLoader, pairingMethods, cfg)

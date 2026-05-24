@@ -757,18 +757,19 @@ CREATE INDEX IF NOT EXISTS idx_mcp_user_credentials_server ON mcp_user_credentia
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS channel_instances (
-    id           TEXT NOT NULL PRIMARY KEY,
-    name         VARCHAR(100) NOT NULL,
-    display_name VARCHAR(255) DEFAULT '',
-    channel_type VARCHAR(50) NOT NULL,
-    agent_id     TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-    credentials  BLOB,
-    config       TEXT DEFAULT '{}',
-    enabled      BOOLEAN DEFAULT 1,
-    created_by   VARCHAR(255) DEFAULT '',
-    tenant_id    TEXT NOT NULL REFERENCES tenants(id),
-    created_at   TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at   TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    id               TEXT NOT NULL PRIMARY KEY,
+    name             VARCHAR(100) NOT NULL,
+    display_name     VARCHAR(255) DEFAULT '',
+    channel_type     VARCHAR(50) NOT NULL,
+    agent_id         TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    credentials      BLOB,
+    config           TEXT DEFAULT '{}',
+    enabled          BOOLEAN DEFAULT 1,
+    created_by       VARCHAR(255) DEFAULT '',
+    tenant_id        TEXT NOT NULL REFERENCES tenants(id),
+    silence_schedule TEXT DEFAULT NULL,
+    created_at       TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at       TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 -- tenant-scoped unique name (migration 27 Phase I)
@@ -776,6 +777,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_instances_tenant_name ON channel_i
 CREATE INDEX IF NOT EXISTS idx_channel_instances_type ON channel_instances(channel_type);
 CREATE INDEX IF NOT EXISTS idx_channel_instances_agent ON channel_instances(agent_id);
 CREATE INDEX IF NOT EXISTS idx_channel_instances_tenant ON channel_instances(tenant_id);
+
+CREATE TABLE IF NOT EXISTS channel_thread_schedules (
+    channel_instance_id TEXT NOT NULL REFERENCES channel_instances(id) ON DELETE CASCADE,
+    thread_key          TEXT NOT NULL,
+    schedule            TEXT NOT NULL,
+    expires_at          DATETIME,
+    reason              TEXT DEFAULT '',
+    created_by          TEXT DEFAULT '',
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (channel_instance_id, thread_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_channel_thread_schedules_expires
+    ON channel_thread_schedules(expires_at) WHERE expires_at IS NOT NULL;
 
 -- ============================================================
 -- Table: config_secrets

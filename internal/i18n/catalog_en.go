@@ -315,6 +315,16 @@ func init() {
 		MsgGrantEnvTooManyKeys:  "too many env keys: max 50",
 		MsgGrantEnvRevealLimit:  "rate limit exceeded for env reveal — try again later",
 
+		// Standby mode
+		StandbyToolDescription:      "Pause replies in the current thread for a duration. The agent will still observe and remember messages but will not reply until the pause expires.",
+		StandbyToolParamDuration:    "Pause duration in seconds (60-86400).",
+		StandbyToolParamReason:      "Optional reason recorded with the pause.",
+		StandbyErrorInvalidDuration: "duration_seconds must be between 60 and 86400",
+		StandbyErrorNoChannelCtx:    "enter_standby requires channel context and cannot be called from this caller type",
+		StandbyEntered:              "Entered standby mode for %s (reason: %s)",
+		StandbyRPCInvalidSchedule:   "invalid schedule: %s",
+		StandbyRPCNoPermission:      "tenant admin required to edit channel schedules",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",
 
