@@ -69,13 +69,9 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	}
 
 	if threadType == protocol.ThreadTypeGroup && msg.Metadata != nil {
-		// Skip auto-asker when this reply already carries a quote — Zalo's
-		// quote bubble identifies the asker AND pings them (per Zalo help docs).
-		// Auto-asker remains the safety net for non-quoted sends (DM, broadcast,
-		// quote toggle off, missing inbound payload).
-		if msg.Metadata["reply_to_quote_payload"] == "" {
-			msg.Content = applyAskerPrepend(msg.Content, msg.Metadata["sender_uid"])
-		}
+		// Always prepend the asker mention — quote bubble alone doesn't reliably
+		// notify on Android, and the explicit @ matches human-conversational style.
+		msg.Content = applyAskerPrepend(msg.Content, msg.Metadata["sender_uid"])
 	}
 	if threadType == protocol.ThreadTypeGroup {
 		msg.Content = c.wrapBareMentions(ctx, msg.ChatID, msg.Content)
