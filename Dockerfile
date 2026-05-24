@@ -59,7 +59,10 @@ RUN set -eux; \
     if [ "$ENABLE_REDIS" = "true" ]; then \
         if [ -n "$TAGS" ]; then TAGS="$TAGS,redis"; else TAGS="redis"; fi; \
     fi; \
-    if [ -n "$TAGS" ]; then TAGS="-tags $TAGS"; fi; \
+    # nodynamic: force gen2brain/jpegxl's WASM-only path so the binary stays
+    # statically linked (Alpine musl runtime has no glibc dynamic loader).
+    if [ -n "$TAGS" ]; then TAGS="$TAGS,nodynamic"; else TAGS="nodynamic"; fi; \
+    TAGS="-tags $TAGS"; \
     CGO_ENABLED=0 GOOS=linux \
     go build -ldflags="-s -w -X github.com/nextlevelbuilder/goclaw/cmd.Version=${VERSION}" \
     ${TAGS} -o /out/goclaw . && \
