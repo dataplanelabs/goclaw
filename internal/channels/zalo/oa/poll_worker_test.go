@@ -44,18 +44,20 @@ func (f *fakeSessionCore) Save(context.Context, string) error {
 }
 
 type fakeEvalStore struct {
-	mu    sync.Mutex
-	rows  []store.TeamReplyEvaluation
-	byKey map[string]string // (channel_instance|msg_id) → id
+	mu          sync.Mutex
+	rows        []store.TeamReplyEvaluation
+	byKey       map[string]string // (channel_instance|msg_id) → id
+	lastInsertTenant uuid.UUID    // captures store.TenantIDFromContext on Insert
 }
 
 func newFakeEvalStore() *fakeEvalStore {
 	return &fakeEvalStore{byKey: make(map[string]string)}
 }
 
-func (f *fakeEvalStore) Insert(_ context.Context, e store.TeamReplyEvaluation) (string, error) {
+func (f *fakeEvalStore) Insert(ctx context.Context, e store.TeamReplyEvaluation) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lastInsertTenant = store.TenantIDFromContext(ctx)
 	key := e.ChannelInstanceID + "|" + e.TeamMsgID
 	if id, ok := f.byKey[key]; ok {
 		return id, nil
@@ -180,5 +182,35 @@ func TestPollWorker_DropsForeignSrcID(t *testing.T) {
 	w.applyMessages(context.Background(), "u1", msgs)
 	if len(ev.rows) != 0 {
 		t.Fatalf("foreign src leaked: %d rows", len(ev.rows))
+	}
+}
+
+// TestPollWorker_PropagatesTenantContext is a regression guard against
+// silently losing tenant scope on downstream store calls. Pre-v3.22.1
+// the worker resolved tenant via a tenant-scoped Get(ctx, instanceID)
+// from background ctx, which returned ErrNoRows and prevented startup.
+// Even after startup is fixed, the chain that follows MUST stamp the
+// tenant on every store call or PG writes fall back to master tenant
+// and leak cross-tenant.
+func TestPollWorker_PropagatesTenantContext(t *testing.T) {
+	tenantUUID := uuid.New()
+	instID := uuid.New()
+	sess := &fakeSessionCore{}
+	ev := newFakeEvalStore()
+	bus := &fakeBus{}
+	w := NewPollWorker(instID, "zalo-oa-test", tenantUUID.String(), "zalo_oa", "oa-self",
+		1*time.Second, PollWorkerDeps{Sessions: sess, Evals: ev, Bus: bus})
+
+	msgs := []ConversationMessage{
+		{MsgID: "tenant-ctx-1", SrcID: "oa-self", DstID: "u1", Type: "text", Text: "x", Time: 1735041000000},
+	}
+	// background ctx — emulates exactly what tick() passes in production.
+	w.applyMessages(context.Background(), "u1", msgs)
+
+	if ev.lastInsertTenant == uuid.Nil {
+		t.Fatal("Insert received ctx with NO tenant — downstream PG would fall back to master_tenant")
+	}
+	if ev.lastInsertTenant != tenantUUID {
+		t.Fatalf("Insert tenant ctx = %s, want %s", ev.lastInsertTenant, tenantUUID)
 	}
 }
