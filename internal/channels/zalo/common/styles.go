@@ -162,46 +162,96 @@ func applyPatternFiltered(text string, re *regexp.Regexp, out *strings.Builder, 
 	return next.String()
 }
 
-// emitListStyles walks the (post-strip) text line by line, strips bullet/number
-// prefixes, and emits Style{St:lst_1|lst_2} over each item's text range.
+// emitListStyles groups consecutive same-kind list lines into ONE Style range
+// per run so Zalo's client numbers items sequentially. Single isolated ordered
+// items keep their literal "1." prefix (no style — Zalo's block highlight is
+// ugly for one item). Single isolated unordered items strip "-" + emit lst_1.
+// Runs break on opposite kind, kindOther, or a blank line.
 func emitListStyles(text string) (string, []Style) {
 	if text == "" {
 		return text, nil
 	}
 	lines := strings.Split(text, "\n")
+
+	type lineKind int
+	const (
+		kindOther lineKind = iota
+		kindOrdered
+		kindUnordered
+	)
+	type classifiedLine struct {
+		kind     lineKind
+		leading  string
+		body     string
+		original string
+	}
+	classified := make([]classifiedLine, len(lines))
+	for i, line := range lines {
+		if m := reListUnordered.FindStringSubmatchIndex(line); m != nil {
+			classified[i] = classifiedLine{kindUnordered, line[m[2]:m[3]], line[m[4]:m[5]], line}
+		} else if m := reListOrdered.FindStringSubmatchIndex(line); m != nil {
+			classified[i] = classifiedLine{kindOrdered, line[m[2]:m[3]], line[m[4]:m[5]], line}
+		} else {
+			classified[i] = classifiedLine{kind: kindOther, original: line}
+		}
+	}
+
 	var out strings.Builder
 	var styles []Style
 	outOffset := 0
-	for i, line := range lines {
-		var stripped string
-		var st string
-		if m := reListUnordered.FindStringSubmatchIndex(line); m != nil {
-			stripped = line[:m[2]] + line[m[4]:m[5]]
-			st = StyleListUnordered
-		} else if m := reListOrdered.FindStringSubmatchIndex(line); m != nil {
-			stripped = line[:m[2]] + line[m[4]:m[5]]
-			st = StyleListOrdered
-		} else {
-			stripped = line
+	i := 0
+	for i < len(classified) {
+		c := classified[i]
+		if c.kind == kindOther {
+			if i > 0 {
+				out.WriteString("\n")
+				outOffset++
+			}
+			out.WriteString(c.original)
+			outOffset += pkgproto.UTF16Len(c.original)
+			i++
+			continue
 		}
+		j := i
+		for j < len(classified) && classified[j].kind == c.kind {
+			j++
+		}
+		runLen := j - i
+
 		if i > 0 {
 			out.WriteString("\n")
-			outOffset += 1 // "\n" is 1 UTF-16 unit
+			outOffset++
 		}
-		if st != "" {
-			leadingLen := pkgproto.UTF16Len(stripped) - pkgproto.UTF16Len(strings.TrimLeft(stripped, " \t"))
-			itemTextLen := pkgproto.UTF16Len(strings.TrimLeft(stripped, " \t"))
-			if itemTextLen > 0 {
-				styles = append(styles, Style{
-					Start: outOffset + leadingLen,
-					Len:   itemTextLen,
-					St:    st,
-				})
+
+		if c.kind == kindOrdered && runLen == 1 {
+			// Single isolated numbered line — keep "1." prefix visible.
+			out.WriteString(c.original)
+			outOffset += pkgproto.UTF16Len(c.original)
+		} else {
+			styleStart := outOffset
+			for k := i; k < j; k++ {
+				if k > i {
+					out.WriteString("\n")
+					outOffset++
+				}
+				out.WriteString(classified[k].leading)
+				outOffset += pkgproto.UTF16Len(classified[k].leading)
+				out.WriteString(classified[k].body)
+				outOffset += pkgproto.UTF16Len(classified[k].body)
 			}
+			st := StyleListOrdered
+			if c.kind == kindUnordered {
+				st = StyleListUnordered
+			}
+			styles = append(styles, Style{
+				Start: styleStart,
+				Len:   outOffset - styleStart,
+				St:    st,
+			})
 		}
-		out.WriteString(stripped)
-		outOffset += pkgproto.UTF16Len(stripped)
+		i = j
 	}
+
 	return out.String(), styles
 }
 
