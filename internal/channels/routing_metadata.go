@@ -17,6 +17,7 @@ var routingMetaKeys = []string{
 	"post_id",                // pancake: post id for template vars
 	"display_name",           // pancake: commenter display name for template vars
 	"reply_to_quote_payload", // zalo_personal: JSON-serialized TQuote for native /quote endpoint
+	"sender_uid",             // zalo_personal: asker's UID for auto-prepend @[uid] on group replies
 }
 
 var finalReplyMetaKeys = append([]string{
