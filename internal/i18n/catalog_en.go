@@ -113,6 +113,8 @@ func init() {
 		// Skills
 		MsgSkillsUpdateNotSupported: "skills.update not supported for file-based skills",
 		MsgCannotResolveSkillID:     "cannot resolve skill ID for file-based skill",
+		MsgSkillManagedOverwrite:    "This skill is gcplane-managed. Update via gcplane apply, or re-upload with force_imperative=true (audit-logged).",
+		MsgSkillInvalidSource:       "invalid source value %q; allowed: unknown, cli, gcplane",
 		MsgInvalidVisibility:        "invalid visibility %q: must be one of private, public",
 
 		// Logs

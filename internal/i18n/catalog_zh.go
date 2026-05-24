@@ -113,6 +113,8 @@ func init() {
 		// Skills
 		MsgSkillsUpdateNotSupported: "基于文件的Skill不支持 skills.update",
 		MsgCannotResolveSkillID:     "无法解析基于文件的Skill ID",
+		MsgSkillManagedOverwrite:    "此Skill由 gcplane 管理。请通过 gcplane apply 更新，或使用 force_imperative=true 重新上传（将记录审计日志）。",
+		MsgSkillInvalidSource:       "无效的 source 值 %q；允许的值：unknown、cli、gcplane",
 		MsgInvalidVisibility:        "无效的 visibility %q：必须为 private 或 public",
 
 		// Logs

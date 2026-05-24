@@ -384,6 +384,7 @@ CREATE TABLE IF NOT EXISTS skills (
     file_hash   VARCHAR(64),
     tags        TEXT,
     is_system   BOOLEAN NOT NULL DEFAULT 0,
+    source      TEXT NOT NULL DEFAULT 'unknown',
     deps        TEXT NOT NULL DEFAULT '{}',
     enabled     BOOLEAN NOT NULL DEFAULT 1,
     tenant_id   TEXT NOT NULL REFERENCES tenants(id),
@@ -398,6 +399,7 @@ CREATE INDEX IF NOT EXISTS idx_skills_visibility ON skills(visibility) WHERE sta
 CREATE INDEX IF NOT EXISTS idx_skills_system ON skills(is_system) WHERE is_system = 1;
 CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(enabled) WHERE enabled = 0;
 CREATE INDEX IF NOT EXISTS idx_skills_tenant ON skills(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source);
 
 -- ============================================================
 -- Table: skill_agent_grants

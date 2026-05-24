@@ -88,6 +88,7 @@ type SkillCreateParams struct {
 	FileSize    int64
 	FileHash    *string
 	Frontmatter map[string]string
+	Source      string // ownership marker: "unknown" | "cli" | "gcplane" | "bundled". Empty → "unknown".
 }
 
 // SkillWithGrantStatus is a skill with its grant status for a specific agent.
@@ -133,6 +134,10 @@ type SkillManageStore interface {
 	// GetSkillHashBySlug returns the content hash and version of the latest non-deleted skill
 	// version for the given slug (tenant-scoped). Returns ok=false if no skill exists.
 	GetSkillHashBySlug(ctx context.Context, slug string) (hash string, version int, ok bool)
+	// GetSkillSourceBySlug returns the source attribution of the latest non-deleted skill
+	// version for the given slug (tenant-scoped). Returns ok=false if no skill exists.
+	// Used by upload handler to gate overwrites of gcplane-managed skills.
+	GetSkillSourceBySlug(ctx context.Context, slug string) (source string, ok bool)
 	IsSystemSkill(slug string) bool
 	// System skill management
 	ListAllSkills(ctx context.Context) []SkillInfo
