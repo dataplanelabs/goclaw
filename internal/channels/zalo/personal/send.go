@@ -71,6 +71,9 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if threadType == protocol.ThreadTypeGroup && msg.Metadata != nil {
 		msg.Content = applyAskerPrepend(msg.Content, msg.Metadata["sender_uid"])
 	}
+	if threadType == protocol.ThreadTypeGroup {
+		msg.Content = c.wrapBareMentions(ctx, msg.ChatID, msg.Content)
+	}
 
 	rendered, allMentions := c.parseOutboundMentions(ctx, msg.ChatID, threadType, msg.Content)
 	msg.Content = rendered

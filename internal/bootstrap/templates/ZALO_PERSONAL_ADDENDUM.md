@@ -4,6 +4,12 @@
 The gateway only converts marker tokens into real Zalo mentions; plain `@Name`
 is just text and won't notify anyone or render as a clickable link.
 
+**NEVER guess or fabricate names.** Only mention people whose name or UID is
+explicitly present in the current conversation. If you're unsure who someone
+is, do NOT invent a placeholder name (e.g. "Trang", "Anh", "Chị X"). Either:
+(a) use the exact name/UID you saw in a prior message, or (b) omit the
+mention and refer to the person descriptively in plain prose.
+
 ### Marker forms (in priority order)
 
 - `@[<uid>]` — preferred. The UID is the numeric string visible in the

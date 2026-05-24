@@ -4,6 +4,32 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ---
 
+## 2026-05-24 (late afternoon — mention v3)
+
+### Zalo Personal: mention v3 — zca-js fact-check corrections + bare-`@Name` auto-wrap
+
+**Critical fixes** (from `plans/reports/researcher-260524-1339-zca-js-fact-check.md`):
+
+- **Fixed phantom endpoint:** `FetchGroupMembers` was POSTing to `/api/group/getmem-v2` which does not exist in zca-js — silently failed every slow-path member lookup. Rewrote as 2-step per real zca-js flow: `/api/group/getmg-v2` returns `memVerList`, then `/api/social/group/members` returns profiles (50-batched, IDs suffixed `_0` per `friend_pversion_map` convention).
+- **Removed quote-with-attachment mention-drop rule:** my code was dropping `mentionInfo` when quote had an attachment, but zca-js's `sendMessage.ts` does NOT drop — `isMentionsValid` controls mention inclusion regardless of `qmsgAttach`. Test renamed `TestSendMessageWithOptions_QuoteAttachment_KeepsMentions`.
+- **Added zca-js defensive pre-filter:** `pos >= 0 && uid != "" && len > 0` before wire send (matches `sendMessage.ts:273`).
+
+**New feature: bare-`@Name` auto-wrap**
+
+LLMs ignore the "use marker syntax" constraint frequently. New `wrapBareMentions` pass scans rendered text for `@Word(Word){0,3}` patterns and rewrites them as `@[Name]` markers when the name resolves to exactly one known group member. Greedy longest-prefix-first match; refuses ambiguity. Skips reserved tokens (`@all`/`@All`/`@everyone`) and existing markers. Runs only on group threads, before the parser.
+
+**Prompt tightening**
+
+- Added explicit "NEVER guess or fabricate names" rule with examples — addresses the LLM hallucinating "Trang" / "Ngoc Tran" placeholders.
+
+**Tests**
+
+- 11 bare-mention auto-wrap tests (single-word hit, multi-word, longest-prefix, shrink-on-miss, no-match, reserved skip, marker-no-double-wrap, email-not-matched, diacritics, start-of-text, ambiguous refuse).
+- New `TestSendMessageWithOptions_FiltersInvalidMentions` (defensive pre-filter).
+- Renamed quote+attach test to assert mentions ARE retained.
+
+---
+
 ## 2026-05-24 (afternoon — mention v2)
 
 ### Zalo Personal: mention robustness — name fallback, @All capitalization, auto-asker
