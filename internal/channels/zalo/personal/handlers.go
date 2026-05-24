@@ -368,13 +368,11 @@ func buildQuoteMetadata(raw json.RawMessage) map[string]string {
 	}
 }
 
-// inboundMsgTypeToCli inverts classifyQuoteMsgType so we can synthesize a
-// TQuote.CliMsgType from the inbound TMessage.MsgType string. Unknown types
-// default to text (1) since classifyQuoteMsgType's text branch is the most
-// permissive on the Zalo /quote endpoint.
+// inboundMsgTypeToCli inverts classifyQuoteMsgType. Defensive only — MsgType
+// is the authoritative outbound discriminator; CliMsgType kept for mediaNoun.
 func inboundMsgTypeToCli(msgType string) int {
 	switch strings.ToLower(msgType) {
-	case "chat.photo", "photo":
+	case "chat.photo", "photo", "chat.attach.photo", "chat.photo.original":
 		return 2
 	case "chat.sticker", "sticker":
 		return 3
@@ -405,6 +403,7 @@ func buildSelfQuoteMetadata(data *protocol.TMessage, senderID string) map[string
 		CliMsgID:    data.CliMsgID,
 		GlobalMsgID: json.Number(data.MsgID),
 		CliMsgType:  inboundMsgTypeToCli(data.MsgType),
+		MsgType:     data.MsgType,
 		TS:          json.Number(data.TS),
 		Msg:         msgBody,
 		Attach:      attach,

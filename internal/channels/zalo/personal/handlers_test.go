@@ -681,6 +681,44 @@ func TestHandleDM_NoQuoteSynthesizesSelfQuote(t *testing.T) {
 	if q.CliMsgType != 1 {
 		t.Errorf("CliMsgType = %d, want 1 (text)", q.CliMsgType)
 	}
+	if q.MsgType != "chat.text" {
+		t.Errorf("MsgType = %q, want chat.text (raw inbound string)", q.MsgType)
+	}
+}
+
+// Synthesized self-quote for a file inbound must preserve the raw MsgType string
+// so the outbound qmsgType resolves to 46 (share.file) instead of 1 (text).
+func TestHandleDM_FileInboundPreservesMsgTypeString(t *testing.T) {
+	t.Parallel()
+	ch, mb := newHandlerTestChannel(t)
+	// File inbound shape: content is a raw JSON object with href + title.
+	rawContent := json.RawMessage(`{"title":"BaoCao.xlsx","href":"https://files.zalo.me/x","fileExt":"xlsx"}`)
+
+	ch.handleDM(protocol.NewUserMessage("self-uid", protocol.TMessage{
+		MsgID:    "7858722000099",
+		CliMsgID: json.Number("1700000000099"),
+		UIDFrom:  "456",
+		IDTo:     "self-uid",
+		TS:       "1700000000",
+		MsgType:  "share.file",
+		Content:  protocol.Content{Raw: rawContent},
+	}))
+
+	got := drainInbound(t, mb)
+	payload := got.Metadata["reply_to_quote_payload"]
+	if payload == "" {
+		t.Fatal("reply_to_quote_payload must be synthesized for file inbound")
+	}
+	var q protocol.TQuote
+	if err := json.Unmarshal([]byte(payload), &q); err != nil {
+		t.Fatalf("payload not valid TQuote JSON: %v", err)
+	}
+	if q.MsgType != "share.file" {
+		t.Errorf("MsgType = %q, want share.file (raw inbound preserved)", q.MsgType)
+	}
+	if q.Attach == "" {
+		t.Error("Attach must carry the raw content JSON for file inbound")
+	}
 }
 
 // Same but when QuoteUserMessage is DISABLED — nothing should be stamped
