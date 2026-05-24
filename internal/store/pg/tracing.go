@@ -61,7 +61,7 @@ func (s *PGTracingStore) GetTrace(ctx context.Context, traceID uuid.UUID) (*stor
 	query := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0) AS total_cost, span_count, llm_call_count, tool_call_count,
-		 status, error, COALESCE(metadata, '{}'::jsonb) AS metadata, COALESCE(tags, '{}') AS tags, team_id, created_at
+		 status, error, COALESCE(metadata, '{}'::jsonb) AS metadata, COALESCE(tags, '{}') AS tags, team_id, outbound_emitted, created_at
 		 FROM traces WHERE id = $1`
 	qArgs := []any{traceID}
 	if !store.IsCrossTenant(ctx) {
@@ -142,7 +142,7 @@ func (s *PGTracingStore) ListTraces(ctx context.Context, opts store.TraceListOpt
 	q := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0) AS total_cost, span_count, llm_call_count, tool_call_count,
-		 status, error, metadata, tags, team_id, created_at
+		 status, error, metadata, tags, team_id, outbound_emitted, created_at
 		 FROM traces` + where
 
 	limit := opts.Limit
@@ -162,7 +162,7 @@ func (s *PGTracingStore) ListChildTraces(ctx context.Context, parentTraceID uuid
 	q := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0) AS total_cost, span_count, llm_call_count, tool_call_count,
-		 status, error, metadata, tags, team_id, created_at
+		 status, error, metadata, tags, team_id, outbound_emitted, created_at
 		 FROM traces WHERE parent_trace_id = $1`
 	qArgs := []any{parentTraceID}
 
@@ -181,6 +181,18 @@ func (s *PGTracingStore) ListChildTraces(ctx context.Context, parentTraceID uuid
 		return nil, err
 	}
 	return traceRowsToData(rows), nil
+}
+
+func (s *PGTracingStore) SetOutboundEmitted(ctx context.Context, traceID uuid.UUID) error {
+	tenantID := store.TenantIDFromContext(ctx)
+	if tenantID == uuid.Nil {
+		return fmt.Errorf("tenant_id required")
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE traces SET outbound_emitted = true
+		 WHERE id = $1 AND tenant_id = $2 AND outbound_emitted = false`,
+		traceID, tenantID)
+	return err
 }
 
 func (s *PGTracingStore) CreateSpan(ctx context.Context, span *store.SpanData) error {

@@ -345,6 +345,15 @@ func init() {
 		TeamEvalNotFound:            "未找到团队回复评估",
 		TeamEvalJudgeError:          "评估失败：%s",
 
+		TraceRetryPayloadOversize: "负载过大，无法重试（>2 MB）。",
+		TraceRetryLocked:          "重试正在进行中。",
+		TraceRetryAgentGone:       "此追踪的智能体已被删除。",
+		TraceRetryProviderGone:    "此追踪的提供方已被移除。",
+		TraceRetryPayloadMissing:  "重放数据已不可用。",
+		TraceRetryConfirmRequired: "此次运行已发送消息——请确认后再重试。",
+		TraceRetryStarted:         "重试已开始。",
+		TraceRetryNotFailed:       "只能重试失败的追踪。",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 已按请求转发至 %s:%q",
 

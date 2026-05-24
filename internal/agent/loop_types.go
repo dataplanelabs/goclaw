@@ -241,6 +241,7 @@ type Loop struct {
 	// Budget enforcement: monthly spending limit in cents (0 = unlimited)
 	budgetMonthlyCents int
 	tracingStore       store.TracingStore
+	replayStore        store.ReplayPayloadStore
 
 	// Memory store for extractive memory fallback (writes directly when LLM flush fails)
 	memStore store.MemoryStore
@@ -436,6 +437,7 @@ type LoopConfig struct {
 	// Budget enforcement
 	BudgetMonthlyCents int
 	TracingStore       store.TracingStore
+	ReplayPayloadStore store.ReplayPayloadStore
 
 	// Memory store for extractive memory fallback (writes directly when LLM flush fails)
 	MemoryStore store.MemoryStore
@@ -578,6 +580,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		modelPricing:           cfg.ModelPricing,
 		budgetMonthlyCents:     cfg.BudgetMonthlyCents,
 		tracingStore:           cfg.TracingStore,
+		replayStore:            cfg.ReplayPayloadStore,
 		memStore:               cfg.MemoryStore,
 		mcpStore:               cfg.MCPStore,
 		mcpPool:                cfg.MCPPool,
@@ -665,6 +668,7 @@ type RunResult struct {
 	Content        string           `json:"content"`
 	Thinking       string           `json:"thinking,omitempty"`       // reasoning content from thinking models (Claude, o3, DeepSeek-R1, Kimi)
 	RunID          string           `json:"runId"`
+	TraceID        uuid.UUID        `json:"traceId,omitempty"` // root trace ID — used to mark outbound_emitted on dispatch ack
 	Iterations     int              `json:"iterations"`
 	ToolCalls      int              `json:"toolCalls,omitempty"`
 	Usage          *providers.Usage `json:"usage,omitempty"`

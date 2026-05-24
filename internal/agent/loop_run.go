@@ -213,6 +213,9 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		if agentSpanID != uuid.Nil {
 			l.emitAgentSpanEnd(ctx, agentSpanID, runStart, result, nil)
 		}
+		if result != nil && !isChildTrace && traceID != uuid.Nil {
+			result.TraceID = traceID
+		}
 		if isChildTrace && l.traceCollector != nil && traceID != uuid.Nil {
 			l.traceCollector.SetTraceStatus(ctx, traceID, store.TraceStatusCompleted)
 		}
@@ -244,6 +247,15 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 				l.traceCollector.FinishTrace(ctx, traceID, store.TraceStatusCompleted, "", truncateStr(result.Content, l.traceCollector.PreviewMaxLen()))
 			} else {
 				l.traceCollector.FinishTrace(ctx, traceID, store.TraceStatusCompleted, "", "")
+			}
+		}
+		// Success-path sweep: clears captured replay payloads for this session
+		// so retry isn't offered after recovery. Scoped by session_key+tenant.
+		if !isChildTrace && l.replayStore != nil && req.SessionKey != "" {
+			if dropped, err := l.replayStore.DropForSession(ctx, req.SessionKey, time.Now().UTC()); err != nil {
+				slog.Warn("replay_payload: drop sweep failed", "err", err, "session_key", req.SessionKey)
+			} else if dropped > 0 {
+				slog.Debug("replay_payload: dropped stale captures", "count", dropped, "session_key", req.SessionKey)
 			}
 		}
 		return result, nil

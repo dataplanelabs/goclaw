@@ -345,6 +345,15 @@ func init() {
 		TeamEvalNotFound:            "không tìm thấy đánh giá trả lời của team",
 		TeamEvalJudgeError:          "đánh giá thất bại: %s",
 
+		TraceRetryPayloadOversize: "Tải dữ liệu quá lớn để chạy lại (>2 MB).",
+		TraceRetryLocked:          "Đang chạy lại — vui lòng chờ.",
+		TraceRetryAgentGone:       "Agent của trace này đã bị xóa.",
+		TraceRetryProviderGone:    "Provider của trace này đã bị xóa.",
+		TraceRetryPayloadMissing:  "Dữ liệu replay không còn khả dụng.",
+		TraceRetryConfirmRequired: "Lần chạy này đã gửi tin nhắn — xác nhận để chạy lại.",
+		TraceRetryStarted:         "Đã bắt đầu chạy lại.",
+		TraceRetryNotFailed:       "Chỉ có thể chạy lại trace bị lỗi.",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Đã forward sang %s theo yêu cầu: %q",
 

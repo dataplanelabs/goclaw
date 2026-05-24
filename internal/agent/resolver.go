@@ -100,6 +100,8 @@ type ResolverDeps struct {
 	// Tracing store for budget enforcement queries
 	TracingStore store.TracingStore
 
+	ReplayPayloadStore store.ReplayPayloadStore
+
 	// Memory store for extractive memory fallback
 	MemoryStore store.MemoryStore
 
@@ -534,6 +536,7 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			ModelPricing:           deps.ModelPricing,
 			BudgetMonthlyCents:     derefInt(ag.BudgetMonthlyCents),
 			TracingStore:           deps.TracingStore,
+			ReplayPayloadStore:     deps.ReplayPayloadStore,
 			MemoryStore:            deps.MemoryStore,
 			MCPStore:               deps.MCPStore,
 			MCPPool:                deps.MCPPool,

@@ -38,6 +38,7 @@ type traceRow struct {
 	Metadata          json.RawMessage `json:"metadata" db:"metadata"`
 	Tags              pq.StringArray  `json:"tags" db:"tags"`
 	TeamID            *uuid.UUID      `json:"team_id" db:"team_id"`
+	OutboundEmitted   bool            `json:"outbound_emitted" db:"outbound_emitted"`
 	CreatedAt         time.Time       `json:"created_at" db:"created_at"`
 }
 
@@ -53,7 +54,7 @@ func (r *traceRow) toTraceData() store.TraceData {
 		LLMCallCount: r.LLMCallCount, ToolCallCount: r.ToolCallCount,
 		Status: r.Status, Error: derefStr(r.Error),
 		Metadata: r.Metadata, Tags: []string(r.Tags),
-		TeamID: r.TeamID, CreatedAt: r.CreatedAt,
+		TeamID: r.TeamID, OutboundEmitted: r.OutboundEmitted, CreatedAt: r.CreatedAt,
 	}
 }
 

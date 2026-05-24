@@ -376,6 +376,7 @@ func processNormalMessage(
 	effectiveRole := msg.Metadata[tools.MetaOriginRole]
 
 	// Schedule through main lane (per-session concurrency controlled by maxConcurrent)
+	chanMgr := deps.ChannelMgr
 	outCh := deps.Sched.ScheduleWithOpts(schedCtx, "main", agent.RunRequest{
 		SessionKey:        sessionKey,
 		Message:           msg.Content,
@@ -399,6 +400,11 @@ func processNormalMessage(
 		ExtraSystemPrompt: extraPrompt,
 		SkillFilter:       skillFilter,
 		EnableNativeStyles: parseBoolMetadata(msg.Metadata, "enable_native_styles"),
+		OnTraceCreated: func(traceID uuid.UUID) {
+			if chanMgr != nil {
+				chanMgr.SetRunTraceID(runID, traceID)
+			}
+		},
 	}, scheduler.ScheduleOpts{
 		MaxConcurrent: maxConcurrent,
 	})
@@ -514,6 +520,7 @@ func processNormalMessage(
 			TenantID:         tenantID,
 			AgentID:          agentUUID,
 			AgentOtherConfig: agentOtherConfig,
+			TraceID:          outcome.Result.TraceID,
 		}
 
 		appendMediaToOutbound(&outMsg, outcome.Result.Media)

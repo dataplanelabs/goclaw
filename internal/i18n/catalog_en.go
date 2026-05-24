@@ -345,6 +345,15 @@ func init() {
 		TeamEvalNotFound:            "team reply evaluation not found",
 		TeamEvalJudgeError:          "judge evaluation failed: %s",
 
+		TraceRetryPayloadOversize: "Payload too large to replay (>2 MB).",
+		TraceRetryLocked:          "Retry already in progress.",
+		TraceRetryAgentGone:       "The agent for this trace was deleted.",
+		TraceRetryProviderGone:    "The provider for this trace was removed.",
+		TraceRetryPayloadMissing:  "Replay data no longer available.",
+		TraceRetryConfirmRequired: "This run already sent a message — confirm to retry.",
+		TraceRetryStarted:         "Retry started.",
+		TraceRetryNotFailed:       "Only failed traces can be retried.",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",
 

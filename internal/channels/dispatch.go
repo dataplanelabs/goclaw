@@ -84,7 +84,18 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 				})
 			}
 
-			if err := channel.Send(sendCtx, msg); err != nil {
+			sendErr := channel.Send(sendCtx, msg)
+			if sendErr == nil && msg.TraceID != uuid.Nil {
+				m.mu.RLock()
+				ts := m.tracingStore
+				m.mu.RUnlock()
+				if ts != nil {
+					if err := ts.SetOutboundEmitted(sendCtx, msg.TraceID); err != nil {
+						slog.Warn("trace: SetOutboundEmitted failed", "err", err, "trace_id", msg.TraceID)
+					}
+				}
+			}
+			if err := sendErr; err != nil {
 				slog.Error("error sending message to channel",
 					"channel", msg.Channel,
 					"chat_id", msg.ChatID,

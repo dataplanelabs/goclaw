@@ -24,6 +24,18 @@ func (m *Manager) UnregisterRun(runID string) {
 	m.runs.Delete(runID)
 }
 
+// SetRunTraceID associates a trace ID with an in-flight run so block.reply
+// outbounds can stamp it for the outbound_emitted flag in dispatch.
+func (m *Manager) SetRunTraceID(runID string, traceID uuid.UUID) {
+	if v, ok := m.runs.Load(runID); ok {
+		if rc, ok := v.(*RunContext); ok {
+			rc.mu.Lock()
+			rc.TraceID = traceID
+			rc.mu.Unlock()
+		}
+	}
+}
+
 // IsStreamingChannel checks if a named channel implements StreamingChannel
 // AND has streaming currently enabled for the given chat type.
 // isGroup: true for group chats, false for DMs.

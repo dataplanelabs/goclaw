@@ -20,17 +20,19 @@ func scanTraceRow(row *sql.Row) (*store.TraceData, error) {
 	var durationMS *int
 	var metadata *[]byte
 	var tags []byte
+	var outboundEmitted int
 	var startTime, createdAt sqliteTime
 
 	err := row.Scan(&d.ID, &parentTraceID, &agentID, &userID, &sessionKey, &runID, &startTime, &endTime,
 		&durationMS, &name, &channel, &inputPreview, &outputPreview,
 		&d.TotalInputTokens, &d.TotalOutputTokens, &d.TotalCost, &d.SpanCount, &d.LLMCallCount, &d.ToolCallCount,
-		&d.Status, &errStr, &metadata, &tags, &teamID, &createdAt)
+		&d.Status, &errStr, &metadata, &tags, &teamID, &outboundEmitted, &createdAt)
 	if err != nil {
 		return nil, err
 	}
 	d.StartTime = startTime.Time
 	d.CreatedAt = createdAt.Time
+	d.OutboundEmitted = outboundEmitted != 0
 	var endTimePtr *time.Time
 	if endTime.Valid {
 		endTimePtr = &endTime.Time
@@ -49,17 +51,19 @@ func scanTraceRows(rows *sql.Rows) ([]store.TraceData, error) {
 		var durationMS *int
 		var metadata *[]byte
 		var tags []byte
+		var outboundEmitted int
 		var startTime, createdAt sqliteTime
 
 		if err := rows.Scan(&d.ID, &parentTraceID, &agentID, &userID, &sessionKey, &runID, &startTime, &endTime,
 			&durationMS, &name, &channel, &inputPreview, &outputPreview,
 			&d.TotalInputTokens, &d.TotalOutputTokens, &d.TotalCost, &d.SpanCount, &d.LLMCallCount, &d.ToolCallCount,
-			&d.Status, &errStr, &metadata, &tags, &teamID, &createdAt); err != nil {
+			&d.Status, &errStr, &metadata, &tags, &teamID, &outboundEmitted, &createdAt); err != nil {
 			slog.Warn("tracing: trace scan failed", "error", err)
 			continue
 		}
 		d.StartTime = startTime.Time
 		d.CreatedAt = createdAt.Time
+		d.OutboundEmitted = outboundEmitted != 0
 		var endTimePtr *time.Time
 	if endTime.Valid {
 		endTimePtr = &endTime.Time

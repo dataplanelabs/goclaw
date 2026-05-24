@@ -15,6 +15,8 @@ import (
 
 // runViaPipeline delegates a run to the v3 pipeline.
 func (l *Loop) runViaPipeline(ctx context.Context, req RunRequest) (*RunResult, error) {
+	l.captureReplayPayload(ctx, &req)
+
 	input := convertRunInput(&req)
 	// Bridge runState shares loop detection state between pipeline and agent.
 	bridgeRS := &runState{}

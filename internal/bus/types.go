@@ -38,11 +38,14 @@ type OutboundMessage struct {
 	Channel         string            `json:"channel"`
 	ChatID          string            `json:"chat_id"`
 	Content         string            `json:"content"`
-	Media           []MediaAttachment `json:"media,omitempty"`              // optional media attachments
-	Metadata        map[string]string `json:"metadata,omitempty"`           // channel-specific metadata
-	TenantID        uuid.UUID         `json:"tenant_id,omitempty"`          // tenant scope for per-tenant TTS
-	AgentID         uuid.UUID         `json:"agent_id,omitempty"`           // agent scope for per-agent TTS voice override
-	AgentOtherConfig []byte           `json:"agent_other_config,omitempty"` // agent's other_config for TTS voice/model
+	Media           []MediaAttachment `json:"media,omitempty"`
+	Metadata        map[string]string `json:"metadata,omitempty"`
+	TenantID        uuid.UUID         `json:"tenant_id,omitempty"`
+	AgentID         uuid.UUID         `json:"agent_id,omitempty"`
+	AgentOtherConfig []byte           `json:"agent_other_config,omitempty"`
+	// TraceID set by the agent emit site so dispatch can mark outbound_emitted=true
+	// once channel.Send acks. uuid.Nil means caller has no trace to flag.
+	TraceID uuid.UUID `json:"trace_id,omitempty"`
 }
 
 // MediaAttachment represents a media file to be sent with a message.

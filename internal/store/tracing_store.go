@@ -63,6 +63,7 @@ type TraceData struct {
 	Metadata          json.RawMessage `json:"metadata,omitempty" db:"metadata"`
 	Tags              []string        `json:"tags,omitempty" db:"tags"`
 	TeamID            *uuid.UUID      `json:"team_id,omitempty" db:"team_id"`
+	OutboundEmitted   bool            `json:"outbound_emitted" db:"outbound_emitted"`
 	CreatedAt         time.Time       `json:"created_at" db:"created_at"`
 }
 
@@ -143,6 +144,8 @@ type TracingStore interface {
 	GetTrace(ctx context.Context, traceID uuid.UUID) (*TraceData, error)
 	ListTraces(ctx context.Context, opts TraceListOpts) ([]TraceData, error)
 	CountTraces(ctx context.Context, opts TraceListOpts) (int, error)
+	// SetOutboundEmitted is idempotent: only flips false→true.
+	SetOutboundEmitted(ctx context.Context, traceID uuid.UUID) error
 
 	CreateSpan(ctx context.Context, span *SpanData) error
 	UpdateSpan(ctx context.Context, spanID uuid.UUID, updates map[string]any) error

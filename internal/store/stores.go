@@ -12,7 +12,9 @@ type Stores struct {
 	Skills    SkillStore
 	Agents    AgentStore
 	Providers ProviderStore
-	Tracing   TracingStore
+	Tracing        TracingStore
+	ReplayPayloads ReplayPayloadStore
+	RetryLocks     RetryLockStore
 	MCP              MCPServerStore
 	ChannelInstances ChannelInstanceStore
 	ChannelSchedules ChannelScheduleStore

@@ -581,6 +581,7 @@ CREATE TABLE IF NOT EXISTS traces (
     parent_trace_id     TEXT,
     team_id             TEXT REFERENCES agent_teams(id) ON DELETE SET NULL,
     tenant_id           TEXT NOT NULL REFERENCES tenants(id),
+    outbound_emitted    INTEGER NOT NULL DEFAULT 0,
     created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
@@ -1883,3 +1884,37 @@ CREATE INDEX IF NOT EXISTS idx_team_reply_evals_thread
 CREATE INDEX IF NOT EXISTS idx_team_reply_evals_pending_judge
     ON team_reply_evaluations(captured_at)
     WHERE judge_completed_at IS NULL AND judge_error IS NULL;
+
+-- ============================================================
+-- trace_replay_payloads (mirrors PG migration 000075)
+-- Captured RunRequest for failed-trace retry. Sibling to traces
+-- so list queries stay untouched.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS trace_replay_payloads (
+    trace_id        TEXT PRIMARY KEY REFERENCES traces(id) ON DELETE CASCADE,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    session_key     TEXT NOT NULL,
+    payload         TEXT,
+    payload_version INTEGER NOT NULL DEFAULT 1,
+    oversize        INTEGER NOT NULL DEFAULT 0,
+    byte_size       INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_replay_payloads_session
+    ON trace_replay_payloads(session_key, created_at);
+CREATE INDEX IF NOT EXISTS idx_replay_payloads_tenant
+    ON trace_replay_payloads(tenant_id);
+
+-- ============================================================
+-- trace_retry_locks (mirrors PG migration 000075)
+-- Short-TTL lock blocking double-click retries on the same trace.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS trace_retry_locks (
+    trace_id   TEXT PRIMARY KEY REFERENCES traces(id) ON DELETE CASCADE,
+    tenant_id  TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    locked_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    locked_by  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_retry_locks_expiry ON trace_retry_locks(locked_at);

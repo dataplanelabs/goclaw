@@ -301,12 +301,16 @@ func (m *Manager) HandleAgentEvent(eventType, runID string, payload any) {
 			}
 		}
 
+		rc.mu.Lock()
+		traceID := rc.TraceID
+		rc.mu.Unlock()
 		m.bus.PublishOutbound(bus.OutboundMessage{
 			Channel:  rc.ChannelName,
 			ChatID:   rc.ChatID,
 			Content:  content,
 			Metadata: outMeta,
 			TenantID: rc.TenantID,
+			TraceID:  traceID,
 		})
 		return
 	}

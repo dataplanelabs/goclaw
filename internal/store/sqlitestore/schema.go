@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 44
+const SchemaVersion = 45
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -794,6 +794,32 @@ CREATE INDEX IF NOT EXISTS idx_team_reply_evals_thread
 CREATE INDEX IF NOT EXISTS idx_team_reply_evals_pending_judge
     ON team_reply_evaluations(captured_at)
     WHERE judge_completed_at IS NULL AND judge_error IS NULL;`,
+
+	// Version 44 → 45: trace replay payloads + retry locks + outbound_emitted column
+	// (mirrors PG 000075). Adds capture sibling table, double-click lock, and a
+	// boolean that records whether the trace already sent a message before failing.
+	44: `CREATE TABLE IF NOT EXISTS trace_replay_payloads (
+    trace_id        TEXT PRIMARY KEY REFERENCES traces(id) ON DELETE CASCADE,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    session_key     TEXT NOT NULL,
+    payload         TEXT,
+    payload_version INTEGER NOT NULL DEFAULT 1,
+    oversize        INTEGER NOT NULL DEFAULT 0,
+    byte_size       INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_replay_payloads_session
+    ON trace_replay_payloads(session_key, created_at);
+CREATE INDEX IF NOT EXISTS idx_replay_payloads_tenant
+    ON trace_replay_payloads(tenant_id);
+CREATE TABLE IF NOT EXISTS trace_retry_locks (
+    trace_id   TEXT PRIMARY KEY REFERENCES traces(id) ON DELETE CASCADE,
+    tenant_id  TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    locked_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    locked_by  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_retry_locks_expiry ON trace_retry_locks(locked_at);
+ALTER TABLE traces ADD COLUMN outbound_emitted INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.
