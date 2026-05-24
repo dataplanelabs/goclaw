@@ -112,6 +112,12 @@ export const Methods = {
   CHANNELS_THREAD_SCHEDULE_SET: "channels.thread_schedule_set",
   CHANNELS_THREAD_SCHEDULE_DELETE: "channels.thread_schedule_delete",
 
+  // Team-reply capture + evaluations (Phase 6)
+  CHANNELS_TEAM_REPLIES_LIST: "channels.team_replies_list",
+  CHANNELS_TEAM_REPLIES_GET: "channels.team_replies_get",
+  CHANNELS_TEAM_REPLIES_EXPORT_JSONL: "channels.team_replies_export_jsonl",
+  CHANNELS_TEAM_CAPTURE_TOGGLE: "channels.team_capture_toggle",
+
   PAIRING_REQUEST: "device.pair.request",
   PAIRING_APPROVE: "device.pair.approve",
   PAIRING_DENY: "device.pair.deny",

@@ -21,6 +21,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/common"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
@@ -76,6 +77,13 @@ type Channel struct {
 	// downloadMediaFn lets tests inject a fixture writer that bypasses SSRF
 	// on httptest loopback URLs. nil → downloadOAMedia.
 	downloadMediaFn func(ctx context.Context, fileURL string) (string, error)
+
+	// Team-reply capture (Phase 4) — nil unless wired via FactoryWithDeps.
+	teamReplyBus      eventbus.DomainEventBus
+	teamReplySessions store.SessionStore
+	teamReplyEvals    store.TeamReplyEvalStore
+	teamReplyWorker   *PollWorker
+	teamReplyTenantID string
 }
 
 // creds returns a read-only snapshot. Refresh swaps the pointer atomically;
@@ -193,6 +201,8 @@ func (c *Channel) Start(_ context.Context) error {
 	c.tickerWG.Add(1)
 	go c.runSafetyTicker()
 
+	c.startTeamReplyWorker()
+
 	transport := c.cfg.Transport
 	switch transport {
 	case "webhook":
@@ -218,6 +228,9 @@ func (c *Channel) Start(_ context.Context) error {
 // Idempotent.
 func (c *Channel) Stop(_ context.Context) error {
 	c.stopOnce.Do(func() { close(c.stopCh) })
+	if c.teamReplyWorker != nil {
+		c.teamReplyWorker.Stop()
+	}
 	if c.cfg.Transport == "webhook" && c.webhookRouter != nil {
 		c.webhookRouter.UnregisterInstance(c.instanceID)
 	}

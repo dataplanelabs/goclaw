@@ -239,6 +239,9 @@ func isAdminMethod(method string) bool {
 		protocol.MethodChannelsThreadScheduleSet,
 		protocol.MethodChannelsThreadScheduleDelete,
 
+		// Team-reply capture toggle is an admin-only config write.
+		protocol.MethodChannelsTeamCaptureToggle,
+
 		// Pairing management (approve/revoke/list/deny require admin).
 		protocol.MethodPairingApprove,
 		protocol.MethodPairingDeny,
@@ -389,6 +392,9 @@ func isReadMethod(method string) bool {
 		protocol.MethodChannelsScheduleGet,
 		protocol.MethodChannelsThreadScheduleList,
 		protocol.MethodChannelsThreadScheduleGet,
+		protocol.MethodChannelsTeamRepliesList,
+		protocol.MethodChannelsTeamRepliesGet,
+		protocol.MethodChannelsTeamRepliesExportJSONL,
 
 		// Usage / quota
 		protocol.MethodUsageGet,

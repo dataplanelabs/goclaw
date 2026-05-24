@@ -119,7 +119,8 @@
       "config": "Config",
       "credentials": "Credentials",
       "groups": "Groups",
-      "managers": "Managers"
+      "managers": "Managers",
+      "teamAnalytics": "Team Analytics"
     },
     "zaloWebhook": {
       "title": "Webhook setup",
@@ -631,5 +632,24 @@
     "reason": "Reason",
     "createdBy": "Author",
     "rowDelete": "Delete"
+  },
+  "teamAnalytics": {
+    "title": "Team Analytics",
+    "description": "Captured human team replies and judge evaluations comparing them to bot suggestions.",
+    "captureToggle": "Capture team replies",
+    "judgeToggle": "Auto-judge captures",
+    "judgeAgent": "Judge agent key",
+    "diffDistribution": "Diff score distribution",
+    "recentCaptures": "Recent captures",
+    "filterByThread": "Filter by thread",
+    "allThreads": "All threads",
+    "noCaptures": "No captures yet. Enable capture above and wait for team replies.",
+    "judgePending": "Pending",
+    "judgeFailed": "Failed",
+    "exportJsonl": "Export training data (JSONL)",
+    "exporting": "Exporting…",
+    "exportSuccess": "Downloaded {{count}} examples ({{bytes}} bytes)",
+    "configSaved": "Settings saved",
+    "save": "Save"
   }
 }

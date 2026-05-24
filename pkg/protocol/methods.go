@@ -131,6 +131,12 @@ const (
 	MethodChannelsThreadScheduleGet    = "channels.thread_schedule_get"
 	MethodChannelsThreadScheduleSet    = "channels.thread_schedule_set"
 	MethodChannelsThreadScheduleDelete = "channels.thread_schedule_delete"
+
+	// Team-reply capture + evaluations (Phase 6)
+	MethodChannelsTeamRepliesList        = "channels.team_replies_list"
+	MethodChannelsTeamRepliesGet         = "channels.team_replies_get"
+	MethodChannelsTeamRepliesExportJSONL = "channels.team_replies_export_jsonl"
+	MethodChannelsTeamCaptureToggle      = "channels.team_capture_toggle"
 )
 
 // Agent links (inter-agent delegation)

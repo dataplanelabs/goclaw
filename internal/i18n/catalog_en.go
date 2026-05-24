@@ -332,6 +332,11 @@ func init() {
 		StandbyRPCInvalidSchedule:   "invalid schedule: %s",
 		StandbyRPCNoPermission:      "tenant admin required to edit channel schedules",
 
+		TeamCaptureRPCNoPermission:  "tenant admin required to toggle team-reply capture",
+		TeamCaptureRPCInvalidConfig: "invalid capture config: %s",
+		TeamEvalNotFound:            "team reply evaluation not found",
+		TeamEvalJudgeError:          "judge evaluation failed: %s",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",
 

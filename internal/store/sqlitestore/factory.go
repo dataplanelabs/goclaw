@@ -69,6 +69,7 @@ func NewSQLiteStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Episodic:             NewSQLiteEpisodicStore(db),
 		EvolutionMetrics:     NewSQLiteEvolutionMetricsStore(db),
 		EvolutionSuggestions: NewSQLiteEvolutionSuggestionStore(db),
+		TeamReplyEvals:       NewSQLiteTeamReplyEvalStore(db),
 		KnowledgeGraph:       NewSQLiteKnowledgeGraphStore(db),
 		Vault:                NewSQLiteVaultStore(db),
 		Hooks:                NewSQLiteHookStore(db),

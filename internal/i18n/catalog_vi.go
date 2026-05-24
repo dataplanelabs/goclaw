@@ -332,6 +332,11 @@ func init() {
 		StandbyRPCInvalidSchedule:   "lịch không hợp lệ: %s",
 		StandbyRPCNoPermission:      "cần quyền admin của tenant để sửa lịch channel",
 
+		TeamCaptureRPCNoPermission:  "cần quyền admin để bật/tắt thu thập trả lời của team",
+		TeamCaptureRPCInvalidConfig: "cấu hình capture không hợp lệ: %s",
+		TeamEvalNotFound:            "không tìm thấy đánh giá trả lời của team",
+		TeamEvalJudgeError:          "đánh giá thất bại: %s",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Đã forward sang %s theo yêu cầu: %q",
 
