@@ -20,7 +20,7 @@ func newOnBehalfClient(t *testing.T, srv *httptest.Server) *OnBehalfClient {
 
 func TestOnBehalfClient_ListRecentChat(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "/onbehalf/listrecentchat") {
+		if !strings.HasSuffix(r.URL.Path, "/listrecentchat") {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		if got := r.Header.Get("access_token"); got != "test-token" {
@@ -45,7 +45,7 @@ func TestOnBehalfClient_ListRecentChat(t *testing.T) {
 
 func TestOnBehalfClient_GetConversation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "/onbehalf/conversation") {
+		if !strings.HasSuffix(r.URL.Path, "/conversation") {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		_, _ = io.WriteString(w, `{"error":0,"data":[
