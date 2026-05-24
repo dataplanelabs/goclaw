@@ -26,12 +26,13 @@ type LoginInfo struct {
 
 // ZpwServiceMapV3 holds Zalo service endpoint URLs.
 type ZpwServiceMapV3 struct {
-	Chat      []string `json:"chat"`
-	Group     []string `json:"group"`
-	File      []string `json:"file"`
-	Profile   []string `json:"profile"`
-	GroupPoll []string `json:"group_poll"`
-	Reaction  []string `json:"reaction"`
+	Chat       []string `json:"chat"`
+	Group      []string `json:"group"`
+	File       []string `json:"file"`
+	Profile    []string `json:"profile"`
+	GroupPoll  []string `json:"group_poll"`
+	GroupBoard []string `json:"group_board"`
+	Reaction   []string `json:"reaction"`
 	// Only fields needed for GoClaw; Zalo returns many more.
 }
 

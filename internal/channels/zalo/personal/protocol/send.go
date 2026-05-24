@@ -452,6 +452,8 @@ func getServiceURL(sess *Session, service string) string {
 		urls = sess.LoginInfo.ZpwServiceMapV3.Profile
 	case "group_poll":
 		urls = sess.LoginInfo.ZpwServiceMapV3.GroupPoll
+	case "group_board":
+		urls = sess.LoginInfo.ZpwServiceMapV3.GroupBoard
 	case "reaction":
 		urls = sess.LoginInfo.ZpwServiceMapV3.Reaction
 	}
