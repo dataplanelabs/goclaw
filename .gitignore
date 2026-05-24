@@ -32,6 +32,9 @@ ui/web/dist/
 ui/web/.vite/
 *.tsbuildinfo
 
+# Embedded web UI build output (//go:embed all:dist target, populated by pnpm build or Docker)
+internal/webui/dist/
+
 # UI Desktop (Wails + React)
 ui/desktop/frontend/node_modules/
 ui/desktop/frontend/dist/*.js
