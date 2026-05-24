@@ -132,7 +132,9 @@ func (m *ZaloOAMethods) handleExchangeCode(ctx context.Context, client *gateway.
 	if req.Params != nil {
 		_ = json.Unmarshal(req.Params, &params)
 	}
-	if len(params.InstanceID) > 256 || len(params.Code) > 256 || len(params.OAID) > 256 || len(params.State) > 256 {
+	// Zalo OAuth auth codes are ~580 chars (empirically) and may grow; cap
+	// at 2048 with comfortable headroom. Other params keep tighter bounds.
+	if len(params.InstanceID) > 256 || len(params.Code) > 2048 || len(params.OAID) > 256 || len(params.State) > 256 {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgInvalidRequest, "param too long")))
 		return
 	}
