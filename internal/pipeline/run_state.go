@@ -107,6 +107,7 @@ type RunInput struct {
 	WorkspaceChannel  string
 	WorkspaceChatID   string
 	TeamWorkspace     string
+	EnableNativeStyles bool
 }
 
 // MediaResult represents a media file produced during tool execution.

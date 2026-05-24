@@ -140,7 +140,8 @@ func (l *Loop) makeBuildMessages() func(ctx context.Context, input *pipeline.Run
 			input.Message, input.ExtraSystemPrompt,
 			input.SessionKey, input.Channel, input.ChannelType,
 			input.ChatTitle, input.ChatID, input.PeerKind, input.UserID,
-			input.HistoryLimit, input.SkillFilter, input.LightContext)
+			input.HistoryLimit, input.SkillFilter, input.LightContext,
+			input.EnableNativeStyles)
 		return msgs, nil
 	}
 }

@@ -623,6 +623,13 @@ type RunRequest struct {
 	ProviderOverride  providers.Provider // per-request provider override (heartbeat uses different provider)
 	LightContext      bool               // skip loading context files (only inject ExtraSystemPrompt)
 
+	// EnableNativeStyles controls whether the channel's system-prompt
+	// addendum includes the markdown→Zalo native-styles formatting block.
+	// When false the block is stripped so the LLM doesn't emit `**bold**`
+	// markup that the legacy strip path would silently drop. Per-inbound
+	// because the same agent may serve channels with different toggle state.
+	EnableNativeStyles bool
+
 	// Run classification
 	RunKind       string // "delegation", "announce" — empty for user-initiated runs
 	HideInput     bool   // don't persist input message in session history (announce runs)

@@ -57,6 +57,7 @@ Reminders trigger a native Zalo notification at `start_time`. To cancel,
 call `zalo_personal_remove_reminder` with the `reminder_id` returned from
 create.
 
+<!-- BEGIN_NATIVE_STYLES -->
 ## Formatting
 
 Zalo renders native rich text. Use these markdown primitives — they render
@@ -88,3 +89,4 @@ Don't overdo it.
 
 **Headers:** Zalo has no header style. Use `**Section title:**` (bold +
 colon) to introduce a section. Do not write `# H1` or `## H2`.
+<!-- END_NATIVE_STYLES -->
