@@ -95,7 +95,7 @@ func TestChannel_QuoteInboundOnDM_HonorsConfig(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			c := &Channel{config: config.ZaloPersonalConfig{QuoteUserMessage: tc.ptr}}
+			c := &Channel{config: config.ZaloPersonalConfig{QuoteUserMessageInDM: tc.ptr}}
 			if got := c.QuoteInboundOnDM(); got != tc.want {
 				t.Errorf("QuoteInboundOnDM = %v, want %v", got, tc.want)
 			}
@@ -532,10 +532,11 @@ func newHandlerTestChannel(t *testing.T) (*Channel, *bus.MessageBus) {
 	mb := bus.New()
 	enabled := true
 	ch, err := New(config.ZaloPersonalConfig{
-		Enabled:          true,
-		DMPolicy:         "open",
-		GroupPolicy:      "open",
-		QuoteUserMessage: &enabled,
+		Enabled:                 true,
+		DMPolicy:                "open",
+		GroupPolicy:             "open",
+		QuoteUserMessageInDM:    &enabled,
+		QuoteUserMessageInGroup: &enabled,
 	}, mb, nil, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -604,16 +605,16 @@ func TestHandleDM_StampsQuoteMetadata(t *testing.T) {
 	}
 }
 
-// TestHandleDM_QuoteDisabledByConfig: when QuoteUserMessage is false (default),
-// the handler must NOT stamp quote metadata even when the inbound carries a
-// TQuote — bot replies stay plain regardless of user's quote action.
+// TestHandleDM_QuoteDisabledByConfig: when QuoteUserMessageInDM is false
+// (default), the handler must NOT stamp quote metadata even when the inbound
+// carries a TQuote — bot replies stay plain regardless of user's quote action.
 func TestHandleDM_QuoteDisabledByConfig(t *testing.T) {
 	t.Parallel()
 	mb := bus.New()
 	disabled := false
 	ch, err := New(config.ZaloPersonalConfig{
 		Enabled: true, DMPolicy: "open", GroupPolicy: "open",
-		QuoteUserMessage: &disabled,
+		QuoteUserMessageInDM: &disabled,
 	}, mb, nil, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -631,10 +632,10 @@ func TestHandleDM_QuoteDisabledByConfig(t *testing.T) {
 
 	got := drainInbound(t, mb)
 	if _, ok := got.Metadata["reply_to_quote_payload"]; ok {
-		t.Errorf("reply_to_quote_payload must not be stamped when QuoteUserMessage=false, got %v", got.Metadata)
+		t.Errorf("reply_to_quote_payload must not be stamped when QuoteUserMessageInDM=false, got %v", got.Metadata)
 	}
 	if _, ok := got.Metadata["reply_to_message_id"]; ok {
-		t.Errorf("reply_to_message_id must not be stamped when QuoteUserMessage=false, got %v", got.Metadata)
+		t.Errorf("reply_to_message_id must not be stamped when QuoteUserMessageInDM=false, got %v", got.Metadata)
 	}
 }
 
@@ -721,16 +722,16 @@ func TestHandleDM_FileInboundPreservesMsgTypeString(t *testing.T) {
 	}
 }
 
-// Same but when QuoteUserMessage is DISABLED — nothing should be stamped
+// Same but when QuoteUserMessageInDM is DISABLED — nothing should be stamped
 // even for plain messages.
 func TestHandleDM_NoQuoteQuoteDisabledStampsNothing(t *testing.T) {
 	t.Parallel()
 	mb := bus.New()
 	disabled := false
 	ch, err := New(config.ZaloPersonalConfig{
-		Enabled:          true,
-		DMPolicy:         "open",
-		QuoteUserMessage: &disabled,
+		Enabled:              true,
+		DMPolicy:             "open",
+		QuoteUserMessageInDM: &disabled,
 	}, mb, nil, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -746,10 +747,10 @@ func TestHandleDM_NoQuoteQuoteDisabledStampsNothing(t *testing.T) {
 
 	got := drainInbound(t, mb)
 	if _, ok := got.Metadata["reply_to_message_id"]; ok {
-		t.Errorf("reply_to_message_id must not be stamped when QuoteUserMessage=false, got %v", got.Metadata)
+		t.Errorf("reply_to_message_id must not be stamped when QuoteUserMessageInDM=false, got %v", got.Metadata)
 	}
 	if _, ok := got.Metadata["reply_to_quote_payload"]; ok {
-		t.Errorf("reply_to_quote_payload must not be stamped when QuoteUserMessage=false, got %v", got.Metadata)
+		t.Errorf("reply_to_quote_payload must not be stamped when QuoteUserMessageInDM=false, got %v", got.Metadata)
 	}
 }
 
