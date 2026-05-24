@@ -55,12 +55,14 @@ func (m *TMessage) ParseQuote() (*TQuote, error) {
 // Numeric ID fields use json.Number because Zalo serializes the same field as a
 // string or number depending on endpoint version. PropertyExt is kept as raw
 // JSON so the opaque server-side payload survives a marshal/unmarshal roundtrip
-// for outbound /quote sends.
+// for outbound /quote sends. MsgType (raw inbound wire string) is preferred
+// over CliMsgType for outbound qmsgType — the int↔string roundtrip is lossy.
 type TQuote struct {
 	OwnerID     json.Number     `json:"ownerId"`
 	CliMsgID    json.Number     `json:"cliMsgId"`
 	GlobalMsgID json.Number     `json:"globalMsgId"`
 	CliMsgType  int             `json:"cliMsgType"`
+	MsgType     string          `json:"msgType,omitempty"`
 	TS          json.Number     `json:"ts"`
 	Msg         string          `json:"msg"`
 	Attach      string          `json:"attach"`

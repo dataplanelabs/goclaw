@@ -73,21 +73,42 @@ type SendMessageQuote struct {
 // earlier. Maps TQuote.GlobalMsgID → MsgID; copies Msg/Attach/PropertyExt
 // verbatim (Attach stays an opaque JSON string — Zalo's wire shape, we don't
 // unpack it). Returns nil when the input is nil so callers can chain.
+// Prefers q.MsgType (string) over classifyQuoteMsgType(q.CliMsgType) (int) so
+// media kinds outside the cliMsgType switch (file/video/gif/location) resolve.
 func FromInboundQuote(q *TQuote) *SendMessageQuote {
 	if q == nil {
 		return nil
+	}
+	msgType := q.MsgType
+	if msgType == "" {
+		msgType = classifyQuoteMsgType(q.CliMsgType)
 	}
 	return &SendMessageQuote{
 		OwnerID:     q.OwnerID.String(),
 		MsgID:       q.GlobalMsgID.String(),
 		CliMsgID:    q.CliMsgID.String(),
-		MsgType:     classifyQuoteMsgType(q.CliMsgType),
+		MsgType:     msgType,
 		Msg:         q.Msg,
 		Attach:      q.Attach,
 		TS:          q.TS.String(),
 		TTL:         q.TTL,
 		PropertyExt: q.PropertyExt,
 	}
+}
+
+// isTextLikeQuoteMsgType reports whether msgType denotes a plain-text quote
+// (chat.text / webchat / unknown). DM text quotes with qmsgAttach return 114.
+func isTextLikeQuoteMsgType(msgType string) bool {
+	return msgType == "" || msgType == "chat.text" || msgType == "webchat"
+}
+
+// shouldSendQmsgAttach gates qmsgAttach: non-text on both DM/group, text only
+// on group. DM text was observed to trigger server 114 with an attach payload.
+func shouldSendQmsgAttach(msgType string, threadType ThreadType) bool {
+	if isTextLikeQuoteMsgType(msgType) {
+		return threadType == ThreadTypeGroup
+	}
+	return true
 }
 
 // getClientMessageType maps the human-readable "chat.*" msgType strings (the
@@ -203,12 +224,9 @@ func SendMessage(
 		payload["imei"] = sess.IMEI
 	}
 	if quote != nil {
-		// Field names + types mirror zca-js src/apis/sendMessage.ts:283-305.
-		// Differences from a previous incorrect attempt: qmsgType is a NUMBER
-		// (not the "chat.*" string), qmsgTTL is uppercase, and qmsgAttach is
-		// OMITTED for DMs (zca-js sets it undefined for non-group, removed via
-		// removeUndefinedKeys). Sending the wrong shape returns server code 114
-		// "Tham số không hợp lệ" with the silent-fallback path hiding the bug.
+		// Field names mirror zca-js src/apis/sendMessage.ts:344-373. qmsgType is
+		// a NUMBER; qmsgTTL is uppercase. qmsgAttach gating via
+		// shouldSendQmsgAttach — see helper godoc.
 		payload["qmsgOwner"] = quote.OwnerID
 		payload["qmsgId"] = quote.MsgID
 		payload["qmsgCliId"] = quote.CliMsgID
@@ -216,7 +234,7 @@ func SendMessage(
 		payload["qmsg"] = quote.Msg
 		payload["qmsgTs"] = quote.TS
 		payload["qmsgTTL"] = quote.TTL
-		if threadType == ThreadTypeGroup && quote.Attach != "" {
+		if quote.Attach != "" && shouldSendQmsgAttach(quote.MsgType, threadType) {
 			payload["qmsgAttach"] = quote.Attach
 		}
 		slog.Info("zalo_personal.quote.sending",
@@ -225,7 +243,8 @@ func SendMessage(
 			"qmsg_owner", quote.OwnerID,
 			"qmsg_id", quote.MsgID,
 			"qmsg_type", getClientMessageType(quote.MsgType),
-			"msg_type_str", quote.MsgType)
+			"msg_type_str", quote.MsgType,
+			"has_attach", quote.Attach != "")
 	}
 
 	// Encrypt payload with session secret key

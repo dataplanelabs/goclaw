@@ -215,10 +215,11 @@ func TestSendMessage_WithQuote_IncludesQmsgParams(t *testing.T) {
 	if _, ok := payload["qmsgTtl"]; ok {
 		t.Errorf("legacy lowercase qmsgTtl must not appear in payload")
 	}
-	// qmsgAttach must be OMITTED for DM (zca-js sets it undefined for non-group
-	// then strips via removeUndefinedKeys); sending it on DM caused 114.
+	// qmsgAttach must be OMITTED for TEXT quotes on DM — observed to trigger
+	// server code 114. Non-text quotes (file/photo/video) DO include qmsgAttach
+	// on DM per shouldSendQmsgAttach — covered by the *_DM_*IncludesAttach tests.
 	if _, ok := payload["qmsgAttach"]; ok {
-		t.Errorf("qmsgAttach must not appear in DM payload, got %v", payload["qmsgAttach"])
+		t.Errorf("qmsgAttach must not appear in DM text payload, got %v", payload["qmsgAttach"])
 	}
 	// Regular send fields still present.
 	if payload["message"] != "reply" {
@@ -229,8 +230,9 @@ func TestSendMessage_WithQuote_IncludesQmsgParams(t *testing.T) {
 	}
 }
 
-// Group quotes preserve qmsgAttach (Zalo requires it for groups); DM omits.
-// Mirrors zca-js sendMessage.ts: `qmsgAttach: isGroupMessage ? JSON.stringify(prepareQMSGAttach(quote)) : undefined`.
+// Group photo quotes include qmsgAttach. Pre-fix this was the only branch that
+// sent qmsgAttach at all; post-fix DM non-text also includes it (see
+// TestSendMessage_WithQuote_DM_FileIncludesAttach).
 func TestSendMessage_WithQuote_Group_IncludesAttach(t *testing.T) {
 	t.Parallel()
 	srv, cap := captureServer(t, "1001", 0)
@@ -251,6 +253,146 @@ func TestSendMessage_WithQuote_Group_IncludesAttach(t *testing.T) {
 	// chat.photo → 32 per zca-js getClientMessageType.
 	if v, ok := payload["qmsgType"]; !ok || v.(float64) != 32 {
 		t.Errorf("qmsgType = %v, want 32 (chat.photo)", v)
+	}
+}
+
+// Reproduces the "[Tin nhắn chưa hỗ trợ ở phiên bản hiện tại]" bug on the
+// receiver side when a bot quotes a file on DM. Pre-fix: qmsgType collapsed to
+// 1 (text) and qmsgAttach was stripped, leaving the receiver no signal to
+// render a file-quote bubble. Post-fix: qmsgType=46 (share.file) and Attach
+// rides through verbatim so the client can resolve the source.
+func TestSendMessage_WithQuote_DM_FileIncludesAttach(t *testing.T) {
+	t.Parallel()
+	srv, cap := captureServer(t, "1001", 0)
+	sess := newQuoteTestSession(t, srv)
+
+	attachJSON := `{"title":"BaoCao_DonHang_20260523.xlsx","href":"https://files.zalo.me/xy","fileExt":"xlsx","totalSize":6021,"checksum":"abc"}`
+	q := &SendMessageQuote{
+		OwnerID: "owner-111", MsgID: "9876543210", CliMsgID: "1709300000123",
+		MsgType: "share.file", Msg: "", Attach: attachJSON, TS: "1709300000",
+	}
+	_, err := SendMessage(context.Background(), sess, "user-1", ThreadTypeUser, "reply", q)
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	payload := decryptRequestParams(t, (*cap)[0].body)
+	if v, ok := payload["qmsgType"]; !ok || v.(float64) != 46 {
+		t.Errorf("qmsgType = %v, want 46 (share.file)", v)
+	}
+	if v, ok := payload["qmsgAttach"]; !ok || v != attachJSON {
+		t.Errorf("DM qmsgAttach = %v, want raw JSON string (file metadata)", v)
+	}
+	if v, ok := payload["qmsg"]; !ok || v != "" {
+		t.Errorf("qmsg = %v, want empty string for non-text quote", v)
+	}
+}
+
+// Symmetry guard: group file quote must still ship qmsgAttach post-fix (it
+// did pre-fix unconditionally for groups; ensure the new gating preserves it).
+func TestSendMessage_WithQuote_Group_FileIncludesAttach(t *testing.T) {
+	t.Parallel()
+	srv, cap := captureServer(t, "1001", 0)
+	sess := newQuoteTestSession(t, srv)
+
+	attachJSON := `{"title":"BaoCao.xlsx","href":"https://files.zalo.me/x","fileExt":"xlsx"}`
+	q := &SendMessageQuote{
+		OwnerID: "owner-111", MsgID: "9876543210", CliMsgID: "1709300000123",
+		MsgType: "share.file", Msg: "", Attach: attachJSON, TS: "1709300000",
+	}
+	_, err := SendMessage(context.Background(), sess, "group-abc", ThreadTypeGroup, "reply", q)
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	payload := decryptRequestParams(t, (*cap)[0].body)
+	if v, ok := payload["qmsgType"]; !ok || v.(float64) != 46 {
+		t.Errorf("qmsgType = %v, want 46 (share.file)", v)
+	}
+	if v, ok := payload["qmsgAttach"]; !ok || v != attachJSON {
+		t.Errorf("group qmsgAttach = %v, want raw JSON string", v)
+	}
+}
+
+// Reproduces zca-js upstream issue #143 "Trả lời hình ảnh" on the DM path.
+// Photo quote on DM must include qmsgAttach + qmsgType=32 so the receiver
+// renders the image-quote bubble instead of "unsupported version".
+func TestSendMessage_WithQuote_DM_PhotoIncludesAttach(t *testing.T) {
+	t.Parallel()
+	srv, cap := captureServer(t, "1001", 0)
+	sess := newQuoteTestSession(t, srv)
+
+	attachJSON := `{"hdUrl":"https://photos.zalo.me/abc.jpg","width":1080,"height":720,"title":"IMG_001.jpg"}`
+	q := &SendMessageQuote{
+		OwnerID: "owner-111", MsgID: "9876543210", CliMsgID: "1709300000123",
+		MsgType: "chat.photo", Msg: "", Attach: attachJSON, TS: "1709300000",
+	}
+	_, err := SendMessage(context.Background(), sess, "user-1", ThreadTypeUser, "reply", q)
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	payload := decryptRequestParams(t, (*cap)[0].body)
+	if v, ok := payload["qmsgType"]; !ok || v.(float64) != 32 {
+		t.Errorf("qmsgType = %v, want 32 (chat.photo)", v)
+	}
+	if v, ok := payload["qmsgAttach"]; !ok || v != attachJSON {
+		t.Errorf("DM qmsgAttach = %v, want raw JSON string (photo metadata)", v)
+	}
+}
+
+// FromInboundQuote must prefer the raw inbound MsgType string when populated
+// (set by handlers.buildSelfQuoteMetadata) over the classifyQuoteMsgType(int)
+// fallback. Without this preference, share.file collapses to chat.text and
+// qmsgType ships as 1 — the original failure mode.
+func TestFromInboundQuote_PrefersMsgTypeString(t *testing.T) {
+	t.Parallel()
+	q := &TQuote{
+		OwnerID:     json.Number("111"),
+		GlobalMsgID: json.Number("9876543210"),
+		CliMsgID:    json.Number("1709300000123"),
+		CliMsgType:  1, // legacy fallback would say "chat.text"
+		MsgType:     "share.file",
+		Msg:         "",
+		Attach:      `{"title":"x.pdf"}`,
+		TS:          json.Number("1709300000"),
+	}
+	smq := FromInboundQuote(q)
+	if smq == nil {
+		t.Fatal("FromInboundQuote returned nil for non-nil input")
+	}
+	if smq.MsgType != "share.file" {
+		t.Errorf("MsgType = %q, want %q (string preference over CliMsgType=1 fallback)", smq.MsgType, "share.file")
+	}
+	// Empty MsgType still falls back via classifyQuoteMsgType.
+	q.MsgType = ""
+	q.CliMsgType = 2
+	smq = FromInboundQuote(q)
+	if smq.MsgType != "chat.photo" {
+		t.Errorf("fallback MsgType = %q, want chat.photo from CliMsgType=2", smq.MsgType)
+	}
+}
+
+func TestShouldSendQmsgAttach(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		msgType    string
+		threadType ThreadType
+		want       bool
+	}{
+		{"chat.text", ThreadTypeUser, false},
+		{"chat.text", ThreadTypeGroup, true},
+		{"webchat", ThreadTypeUser, false},
+		{"", ThreadTypeUser, false},
+		{"share.file", ThreadTypeUser, true},
+		{"share.file", ThreadTypeGroup, true},
+		{"chat.photo", ThreadTypeUser, true},
+		{"chat.video.msg", ThreadTypeUser, true},
+		{"chat.voice", ThreadTypeUser, true},
+		{"chat.gif", ThreadTypeUser, true},
+		{"chat.location.new", ThreadTypeUser, true},
+	}
+	for _, c := range cases {
+		if got := shouldSendQmsgAttach(c.msgType, c.threadType); got != c.want {
+			t.Errorf("shouldSendQmsgAttach(%q, %v) = %v, want %v", c.msgType, c.threadType, got, c.want)
+		}
 	}
 }
 
