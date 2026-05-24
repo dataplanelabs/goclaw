@@ -115,8 +115,12 @@ func (w *PollWorker) Stop() {
 	w.runWG.Wait()
 }
 
+// pollPageCap is Zalo's hard cap on `count` for /listrecentchat and
+// /conversation. Asking for >10 returns error -210 "maximum count is 10".
+const pollPageCap = 10
+
 func (w *PollWorker) tick(ctx context.Context) {
-	entries, err := w.onBehalf.ListRecentChat(ctx, 0, 50)
+	entries, err := w.onBehalf.ListRecentChat(ctx, 0, pollPageCap)
 	if err != nil {
 		w.classifyErr(err, "list_recent_chat")
 		return
@@ -125,7 +129,7 @@ func (w *PollWorker) tick(ctx context.Context) {
 		if entry.UID == "" {
 			continue
 		}
-		msgs, err := w.onBehalf.GetConversation(ctx, entry.UID, 0, 50)
+		msgs, err := w.onBehalf.GetConversation(ctx, entry.UID, 0, pollPageCap)
 		if err != nil {
 			w.classifyErr(err, "get_conversation")
 			continue
