@@ -17,20 +17,31 @@ type fakeZaloPersonalAction struct {
 		options          []string
 		settings         ZaloPollSettings
 	}
-	getPollID    int64
-	voteCall     struct{ pollID int64; ids []int64 }
-	lockCall     int64
-	addCall      struct{ pollID int64; opts []string; voted []int64 }
-	reactCall    struct{ chatID, msgID, cliMsgID, reaction, hint string }
-	createReturn string
-	createErr    error
-	getReturn    ZaloPollState
-	voteReturn   ZaloPollState
-	addReturn    ZaloPollState
-	reactErr     error
-	isGroup      bool
-	isRunning    bool
+	getPollID            int64
+	voteCall             struct{ pollID int64; ids []int64 }
+	lockCall             int64
+	addCall              struct{ pollID int64; opts []string; voted []int64 }
+	reactCall            struct{ chatID, msgID, cliMsgID, reaction, hint string }
+	createReminderCall   struct {
+		threadID string
+		isGroup  bool
+		settings ZaloReminderSettings
+	}
+	removeReminderCall   struct{ reminderID, groupID string }
+	createReturn         string
+	createErr            error
+	getReturn            ZaloPollState
+	voteReturn           ZaloPollState
+	addReturn            ZaloPollState
+	reactErr             error
+	createReminderReturn string
+	createReminderErr    error
+	removeReminderErr    error
+	isGroup              bool
+	isRunning            bool
 }
+
+var _ ZaloPersonalAction = (*fakeZaloPersonalAction)(nil)
 
 func (f *fakeZaloPersonalAction) CreatePoll(_ context.Context, chatID, q string, opts []string, s ZaloPollSettings) (string, error) {
 	f.createPollCall.chatID = chatID
@@ -65,6 +76,17 @@ func (f *fakeZaloPersonalAction) React(_ context.Context, chatID, msgID, cliMsgI
 	f.reactCall.reaction = reaction
 	f.reactCall.hint = hint
 	return f.reactErr
+}
+func (f *fakeZaloPersonalAction) CreateReminder(_ context.Context, threadID string, isGroup bool, s ZaloReminderSettings) (string, error) {
+	f.createReminderCall.threadID = threadID
+	f.createReminderCall.isGroup = isGroup
+	f.createReminderCall.settings = s
+	return f.createReminderReturn, f.createReminderErr
+}
+func (f *fakeZaloPersonalAction) RemoveReminder(_ context.Context, reminderID, groupID string) error {
+	f.removeReminderCall.reminderID = reminderID
+	f.removeReminderCall.groupID = groupID
+	return f.removeReminderErr
 }
 func (f *fakeZaloPersonalAction) IsRunning() bool          { return f.isRunning }
 func (f *fakeZaloPersonalAction) IsGroup(_ string) bool    { return f.isGroup }

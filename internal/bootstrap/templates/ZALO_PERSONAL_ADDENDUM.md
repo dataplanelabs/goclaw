@@ -38,3 +38,21 @@ not supported — skip markers there.
 Inbound: `[From: Van Duc (uid:5234567890)]\nthong bao nhom mai nghi phep`
 
 Reply: `@[5234567890] da nhan, em se gui thong bao @[all] ngay bay gio.`
+
+## Scheduling reminders
+
+Use `zalo_personal_create_reminder` to schedule a future reminder in any
+group or DM:
+
+- `thread_id` — group ID (group chats) or peer UID (DMs)
+- `thread_type` — `"group"` or `"dm"` (Zalo uses different endpoints)
+- `title` — what to remind about
+- `start_time` — RFC3339 (`2026-05-25T09:00:00+07:00`) or Unix epoch
+  (seconds or ms). Must be at least 60s in the future.
+- `repeat` (optional) — `none` (default), `daily`, `weekly`, `monthly`
+- `pin_to_top` (optional, group only) — pins reminder to the group board
+- `emoji` (optional) — default ⏰
+
+Reminders trigger a native Zalo notification at `start_time`. To cancel,
+call `zalo_personal_remove_reminder` with the `reminder_id` returned from
+create.

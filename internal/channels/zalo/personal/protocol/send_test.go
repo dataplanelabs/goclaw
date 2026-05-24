@@ -34,8 +34,9 @@ func newQuoteTestSession(t *testing.T, srv *httptest.Server) *Session {
 	sess.LoginInfo = &LoginInfo{
 		UID: "self-uid",
 		ZpwServiceMapV3: ZpwServiceMapV3{
-			Chat:  []string{srv.URL},
-			Group: []string{srv.URL},
+			Chat:       []string{srv.URL},
+			Group:      []string{srv.URL},
+			GroupBoard: []string{srv.URL},
 		},
 	}
 	return sess

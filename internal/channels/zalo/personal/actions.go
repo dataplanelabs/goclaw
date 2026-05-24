@@ -3,6 +3,7 @@ package personal
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
@@ -93,6 +94,51 @@ func (c *Channel) AddPollOptions(ctx context.Context, pollID int64, newOptions [
 
 // IsGroup mirrors the ZaloPersonalAction surface.
 func (c *Channel) IsGroup(chatID string) bool { return c.IsGroupApproved(chatID) }
+
+func (c *Channel) CreateReminder(ctx context.Context, threadID string, isGroup bool, settings tools.ZaloReminderSettings) (string, error) {
+	sess := c.session()
+	if !c.IsRunning() || sess == nil {
+		return "", fmt.Errorf("zalo_personal: channel not running")
+	}
+	repeat, err := parseRepeatMode(settings.Repeat)
+	if err != nil {
+		return "", err
+	}
+	opts := protocol.CreateReminderOptions{
+		Title:     settings.Title,
+		Emoji:     settings.Emoji,
+		StartTime: settings.StartTime,
+		Repeat:    repeat,
+		PinToTop:  settings.PinToTop,
+	}
+	if isGroup {
+		return protocol.CreateReminderInGroup(ctx, sess, threadID, opts)
+	}
+	return protocol.CreateReminderInDM(ctx, sess, threadID, opts)
+}
+
+func (c *Channel) RemoveReminder(ctx context.Context, reminderID, groupID string) error {
+	sess := c.session()
+	if !c.IsRunning() || sess == nil {
+		return fmt.Errorf("zalo_personal: channel not running")
+	}
+	return protocol.RemoveReminder(ctx, sess, reminderID, groupID)
+}
+
+func parseRepeatMode(s string) (protocol.RepeatMode, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "none":
+		return protocol.RepeatNone, nil
+	case "daily":
+		return protocol.RepeatDaily, nil
+	case "weekly":
+		return protocol.RepeatWeekly, nil
+	case "monthly":
+		return protocol.RepeatMonthly, nil
+	default:
+		return 0, fmt.Errorf("zalo_personal: unknown repeat mode %q (use none|daily|weekly|monthly)", s)
+	}
+}
 
 func (c *Channel) guardPoll() (*protocol.Session, error) {
 	sess := c.session()

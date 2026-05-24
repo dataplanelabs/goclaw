@@ -72,7 +72,9 @@ func wireExtraTools(
 	toolsReg.Register(tools.NewZaloPersonalVotePollTool())
 	toolsReg.Register(tools.NewZaloPersonalLockPollTool())
 	toolsReg.Register(tools.NewZaloPersonalAddPollOptionsTool())
-	slog.Info("zalo_personal poll tools registered", "count", 5)
+	toolsReg.Register(tools.NewZaloPersonalCreateReminderTool())
+	toolsReg.Register(tools.NewZaloPersonalRemoveReminderTool())
+	slog.Info("zalo_personal poll + reminder tools registered", "count", 7)
 
 	// enter_standby — agent self-pause. Reload callback set later via wireExtras (nil-safe).
 	if pgStores.ChannelSchedules != nil {

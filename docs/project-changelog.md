@@ -4,6 +4,23 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ---
 
+## 2026-05-24 (night — reminder tool)
+
+### Zalo Personal: reminder scheduling tool
+
+Two new channel-bound tools let agents schedule future reminders in any Zalo group or DM:
+
+- `zalo_personal_create_reminder` — schedule a reminder with `title`, `start_time` (RFC3339 or Unix epoch), `repeat` (`none|daily|weekly|monthly`), and group-only `pin_to_top`.
+- `zalo_personal_remove_reminder` — cancel by reminder ID.
+
+**Wire shape** mirrors zca-js merged `createReminder` API: `/api/board/topic/createv2` for groups (flat payload with stringified `params`), `/api/board/oneone/create` for DMs (nested `objectData` wrapper). Both route through a new `group_board` service endpoint in `ZpwServiceMapV3`.
+
+**Validation** — tool layer rejects past times (`< now()+60s`), unknown repeat modes, malformed timestamps, and oversized titles (>1000 chars). DM path requires a logged-in session UID.
+
+**Defers:** edit reminder, list reminder responses, listening for accept/reject events.
+
+---
+
 ## 2026-05-24 (evening — quote-toggle bug fix)
 
 ### Zalo Personal: removed legacy `quote_user_message` field entirely
