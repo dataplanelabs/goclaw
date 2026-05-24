@@ -6,6 +6,31 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ## 2026-05-24
 
+### Zalo Personal: @[uid] mention support for group chats
+
+**Features**
+
+- Added server-parsed `@[uid]` and `@[all]` mention markers for Zalo Personal group sends. Agents emit markers inline (e.g. `"Cảm ơn @[5234567890]!"`); the gateway rewrites them to `@DisplayName` and routes to Zalo's `/api/group/mention` endpoint with UTF-16-correct `mentionInfo` offsets so recipients get clickable, notification-firing mentions.
+- Introduced channel-neutral `pkg/protocol.Mention` envelope shared with future Zalo OA group adapter; UTF-16 length helper handles Vietnamese diacritics + emoji surrogate pairs correctly.
+- Inbound Zalo Personal group messages now stamp `metadata["sender_uid"]` (universal) and `metadata["mentions"]` (JSON-encoded `[]Mention` when mentions present) so downstream agents can learn UIDs and emit follow-up mentions.
+- Added hybrid group-member lookup: recent posters via existing history → in-process member cache → rate-limited on-demand fetch via new `/api/group/getmem-v2` call. Opportunistic warming caches every inbound sender for free.
+- New channel-gated bootstrap addendum `ZALO_PERSONAL_ADDENDUM.md` teaches the LLM marker syntax when its agent has a Zalo Personal channel configured; zero token cost for agents without one.
+- Graceful degrade for unsupported surfaces: DMs strip wire mentions but still rewrite markers to readable `@DisplayName` text; Zalo Bot channel rewrites markers to literal `@<uid>` (no group/mention API support upstream).
+
+**Internal**
+
+- New sub-package `internal/channels/mentions` (parser + chunk-boundary helper) is channel-agnostic for future reuse.
+- `protocol.SendMessage` now thin-shims through new `SendMessageWithOptions` with `SendOptions{Text, Quote, Mentions}`. Existing callers unchanged.
+- `ErrMentionRejected` mirrors `ErrQuoteRejected` pattern: on Zalo refusing the mention payload, the channel auto-falls back to `/sendmsg` so users never see a dropped reply.
+
+**Tests**
+
+- 23 parser tests covering ASCII, Vietnamese diacritics, emoji surrogate pairs, CJK, @all, unresolved markers, adjacent markers, markdown-link no-collision.
+- 9 wire-shape tests asserting endpoint routing, mentionInfo JSON exact-byte match, quote+mention coexistence rules, DM wire-drop.
+- 11 LookupGroupMember + MemberCache + rate-limiter tests including opportunistic warming.
+- Bot strip-marker tests + DM short-circuit test.
+- Integration test for byte-equality against a zca-js wire-capture fixture is scaffolded but skipped pending one-off Node + zca-js fixture capture (Path B from Phase 1 spike); Phase 5 manual dogfood remains the load-bearing verification until fixture lands.
+
 ### Channels: agent standby mode
 
 Declarative per-channel + per-thread silence schedule (`channel_instances.silence_schedule` JSONB + `channel_thread_schedules`). New `StandbyGate` pipeline stage gates message processing at iteration entry: when a `(tenant, channel, thread)` resolves to `standby`, the gate sets `AbortRun` — Think/Tool/Observe skipped, FinalizeStage still writes working + episodic memory. Per-thread overrides REPLACE the instance default (no merge); one-shot windows beat recurring on overlap. Agent self-pause via `enter_standby(duration_seconds, reason)` tool. 7 new WS RPCs under `channels.schedule_*` + `channels.thread_schedule_*` (tenant admin guard). PG migration 000071 + SQLite slot 41 (`RequiredSchemaVersion=71`, `SchemaVersion=41`). Web UI: new "Standby" tab on channel detail with raw-JSON editor + thread override list. Frozen-clock unit tests cover DST, cross-midnight, one-shot-beats-recurring; PG integration tests cover round-trip + cross-tenant isolation + FK cascade. See `docs/standby-mode.md`.

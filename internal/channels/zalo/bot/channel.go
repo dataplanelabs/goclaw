@@ -17,6 +17,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/mentions"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/typing"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/common"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
@@ -62,6 +63,10 @@ type Channel struct {
 }
 
 func (c *Channel) SetInstanceID(id uuid.UUID) { c.instanceID = id }
+
+func botFallbackResolver(marker string) (uid, displayName string, ok bool) {
+	return "", marker, true
+}
 
 // inBootstrap: webhook with no secret yet — slug registered so Zalo's
 // setWebhook ping returns 200, but events drop until secret is pasted.
@@ -230,6 +235,11 @@ func (c *Channel) Send(_ context.Context, msg bus.OutboundMessage) error {
 
 	// Zalo Bot doesn't render markup.
 	msg.Content = common.StripMarkdown(msg.Content)
+
+	if strings.Contains(msg.Content, "@[") {
+		rendered, _ := mentions.ParseMarkers(msg.Content, botFallbackResolver)
+		msg.Content = rendered
+	}
 
 	if strings.Contains(msg.Content, "[photo:") {
 		c.legacyPhotoSentinelWarn.Do(func() {

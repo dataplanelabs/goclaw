@@ -241,6 +241,10 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		ProviderContribution:   l.providerContribution(),
 	})
 
+	if addendum, ok := bootstrap.ChannelAddendum(channelType); ok {
+		systemPrompt = systemPrompt + "\n\n" + addendum
+	}
+
 	messages = append(messages, providers.Message{
 		Role:    "system",
 		Content: systemPrompt,

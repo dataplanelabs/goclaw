@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	pkgproto "github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
 // Endpoint suffixes appended to the chat / group service base URL. The /quote
@@ -22,10 +24,11 @@ import (
 // FamilyPayload-style fallback in Phase 4 will mask a wrong URL as a quote
 // rejection, so the failure mode is "quotes silently drop" rather than crash.
 const (
-	apiPathDM         = "/api/message/sms"
-	apiPathGroup      = "/api/group/sendmsg"
-	apiPathDMQuote    = "/api/message/quote"
-	apiPathGroupQuote = "/api/group/quote"
+	apiPathDM           = "/api/message/sms"
+	apiPathGroup        = "/api/group/sendmsg"
+	apiPathDMQuote      = "/api/message/quote"
+	apiPathGroupQuote   = "/api/group/quote"
+	apiPathGroupMention = "/api/group/mention"
 )
 
 // ErrQuoteRejected signals that Zalo rejected the message specifically because
@@ -38,6 +41,8 @@ const (
 // codes for quote rejections. As real codes are observed in the warn-log
 // fallback stream, tighten the matching set here.
 var ErrQuoteRejected = errors.New("zalo_personal: quote rejected by server")
+
+var ErrMentionRejected = errors.New("zalo_personal: mention rejected by server")
 
 // nonQuoteErrorCodes lists error_code values that must NOT be wrapped as
 // ErrQuoteRejected — these are auth / rate-limit / encryption / generic
@@ -167,12 +172,21 @@ func classifyQuoteMsgType(cliMsgType int) string {
 	}
 }
 
-// SendMessage sends a text message to a user or group. When quote is non-nil
-// the request routes to Zalo's /quote endpoint and carries the encrypted
-// qmsg* parameters; otherwise the existing /sms or /sendmsg behavior is
-// preserved.
-//
-// threadID: user UID (DM) or group ID (group).
+// wireMention is what Zalo's mentionInfo expects (no display_name).
+type wireMention struct {
+	Pos  int    `json:"pos"`
+	UID  string `json:"uid"`
+	Len  int    `json:"len"`
+	Type int    `json:"type"`
+}
+
+type SendOptions struct {
+	Text     string
+	Quote    *SendMessageQuote
+	Mentions []pkgproto.Mention
+}
+
+// SendMessage is a shim over SendMessageWithOptions kept for back-compat.
 func SendMessage(
 	ctx context.Context,
 	sess *Session,
@@ -181,7 +195,23 @@ func SendMessage(
 	text string,
 	quote *SendMessageQuote,
 ) (string, error) {
-	if text == "" {
+	return SendMessageWithOptions(ctx, sess, threadID, threadType, SendOptions{
+		Text:  text,
+		Quote: quote,
+	})
+}
+
+// SendMessageWithOptions routes to /api/group/mention when Mentions is
+// non-empty and threadType is group. DMs silently drop Mentions. Quote with
+// attachment drops Mentions (zca-js parity).
+func SendMessageWithOptions(
+	ctx context.Context,
+	sess *Session,
+	threadID string,
+	threadType ThreadType,
+	opts SendOptions,
+) (string, error) {
+	if opts.Text == "" {
 		return "", fmt.Errorf("zalo_personal: message text cannot be empty")
 	}
 
@@ -190,6 +220,20 @@ func SendMessage(
 	// any known inbound cliMsgType, so guarding here would be unreachable for
 	// the only in-tree caller (FromInboundQuote). The server still rejects
 	// these payloads — caught by ErrQuoteRejected + fallback retry below.
+
+	quote := opts.Quote
+	mentions := opts.Mentions
+
+	if threadType != ThreadTypeGroup {
+		mentions = nil
+	}
+
+	if quote != nil && quote.Attach != "" && len(mentions) > 0 {
+		slog.Warn("zalo_personal: dropped mentions for quoted-attachment send",
+			"chat_id", threadID,
+			"mention_count", len(mentions))
+		mentions = nil
+	}
 
 	serviceKey := "chat"
 	apiPath := apiPathDM
@@ -204,6 +248,9 @@ func SendMessage(
 			apiPath = apiPathDMQuote
 		}
 	}
+	if len(mentions) > 0 && threadType == ThreadTypeGroup {
+		apiPath = apiPathGroupMention
+	}
 
 	baseURL := getServiceURL(sess, serviceKey)
 	if baseURL == "" {
@@ -212,7 +259,7 @@ func SendMessage(
 
 	// Build payload
 	payload := map[string]any{
-		"message":  text,
+		"message":  opts.Text,
 		"clientId": time.Now().UnixMilli(),
 		"ttl":      0,
 	}
@@ -222,6 +269,17 @@ func SendMessage(
 	} else {
 		payload["toid"] = threadID
 		payload["imei"] = sess.IMEI
+	}
+	if len(mentions) > 0 {
+		wire := make([]wireMention, len(mentions))
+		for i, m := range mentions {
+			wire[i] = wireMention{Pos: m.Position, UID: m.UserID, Len: m.Length, Type: m.Type}
+		}
+		mentionBytes, err := json.Marshal(wire)
+		if err != nil {
+			return "", fmt.Errorf("zalo_personal: marshal mentionInfo: %w", err)
+		}
+		payload["mentionInfo"] = string(mentionBytes)
 	}
 	if quote != nil {
 		// Field names mirror zca-js src/apis/sendMessage.ts:344-373. qmsgType is
@@ -277,6 +335,9 @@ func SendMessage(
 	}
 	if envelope.ErrorCode != 0 {
 		baseErr := fmt.Errorf("zalo_personal: send error code %d", envelope.ErrorCode)
+		if len(mentions) > 0 && !nonQuoteErrorCodes[envelope.ErrorCode] {
+			return "", fmt.Errorf("%w: %w", ErrMentionRejected, baseErr)
+		}
 		if quote != nil && !nonQuoteErrorCodes[envelope.ErrorCode] {
 			// Wrap so Phase 4's fallback can detect via errors.Is.
 			return "", fmt.Errorf("%w: %w", ErrQuoteRejected, baseErr)
@@ -293,6 +354,12 @@ func SendMessage(
 		// "Tham số không hợp lệ") with a clean outer envelope, so apply the
 		// same ErrQuoteRejected wrapping the outer-envelope check uses.
 		// Without this the silent fallback retry in send.go never fires.
+		if len(mentions) > 0 {
+			var innerErr *InnerEnvelopeError
+			if errors.As(err, &innerErr) && !nonQuoteErrorCodes[innerErr.Code] {
+				return "", fmt.Errorf("%w: %w", ErrMentionRejected, err)
+			}
+		}
 		if quote != nil {
 			var innerErr *InnerEnvelopeError
 			if errors.As(err, &innerErr) && !nonQuoteErrorCodes[innerErr.Code] {
