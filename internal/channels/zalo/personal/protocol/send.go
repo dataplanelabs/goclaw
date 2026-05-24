@@ -228,11 +228,14 @@ func SendMessageWithOptions(
 		mentions = nil
 	}
 
-	if quote != nil && quote.Attach != "" && len(mentions) > 0 {
-		slog.Warn("zalo_personal: dropped mentions for quoted-attachment send",
-			"chat_id", threadID,
-			"mention_count", len(mentions))
-		mentions = nil
+	if len(mentions) > 0 {
+		filtered := mentions[:0]
+		for _, m := range mentions {
+			if m.Position >= 0 && m.UserID != "" && m.Length > 0 {
+				filtered = append(filtered, m)
+			}
+		}
+		mentions = filtered
 	}
 
 	serviceKey := "chat"

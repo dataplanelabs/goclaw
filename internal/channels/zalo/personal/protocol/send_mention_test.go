@@ -140,7 +140,9 @@ func TestSendMessageWithOptions_QuoteWithoutAttachment_AllowsMentions(t *testing
 	}
 }
 
-func TestSendMessageWithOptions_QuoteAttachmentDropsMentions(t *testing.T) {
+// zca-js does NOT drop mentions on quote-with-attachment — both ride together
+// (see sendMessage.ts:344-372 — mentionInfo set whenever isMentionsValid).
+func TestSendMessageWithOptions_QuoteAttachment_KeepsMentions(t *testing.T) {
 	t.Parallel()
 	srv, cap := captureServer(t, "1001", 0)
 	sess := newQuoteTestSession(t, srv)
@@ -161,8 +163,34 @@ func TestSendMessageWithOptions_QuoteAttachmentDropsMentions(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 	payload := decryptRequestParams(t, (*cap)[0].body)
-	if _, present := payload["mentionInfo"]; present {
-		t.Errorf("mentionInfo must be dropped when quote attaches media; payload=%v", payload)
+	if _, present := payload["mentionInfo"]; !present {
+		t.Errorf("mentionInfo MUST ride with quote-attachment per zca-js; payload=%v", payload)
+	}
+}
+
+func TestSendMessageWithOptions_FiltersInvalidMentions(t *testing.T) {
+	t.Parallel()
+	srv, cap := captureServer(t, "1001", 0)
+	sess := newQuoteTestSession(t, srv)
+
+	mentions := []pkgproto.Mention{
+		{UserID: "u_a", DisplayName: "Alice", Position: 0, Length: 6, Type: 0},
+		{UserID: "", DisplayName: "Bad", Position: 0, Length: 5, Type: 0},        // bad: empty UID
+		{UserID: "u_b", DisplayName: "Bob", Position: -1, Length: 3, Type: 0},    // bad: negative pos
+		{UserID: "u_c", DisplayName: "Cat", Position: 7, Length: 0, Type: 0},     // bad: zero len
+	}
+	_, err := SendMessageWithOptions(context.Background(), sess, "group-abc", ThreadTypeGroup, SendOptions{
+		Text:     "@Alice and stuff",
+		Mentions: mentions,
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	payload := decryptRequestParams(t, (*cap)[0].body)
+	mi, _ := payload["mentionInfo"].(string)
+	if !strings.Contains(mi, `"uid":"u_a"`) || strings.Contains(mi, `"uid":""`) ||
+		strings.Contains(mi, `"uid":"u_b"`) || strings.Contains(mi, `"uid":"u_c"`) {
+		t.Fatalf("filter did not strip invalid mentions; mentionInfo=%s", mi)
 	}
 }
 
