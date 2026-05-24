@@ -17,6 +17,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels/media"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/typing"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
@@ -666,13 +667,33 @@ func extractAttachment(content protocol.Content, att *protocol.Attachment) (stri
 
 const maxMediaBytes = 20 * 1024 * 1024 // 20MB (matches Telegram default)
 
-// downloadFile downloads a URL to a temp file and returns the local path.
-// Validates against SSRF and enforces timeout and size limits.
+// downloadRetryConfig: 3 attempts, 300ms→600ms→1.2s exponential backoff with
+// ±10% jitter, capped at 5s. Covers Zalo CDN's DNS cold-miss SERVFAIL pattern
+// (CoreDNS warms up on first lookup of a new shard hostname).
+var downloadRetryConfig = providers.RetryConfig{
+	Attempts: 3,
+	MinDelay: 300 * time.Millisecond,
+	MaxDelay: 5 * time.Second,
+	Jitter:   0.1,
+}
+
+// downloadFile downloads a URL to a temp file with retry on transient errors
+// (DNS cold-miss SERVFAIL, network glitches, 5xx). SSRF + size + timeout limits
+// still apply on every attempt. Uses the shared providers.RetryDo helper for
+// consistent retry semantics across the codebase.
 func downloadFile(ctx context.Context, fileURL string) (string, error) {
 	if err := tools.CheckSSRF(fileURL); err != nil {
 		return "", fmt.Errorf("ssrf check: %w", err)
 	}
+	return providers.RetryDo(ctx, downloadRetryConfig, func() (string, error) {
+		return doDownload(ctx, fileURL)
+	})
+}
 
+// doDownload performs a single HTTP GET → temp file. Returns the local path.
+// Status-code failures are wrapped as *providers.HTTPError so RetryDo's
+// classifier handles 5xx/429 + Retry-After header uniformly.
+func doDownload(ctx context.Context, fileURL string) (string, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
 	if err != nil {
@@ -680,12 +701,19 @@ func downloadFile(ctx context.Context, fileURL string) (string, error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		// Network / DNS errors flow through unchanged — RetryDo recognizes
+		// net.Error via IsRetryableError.
 		return "", fmt.Errorf("download: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download status %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", &providers.HTTPError{
+			Status:     resp.StatusCode,
+			Body:       string(body),
+			RetryAfter: providers.ParseRetryAfter(resp.Header.Get("Retry-After")),
+		}
 	}
 
 	// Strip query params before extracting extension.
