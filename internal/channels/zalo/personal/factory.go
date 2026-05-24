@@ -29,6 +29,7 @@ type zaloInstanceConfig struct {
 	BlockReply              *bool `json:"block_reply,omitempty"`
 	QuoteUserMessageInGroup *bool `json:"quote_user_message_in_group,omitempty"`
 	QuoteUserMessageInDM    *bool `json:"quote_user_message_in_dm,omitempty"`
+	EnableNativeStyles      *bool `json:"enable_native_styles,omitempty"`
 	DisablePolls        bool     `json:"disable_polls,omitempty"`
 	DisableReactions    bool     `json:"disable_reactions,omitempty"`
 	ListenSelfReactions bool     `json:"listen_self_reactions,omitempty"`
@@ -74,6 +75,7 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 		BlockReply:              ic.BlockReply,
 		QuoteUserMessageInGroup: ic.QuoteUserMessageInGroup,
 		QuoteUserMessageInDM:    ic.QuoteUserMessageInDM,
+		EnableNativeStyles:      ic.EnableNativeStyles,
 		DisablePolls:        ic.DisablePolls,
 		DisableReactions:    ic.DisableReactions,
 		ListenSelfReactions: ic.ListenSelfReactions,
@@ -136,6 +138,7 @@ func FactoryWithPendingStore(pendingStore store.PendingMessageStore, episodicSto
 			BlockReply:                 ic.BlockReply,
 			QuoteUserMessageInGroup:    ic.QuoteUserMessageInGroup,
 			QuoteUserMessageInDM:       ic.QuoteUserMessageInDM,
+			EnableNativeStyles:         ic.EnableNativeStyles,
 			DisablePolls:               ic.DisablePolls,
 			DisableReactions:           ic.DisableReactions,
 			ListenSelfReactions:        ic.ListenSelfReactions,

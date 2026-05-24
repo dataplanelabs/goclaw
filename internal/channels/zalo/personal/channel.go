@@ -48,6 +48,8 @@ type Channel struct {
 	memberFetchLimiter *MemberFetchLimiter
 	memberFetcher      func(ctx context.Context, sess *protocol.Session, groupID string) ([]protocol.GroupMember, error)
 
+	enableNativeStyles bool
+
 	stopCh   chan struct{}
 	stopOnce sync.Once
 }
@@ -74,6 +76,11 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 		requireMention = *cfg.RequireMention
 	}
 
+	enableNativeStyles := true
+	if cfg.EnableNativeStyles != nil {
+		enableNativeStyles = *cfg.EnableNativeStyles
+	}
+
 	ch := &Channel{
 		BaseChannel:        base,
 		config:             cfg,
@@ -82,6 +89,7 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 		memberCache:        NewMemberCache(),
 		memberFetchLimiter: NewMemberFetchLimiter(60 * time.Second),
 		memberFetcher:      protocol.FetchGroupMembers,
+		enableNativeStyles: enableNativeStyles,
 	}
 	ch.SetPairingService(pairingSvc)
 	ch.SetGroupHistory(channels.MakeHistory(channels.TypeZaloPersonal, pendingStore, base.TenantID()))
