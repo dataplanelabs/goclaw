@@ -34,6 +34,7 @@ type SecureCLIBinary struct {
 	IsGlobal       bool            `json:"is_global" db:"is_global"`
 	Enabled        bool            `json:"enabled" db:"enabled"`
 	CreatedBy      string          `json:"created_by" db:"created_by"`
+	Version        *string         `json:"version,omitempty" db:"version"` // installed CLI version for requires.cli cross-check
 	UserEnv        []byte          `json:"-" db:"-"` // per-user encrypted env (populated by LookupByBinary LEFT JOIN)
 	// EnvKeys is set by HTTP handlers only (names from decrypted env, no values); not a DB column.
 	EnvKeys []string `json:"env_keys,omitempty" db:"-"`

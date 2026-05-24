@@ -437,6 +437,12 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`ALTER TABLE skills DROP COLUMN source`)
 	}
 
+	if targetVersion < 43 {
+		// Migration 42→43 adds secure_cli_binaries.version.
+		db.Exec(`DROP INDEX IF EXISTS idx_secure_cli_binaries_version`)
+		db.Exec(`ALTER TABLE secure_cli_binaries DROP COLUMN version`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db

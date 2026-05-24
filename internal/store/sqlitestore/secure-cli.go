@@ -31,10 +31,10 @@ func NewSQLiteSecureCLIStore(db *sql.DB, encKey string) *SQLiteSecureCLIStore {
 }
 
 const secureCLISelectCols = `id, binary_name, binary_path, description, encrypted_env,
- deny_args, deny_verbose, timeout_seconds, tips, is_global, enabled, created_by, created_at, updated_at`
+ deny_args, deny_verbose, timeout_seconds, tips, is_global, enabled, created_by, version, created_at, updated_at`
 
 const secureCLISelectColsAliased = `b.id, b.binary_name, b.binary_path, b.description, b.encrypted_env,
- b.deny_args, b.deny_verbose, b.timeout_seconds, b.tips, b.is_global, b.enabled, b.created_by, b.created_at, b.updated_at`
+ b.deny_args, b.deny_verbose, b.timeout_seconds, b.tips, b.is_global, b.enabled, b.created_by, b.version, b.created_at, b.updated_at`
 
 func (s *SQLiteSecureCLIStore) Create(ctx context.Context, b *store.SecureCLIBinary) error {
 	if err := store.ValidateUserID(b.CreatedBy); err != nil {
@@ -71,14 +71,14 @@ func (s *SQLiteSecureCLIStore) Create(ctx context.Context, b *store.SecureCLIBin
 
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO secure_cli_binaries (id, binary_name, binary_path, description, encrypted_env,
-		 deny_args, deny_verbose, timeout_seconds, tips, is_global, enabled, created_by, created_at, updated_at, tenant_id)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 deny_args, deny_verbose, timeout_seconds, tips, is_global, enabled, created_by, version, created_at, updated_at, tenant_id)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		b.ID, b.BinaryName, nilStr(derefStr(b.BinaryPath)), b.Description,
 		envBytes,
 		jsonOrEmptyArray(b.DenyArgs), jsonOrEmptyArray(b.DenyVerbose),
 		b.TimeoutSeconds, b.Tips,
 		b.IsGlobal, b.Enabled,
-		b.CreatedBy, nowStr, nowStr, tenantID,
+		b.CreatedBy, nilStr(derefStr(b.Version)), nowStr, nowStr, tenantID,
 	)
 	return err
 }
@@ -103,17 +103,19 @@ func (s *SQLiteSecureCLIStore) scanRow(row *sql.Row) (*store.SecureCLIBinary, er
 	var binaryPath *string
 	var denyArgs, denyVerbose []byte
 	var env []byte
+	var version *string
 	var createdAt, updatedAt sqliteTime
 
 	err := row.Scan(
 		&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 		&denyArgs, &denyVerbose,
 		&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
-		&b.Enabled, &b.CreatedBy, &createdAt, &updatedAt,
+		&b.Enabled, &b.CreatedBy, &version, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	b.Version = version
 
 	b.BinaryPath = binaryPath
 	if len(denyArgs) > 0 {
@@ -148,18 +150,20 @@ func (s *SQLiteSecureCLIStore) scanRows(rows *sql.Rows) ([]store.SecureCLIBinary
 		var binaryPath *string
 		var denyArgs, denyVerbose []byte
 		var env []byte
+		var version *string
 		var createdAt, updatedAt sqliteTime
 
 		if err := rows.Scan(
 			&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 			&denyArgs, &denyVerbose,
 			&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
-			&b.Enabled, &b.CreatedBy, &createdAt, &updatedAt,
+			&b.Enabled, &b.CreatedBy, &version, &createdAt, &updatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan secure_cli_binaries row: %w", err)
 		}
 
 		b.BinaryPath = binaryPath
+		b.Version = version
 		if len(denyArgs) > 0 {
 			b.DenyArgs = json.RawMessage(denyArgs)
 		}
@@ -186,6 +190,7 @@ var secureCLIAllowedFields = map[string]bool{
 	"binary_name": true, "binary_path": true, "description": true,
 	"encrypted_env": true, "deny_args": true, "deny_verbose": true,
 	"timeout_seconds": true, "tips": true, "is_global": true, "enabled": true,
+	"version":    true,
 	"updated_at": true,
 }
 
@@ -296,6 +301,7 @@ func (s *SQLiteSecureCLIStore) scanRowsWithGrants(rows *sql.Rows) ([]store.Secur
 		var binaryPath *string
 		var denyArgs, denyVerbose []byte
 		var env []byte
+		var version *string
 		var grantsJSON []byte
 		var createdAt, updatedAt sqliteTime
 
@@ -303,13 +309,14 @@ func (s *SQLiteSecureCLIStore) scanRowsWithGrants(rows *sql.Rows) ([]store.Secur
 			&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 			&denyArgs, &denyVerbose,
 			&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
-			&b.Enabled, &b.CreatedBy, &createdAt, &updatedAt,
+			&b.Enabled, &b.CreatedBy, &version, &createdAt, &updatedAt,
 			&grantsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("scan secure_cli_binaries row: %w", err)
 		}
 
 		b.BinaryPath = binaryPath
+		b.Version = version
 		if len(denyArgs) > 0 {
 			b.DenyArgs = json.RawMessage(denyArgs)
 		}
@@ -442,6 +449,7 @@ func (s *SQLiteSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.
 	var binaryPath *string
 	var denyArgs, denyVerbose []byte
 	var env []byte
+	var version *string
 	var grantDenyArgs, grantDenyVerbose []byte
 	var grantTimeout *int
 	var grantTips *string
@@ -455,7 +463,7 @@ func (s *SQLiteSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.
 		&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 		&denyArgs, &denyVerbose,
 		&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
-		&b.Enabled, &b.CreatedBy, &createdAt, &updatedAt,
+		&b.Enabled, &b.CreatedBy, &version, &createdAt, &updatedAt,
 		&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantEnabled, &grantID, &grantEncEnv,
 		&userEnv,
 	)
@@ -467,6 +475,7 @@ func (s *SQLiteSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.
 	}
 
 	b.BinaryPath = binaryPath
+	b.Version = version
 	if len(denyArgs) > 0 {
 		b.DenyArgs = json.RawMessage(denyArgs)
 	}
@@ -606,6 +615,7 @@ func (s *SQLiteSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UU
 		var binaryPath *string
 		var denyArgs, denyVerbose []byte
 		var env []byte
+		var version *string
 		var grantDenyArgs, grantDenyVerbose []byte
 		var grantTimeout *int
 		var grantTips *string
@@ -617,13 +627,14 @@ func (s *SQLiteSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UU
 			&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 			&denyArgs, &denyVerbose,
 			&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
-			&b.Enabled, &b.CreatedBy, &createdAt, &updatedAt,
+			&b.Enabled, &b.CreatedBy, &version, &createdAt, &updatedAt,
 			&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantID, &grantEncEnv,
 		); err != nil {
 			return nil, fmt.Errorf("scan secure_cli_binaries row: %w", err)
 		}
 
 		b.BinaryPath = binaryPath
+		b.Version = version
 		if len(denyArgs) > 0 {
 			b.DenyArgs = json.RawMessage(denyArgs)
 		}

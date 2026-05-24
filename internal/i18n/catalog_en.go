@@ -317,6 +317,11 @@ func init() {
 		MsgGrantEnvTooManyKeys:  "too many env keys: max 50",
 		MsgGrantEnvRevealLimit:  "rate limit exceeded for env reveal — try again later",
 
+		// Secure CLI execution
+		MsgSecureCliBinaryNotFound: "binary %q is not registered for secure exec",
+		MsgSecureCliNoGrant:        "agent has no grant for binary %q",
+		MsgSecureCliDeniedByPolicy: "call denied by deny_args policy: %s",
+
 		// Standby mode
 		StandbyToolDescription:      "Pause replies in the current thread for a duration. The agent will still observe and remember messages but will not reply until the pause expires.",
 		StandbyToolParamDuration:    "Pause duration in seconds (60-86400).",

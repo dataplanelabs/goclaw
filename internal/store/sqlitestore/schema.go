@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 42
+const SchemaVersion = 43
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -755,6 +755,11 @@ CREATE INDEX IF NOT EXISTS idx_channel_thread_schedules_expires
 	// (mirrors PG 000072_skills_source_column).
 	41: `ALTER TABLE skills ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown';
 CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source);`,
+
+	// Version 42 → 43: version column on secure_cli_binaries for requires.cli
+	// cross-check (mirrors PG 000073_secure_cli_binaries_version).
+	42: `ALTER TABLE secure_cli_binaries ADD COLUMN version TEXT;
+CREATE INDEX IF NOT EXISTS idx_secure_cli_binaries_version ON secure_cli_binaries(version) WHERE version IS NOT NULL;`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.
