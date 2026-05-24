@@ -322,6 +322,14 @@ func init() {
 		MsgSecureCliNoGrant:        "agent chưa được cấp quyền cho binary %q",
 		MsgSecureCliDeniedByPolicy: "lời gọi bị từ chối bởi chính sách deny_args: %s",
 
+		// OAuth integrations
+		MsgOAuthStateMismatch:       "token trạng thái OAuth không khớp hoặc đã hết hạn — vui lòng thử lại",
+		MsgOAuthExchangeFailed:      "trao đổi mã OAuth thất bại: %s",
+		MsgOAuthBinaryNotFound:      "binary %q chưa được đăng ký cho tenant này",
+		MsgOAuthIntegrationNotFound: "không tìm thấy tích hợp nào cho %q",
+		MsgOAuthRevoked:             "thông tin đăng nhập Google đã bị thu hồi — vui lòng kết nối lại qua Settings → Integrations",
+		MsgOAuthNotConfigured:       "Google OAuth chưa được cấu hình trên máy chủ này",
+
 		// Standby mode
 		StandbyToolDescription:      "Tạm dừng trả lời trong cuộc trò chuyện hiện tại. Trợ lý vẫn quan sát và ghi nhớ tin nhắn nhưng sẽ không trả lời cho đến khi hết thời gian tạm dừng.",
 		StandbyToolParamDuration:    "Thời gian tạm dừng tính bằng giây (60-86400).",

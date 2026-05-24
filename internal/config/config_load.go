@@ -139,6 +139,10 @@ func (c *Config) applyEnvOverrides() {
 			*dst = v
 		}
 	}
+	envStr("GOCLAW_GOOGLE_CLIENT_ID", &c.OAuth.Google.ClientID)
+	envStr("GOCLAW_GOOGLE_CLIENT_SECRET", &c.OAuth.Google.ClientSecret)
+	envStr("GOCLAW_GOOGLE_REDIRECT_URL", &c.OAuth.Google.RedirectURL)
+	envStr("GOCLAW_UI_BASE_URL", &c.Gateway.UIBaseURL)
 	envStr("GOCLAW_ANTHROPIC_API_KEY", &c.Providers.Anthropic.APIKey)
 	envStr("GOCLAW_ANTHROPIC_BASE_URL", &c.Providers.Anthropic.APIBase)
 	envStr("GOCLAW_OPENAI_API_KEY", &c.Providers.OpenAI.APIKey)
@@ -377,6 +381,7 @@ func ResolvedDataDirFromEnv() string {
 	}
 	return ExpandHome("~/.goclaw/data")
 }
+
 
 // WorkspacePath returns the expanded workspace path.
 func (c *Config) WorkspacePath() string {

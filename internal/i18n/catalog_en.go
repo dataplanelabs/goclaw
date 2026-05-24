@@ -322,6 +322,14 @@ func init() {
 		MsgSecureCliNoGrant:        "agent has no grant for binary %q",
 		MsgSecureCliDeniedByPolicy: "call denied by deny_args policy: %s",
 
+		// OAuth integrations
+		MsgOAuthStateMismatch:       "OAuth state token mismatch or expired — please try again",
+		MsgOAuthExchangeFailed:      "OAuth code exchange failed: %s",
+		MsgOAuthBinaryNotFound:      "secure CLI binary %q is not registered for this tenant",
+		MsgOAuthIntegrationNotFound: "no integration found for %q",
+		MsgOAuthRevoked:             "Google credentials revoked — please reconnect via Settings → Integrations",
+		MsgOAuthNotConfigured:       "Google OAuth is not configured on this server",
+
 		// Standby mode
 		StandbyToolDescription:      "Pause replies in the current thread for a duration. The agent will still observe and remember messages but will not reply until the pause expires.",
 		StandbyToolParamDuration:    "Pause duration in seconds (60-86400).",

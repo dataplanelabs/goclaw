@@ -98,6 +98,24 @@ func (s *SQLiteSecureCLIStore) Get(ctx context.Context, id uuid.UUID) (*store.Se
 	return s.scanRow(row)
 }
 
+// GetByName resolves a binary by name (case-insensitive) within the caller's tenant.
+// Returns nil, nil when not found.
+func (s *SQLiteSecureCLIStore) GetByName(ctx context.Context, binaryName string) (*store.SecureCLIBinary, error) {
+	tenantID := store.TenantIDFromContext(ctx)
+	if tenantID == uuid.Nil {
+		return nil, nil
+	}
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+secureCLISelectCols+` FROM secure_cli_binaries
+		 WHERE LOWER(binary_name) = LOWER(?) AND tenant_id = ? LIMIT 1`,
+		binaryName, tenantID)
+	b, err := s.scanRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return b, err
+}
+
 func (s *SQLiteSecureCLIStore) scanRow(row *sql.Row) (*store.SecureCLIBinary, error) {
 	var b store.SecureCLIBinary
 	var binaryPath *string

@@ -42,10 +42,16 @@ func (s *stubSecureCLIStoreCmd) IsRegisteredBinary(ctx context.Context, binaryNa
 func (s *stubSecureCLIStoreCmd) LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID string) (*store.SecureCLIBinary, error) {
 	return nil, nil
 }
+func (s *stubSecureCLIStoreCmd) GetByName(ctx context.Context, binaryName string) (*store.SecureCLIBinary, error) {
+	return nil, nil
+}
+func (s *stubSecureCLIStoreCmd) ListUserCredentialsByBinaryName(ctx context.Context, binaryName string) ([]store.SecureCLIUserCredentialWithBinary, error) {
+	return nil, nil
+}
 func (s *stubSecureCLIStoreCmd) GetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string) (*store.SecureCLIUserCredential, error) {
 	return nil, nil
 }
-func (s *stubSecureCLIStoreCmd) SetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string, encryptedEnv []byte) error {
+func (s *stubSecureCLIStoreCmd) SetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string, encryptedEnv []byte, metadata json.RawMessage) error {
 	return nil
 }
 func (s *stubSecureCLIStoreCmd) DeleteUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string) error {

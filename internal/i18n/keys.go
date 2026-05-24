@@ -356,6 +356,14 @@ const (
 	MsgSecureCliNoGrant        = "error.secure_cli_no_grant"         // "agent has no grant for binary %q"
 	MsgSecureCliDeniedByPolicy = "error.secure_cli_denied_by_policy" // "call denied by deny_args policy: %s"
 
+	// --- OAuth integrations (B3-01: per-operator Google connect flow) ---
+	MsgOAuthStateMismatch        = "error.oauth_state_mismatch"         // "OAuth state token mismatch or expired"
+	MsgOAuthExchangeFailed       = "error.oauth_exchange_failed"        // "OAuth code exchange failed: %s"
+	MsgOAuthBinaryNotFound       = "error.oauth_binary_not_found"       // "secure CLI binary %q not registered for this tenant"
+	MsgOAuthIntegrationNotFound  = "error.oauth_integration_not_found"  // "no integration found for %q"
+	MsgOAuthRevoked              = "error.oauth_revoked"                // "Google credentials revoked — please reconnect"
+	MsgOAuthNotConfigured        = "error.oauth_not_configured"         // "Google OAuth is not configured on this server"
+
 	// --- Standby mode ---
 	StandbyToolDescription      = "standby.tool.description"
 	StandbyToolParamDuration    = "standby.tool.param.duration"
