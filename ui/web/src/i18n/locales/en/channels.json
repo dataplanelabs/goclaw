@@ -295,6 +295,10 @@
       "label": "Quote user message in DMs",
       "help": "Reply by quoting the user's last DM. Usually unnecessary in 1-on-1 chats."
     },
+    "enable_native_styles": {
+      "label": "Native text styles",
+      "help": "Render LLM markdown (bold/italic/strike/underline/lists) as native Zalo styled spans via textProperties. Off = full markdown strip (legacy v3.21.10 behavior)."
+    },
     "media_max_mb": { "label": "Max Media Size (MB)" },
     "link_preview": { "label": "Link Preview" },
     "allow_from": { "label": "Allowed Users" },

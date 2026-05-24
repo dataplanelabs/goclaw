@@ -259,6 +259,10 @@
       "label": "Trích dẫn tin nhắn trong DM",
       "help": "Trả lời kèm trích dẫn tin nhắn gần nhất trong DM. Thường không cần thiết trong hội thoại 1-1."
     },
+    "enable_native_styles": {
+      "label": "Định dạng văn bản gốc",
+      "help": "Hiển thị markdown (in đậm/in nghiêng/gạch ngang/gạch chân/danh sách) thành định dạng gốc của Zalo qua trường textProperties. Tắt = loại bỏ toàn bộ markdown (như v3.21.10)."
+    },
     "media_max_mb": { "label": "Kích thước media tối đa (MB)" },
     "link_preview": { "label": "Xem trước liên kết" },
     "allow_from": { "label": "Người dùng được phép" },
