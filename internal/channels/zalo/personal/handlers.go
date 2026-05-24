@@ -553,7 +553,7 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		content = content + "\n" + quotedTag
 		media = append(media, quotedPath)
 	}
-	annotated := fmt.Sprintf("[From: %s]\n%s", senderName, content)
+	annotated := fmt.Sprintf("[From: %s (uid:%s)]\n%s", senderName, senderID, content)
 	finalContent := annotated
 	if c.HistoryLimit() > 0 {
 		finalContent = c.GroupHistory().BuildContext(threadID, annotated, c.HistoryLimit())

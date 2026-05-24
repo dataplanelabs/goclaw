@@ -59,7 +59,7 @@ func TestBotSend_StripsMentionMarkers(t *testing.T) {
 		t.Fatal("no API calls captured")
 	}
 	got, _ := calls[0]["text"].(string)
-	want := "Hello @uid_abc and @all"
+	want := "Hello @uid_abc and @All"
 	if got != want {
 		t.Errorf("text = %q, want %q", got, want)
 	}
@@ -96,7 +96,7 @@ func TestBotSend_OnlyAtAll(t *testing.T) {
 	}
 	calls := cs.snapshot()
 	got, _ := calls[0]["text"].(string)
-	if got != "@all" {
-		t.Errorf("text = %q, want %q", got, "@all")
+	if got != "@All" {
+		t.Errorf("text = %q, want %q", got, "@All")
 	}
 }

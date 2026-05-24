@@ -68,6 +68,10 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		}
 	}
 
+	if threadType == protocol.ThreadTypeGroup && msg.Metadata != nil {
+		msg.Content = applyAskerPrepend(msg.Content, msg.Metadata["sender_uid"])
+	}
+
 	rendered, allMentions := c.parseOutboundMentions(ctx, msg.ChatID, threadType, msg.Content)
 	msg.Content = rendered
 
@@ -100,11 +104,13 @@ func (c *Channel) parseOutboundMentions(ctx context.Context, threadID string, th
 		return text, nil
 	}
 	resolve := func(marker string) (string, string, bool) {
-		name, ok := c.LookupGroupMember(ctx, threadID, marker)
-		if !ok {
-			return "", "", false
+		if name, ok := c.LookupGroupMember(ctx, threadID, marker); ok {
+			return marker, name, true
 		}
-		return marker, name, true
+		if uid, name, ok := c.LookupGroupMemberByName(ctx, threadID, marker); ok {
+			return uid, name, true
+		}
+		return "", "", false
 	}
 	rendered, ms := mentions.ParseMarkers(text, resolve)
 	slog.Info("mention.parse",

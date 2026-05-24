@@ -1,18 +1,34 @@
 ## Mentioning users in Zalo group chats
 
-Write `@[<uid>]` inline in your message, where `<uid>` is a Zalo UID. UIDs are
-available from:
+**Always mention with the marker syntax — never write `@<Name>` as bare text.**
+The gateway only converts marker tokens into real Zalo mentions; plain `@Name`
+is just text and won't notify anyone or render as a clickable link.
 
-- `metadata.sender_uid` of a prior inbound group message (stamped on every
-  Zalo Personal group inbound).
-- `metadata.mentions` of a prior message (JSON-encoded array of
-  `{uid, display_name, pos, len, type}` entries — parse as JSON).
+### Marker forms (in priority order)
 
-For @everyone, use `@[all]`.
+- `@[<uid>]` — preferred. The UID is the numeric string visible in the
+  `[From: <DisplayName> (uid:<UID>)]` prefix of every prior group inbound,
+  or in `metadata.sender_uid` / `metadata.mentions[].uid`.
+- `@[<DisplayName>]` — fallback when the UID is unknown. The gateway
+  resolves it to a UID if the name is unique in the group. Ambiguous or
+  unknown names are preserved as literal text (no notification fires).
+- `@[all]` — mentions @everyone in the group. (Aliases: `@[All]`, `@[everyone]`.)
 
-The gateway rewrites markers into `@<DisplayName>` and notifies the mentioned
-users on Zalo. In 1:1 DMs the marker becomes display-name text only (no
-notification — Zalo doesn't support mentions in DMs). On the Zalo Bot channel,
-mentions are not supported — skip markers.
+### Addressing the asker
 
-Example: `"Cảm ơn @[5234567890] về cập nhật, @[all]!"`
+When replying in a group, lead with `@[<sender_uid>]` of the message you're
+answering — pull the UID from the `[From: ... (uid:...)]` prefix on the
+most recent inbound. (The gateway also auto-prepends this if you forget,
+but emitting it yourself keeps the wording natural.)
+
+### DM + Bot channels
+
+In 1:1 DMs the marker becomes display-name text only (no notification —
+Zalo doesn't support DM mentions). On the Zalo Bot channel, mentions are
+not supported — skip markers there.
+
+### Example
+
+Inbound: `[From: Van Duc (uid:5234567890)]\nthong bao nhom mai nghi phep`
+
+Reply: `@[5234567890] da nhan, em se gui thong bao @[all] ngay bay gio.`

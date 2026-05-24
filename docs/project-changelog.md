@@ -4,6 +4,34 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ---
 
+## 2026-05-24 (afternoon — mention v2)
+
+### Zalo Personal: mention robustness — name fallback, @All capitalization, auto-asker
+
+**Features**
+
+- **Name-fallback resolver:** when LLM emits `@[Display Name]` instead of `@[uid]`, the resolver now scans the group member cache (NFC + casefold + trim normalization) and matches if unique. Ambiguous (≥2 same name) or unknown names preserve as literal text — never mention wrong target. Triggers a rate-limited `/getmem-v2` slow fetch on first cache miss.
+- **UID in inbound annotation:** `[From: Van Duc]\n...` → `[From: Van Duc (uid:5234567890)]\n...`. Makes the UID a first-class token at the prompt position the LLM reads every turn.
+- **Auto-prepend asker mention:** group replies automatically lead with `@[<sender_uid>]` of the user being answered. Deduped if the LLM already mentioned them or used `@[all]`/`@[All]`.
+- **`@all` → `@All`:** matches Zalo native client's display capitalization. Aliases accepted: `@[all]`, `@[All]`, `@[everyone]`.
+- **Strengthened prompt addendum:** explicit constraint "never write `@<Name>` as bare text", priority-ordered marker forms (UID > display name > @all), asker-addressing guidance, with worked Vietnamese example.
+
+**Internal**
+
+- `internal/channels/zalo/personal/name_lookup.go` — `LookupGroupMemberByName` with hybrid cache → slow-path strategy mirroring `LookupGroupMember`.
+- `internal/channels/zalo/personal/member_cache.go::FindByName` — refuse-on-ambiguity scan.
+- `internal/channels/zalo/personal/asker_prepend.go` — extracted helper for testability.
+- Reuses Phase 5's `MemberFetchLimiter` (60s window per thread) and `memberFetchTimeout` (3s) — no new infra.
+
+**Tests**
+
+- 5 normalization + cache-find tests (Vietnamese, ambiguous refusal, NFC).
+- 4 `LookupGroupMemberByName` tests (cache hit, slow-path fetch, empty input, NFC normalization).
+- 5 asker-prepend tests (add, dedupe, skip on @[all], empty asker, empty content).
+- @all alias coverage (`all` / `All` / `everyone`).
+
+---
+
 ## 2026-05-24
 
 ### Zalo Personal: @[uid] mention support for group chats
