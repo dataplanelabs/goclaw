@@ -115,3 +115,39 @@ export function useUserCredentials() {
 export function findIntegration(integrations: Integration[], binaryName: string): Integration | undefined {
   return integrations.find((i) => i.binary_name === binaryName);
 }
+
+// --- B3-01.1: per-tenant Google OAuth config admin hook ---
+
+export interface GoogleOAuthConfig {
+  client_id: string;
+  redirect_url: string;
+  has_client_secret: boolean;
+  is_configured: boolean;
+  inherits_from_env: boolean;
+}
+
+export function useGoogleOAuthConfig() {
+  const http = useHttp();
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: ["admin", "oauth", "google"],
+    queryFn: () => http.get<GoogleOAuthConfig>("/v1/admin/oauth/google"),
+    staleTime: 30 * 1000,
+  });
+
+  const save = useCallback(
+    async (cfg: { client_id: string; client_secret?: string; redirect_url: string }) => {
+      await http.put<GoogleOAuthConfig>("/v1/admin/oauth/google", cfg);
+      queryClient.invalidateQueries({ queryKey: ["admin", "oauth", "google"] });
+    },
+    [http, queryClient],
+  );
+
+  const clear = useCallback(async () => {
+    await http.delete("/v1/admin/oauth/google");
+    queryClient.invalidateQueries({ queryKey: ["admin", "oauth", "google"] });
+  }, [http, queryClient]);
+
+  return { config: query.data, isLoading: query.isLoading, save, clear, refetch: query.refetch };
+}

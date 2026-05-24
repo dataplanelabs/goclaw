@@ -103,16 +103,18 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	// exists; the handler returns MsgOAuthNotConfigured when client_id/secret
 	// env vars are unset, so safe to register unconditionally otherwise.
 	if d.pgStores != nil && d.pgStores.SecureCLI != nil {
-		googleClient := oauth.NewGoogleClient(d.cfg.OAuth.Google)
+		// B3-01.1: GoogleClientManager resolves config per-tenant (DB rows in
+		// config_secrets + system_configs) with env-var fallback.
+		googleManager := oauth.NewGoogleClientManager(d.cfg.OAuth.Google, d.pgStores.ConfigSecrets, d.pgStores.SystemConfigs)
 		uiBase := d.cfg.Gateway.UIBaseURL
-		integrationsH := httpapi.NewIntegrationsHandler(d.pgStores.SecureCLI, googleClient, d.msgBus, uiBase)
+		integrationsH := httpapi.NewIntegrationsHandler(d.pgStores.SecureCLI, googleManager, d.msgBus, uiBase)
 		d.server.SetIntegrationsHandler(integrationsH)
 
-		// B3-01 Phase 4: refresh worker — only starts when Google OAuth is
-		// configured (worker no-ops via internal guard otherwise).
+		// B3-01 Phase 4: refresh worker — uses the manager so each row is
+		// refreshed via its OWNING tenant's OAuth client.
 		tick := envDurationSeconds("GOCLAW_OAUTH_REFRESH_TICK_SECONDS", 24*time.Hour)
 		threshold := envDurationSeconds("GOCLAW_OAUTH_REFRESH_THRESHOLD_SECONDS", 7*24*time.Hour)
-		worker := oauth.NewRefreshWorker(d.pgStores.SecureCLI, googleClient, tick, threshold)
+		worker := oauth.NewRefreshWorker(d.pgStores.SecureCLI, googleManager, tick, threshold)
 		worker.Start(context.Background())
 		healthH := httpapi.NewOAuthRefreshHealthHandler(worker)
 		d.server.SetOAuthRefreshHealthHandler(healthH)

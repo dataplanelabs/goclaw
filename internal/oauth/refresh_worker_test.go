@@ -123,6 +123,41 @@ func googleClientWithFakeTokenServer(t *testing.T, response string, status int) 
 	return c
 }
 
+// googleManagerWithFakeTokenServer returns a *GoogleClientManager whose
+// per-tenant cache is pre-populated with a fake-endpoint oauth2.Config that
+// matches whatever tenantID the test rows use. We override `oauthConfigForTenant`
+// indirectly by seeding `tenantConfigs` with a per-tenant fake config — covers
+// the common case where tests want ALL tenants to hit the same fake server.
+func googleManagerWithFakeTokenServer(t *testing.T, response string, status int) *GoogleClientManager {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(response))
+	}))
+	t.Cleanup(srv.Close)
+	m := NewGoogleClientManager(config.OAuthGoogleConfig{
+		ClientID: "cid", ClientSecret: "sec",
+		RedirectURL: "https://example.test/cb",
+	}, nil, nil)
+	// Override oauthConfigForTenant by pre-seeding the cache for ANY tenant
+	// the test references. Since tests use random tenant UUIDs, we wrap the
+	// manager's resolution with a test hook: store a sentinel under uuid.Nil
+	// + a custom lookup. Simpler: stash the endpoint as a field and have the
+	// manager check it. But the cleanest is to populate per-test:
+	// tests call this helper THEN seed the cache for their specific tenants
+	// via m.tenantConfigs.Store(tenantID, cfg). For convenience the cfg is
+	// constructed below and the helper returns both.
+	t.Cleanup(func() { m.tenantConfigs.Range(func(k, _ any) bool { m.tenantConfigs.Delete(k); return true }) })
+	// Pre-build a reusable oauth2.Config; tests can store it under their tenant IDs.
+	m.testFakeEndpoint = &oauth2.Endpoint{
+		AuthURL:   srv.URL + "/auth",
+		TokenURL:  srv.URL + "/token",
+		AuthStyle: oauth2.AuthStyleInParams,
+	}
+	return m
+}
+
 func nearExpiry(rt string, when time.Time) store.SecureCLIUserCredentialWithBinary {
 	env, _ := json.Marshal(map[string]string{"GWS_REFRESH_TOKEN": rt})
 	meta, _ := json.Marshal(map[string]any{
@@ -142,7 +177,7 @@ func nearExpiry(rt string, when time.Time) store.SecureCLIUserCredentialWithBina
 // --- tests ---
 
 func TestRefreshWorker_RunOnce_NoRows(t *testing.T) {
-	w := NewRefreshWorker(&stubRefreshStore{}, googleClientWithFakeTokenServer(t, `{}`, 200), time.Hour, 7*24*time.Hour)
+	w := NewRefreshWorker(&stubRefreshStore{}, googleManagerWithFakeTokenServer(t, `{}`, 200), time.Hour, 7*24*time.Hour)
 	w.runOnce(context.Background())
 	if !w.Healthy() {
 		t.Error("worker should be healthy after empty-tick run")
@@ -153,7 +188,7 @@ func TestRefreshWorker_SkipsFarExpiry(t *testing.T) {
 	st := &stubRefreshStore{rows: []store.SecureCLIUserCredentialWithBinary{
 		nearExpiry("r-1", time.Now().Add(30*24*time.Hour)), // 30d > 7d threshold
 	}}
-	w := NewRefreshWorker(st, googleClientWithFakeTokenServer(t, `{}`, 200), time.Hour, 7*24*time.Hour)
+	w := NewRefreshWorker(st, googleManagerWithFakeTokenServer(t, `{}`, 200), time.Hour, 7*24*time.Hour)
 	w.runOnce(context.Background())
 	if len(st.setCalls) != 0 {
 		t.Errorf("expected 0 set calls (far expiry), got %d", len(st.setCalls))
@@ -167,7 +202,7 @@ func TestRefreshWorker_RefreshesNearExpiry(t *testing.T) {
 	row := nearExpiry("r-old", time.Now().Add(3*24*time.Hour)) // 3d < 7d threshold
 	st := &stubRefreshStore{rows: []store.SecureCLIUserCredentialWithBinary{row}}
 	resp := `{"access_token":"ac-new","refresh_token":"r-new","expires_in":3600,"token_type":"Bearer"}`
-	w := NewRefreshWorker(st, googleClientWithFakeTokenServer(t, resp, 200), time.Hour, 7*24*time.Hour)
+	w := NewRefreshWorker(st, googleManagerWithFakeTokenServer(t, resp, 200), time.Hour, 7*24*time.Hour)
 	w.runOnce(context.Background())
 
 	if len(st.setCalls) != 1 {
@@ -195,7 +230,7 @@ func TestRefreshWorker_RefreshesNearExpiry_PreservesRefreshTokenWhenNotRotated(t
 	st := &stubRefreshStore{rows: []store.SecureCLIUserCredentialWithBinary{row}}
 	// Google returns no refresh_token (not rotated).
 	resp := `{"access_token":"ac","expires_in":3600,"token_type":"Bearer"}`
-	w := NewRefreshWorker(st, googleClientWithFakeTokenServer(t, resp, 200), time.Hour, 7*24*time.Hour)
+	w := NewRefreshWorker(st, googleManagerWithFakeTokenServer(t, resp, 200), time.Hour, 7*24*time.Hour)
 	w.runOnce(context.Background())
 
 	var newEnv map[string]string
@@ -210,7 +245,7 @@ func TestRefreshWorker_RevokedTokenDeletesRow(t *testing.T) {
 	st := &stubRefreshStore{rows: []store.SecureCLIUserCredentialWithBinary{row}}
 	// Google returns invalid_grant — refresh token revoked.
 	resp := `{"error":"invalid_grant","error_description":"Token has been expired or revoked."}`
-	w := NewRefreshWorker(st, googleClientWithFakeTokenServer(t, resp, 400), time.Hour, 7*24*time.Hour)
+	w := NewRefreshWorker(st, googleManagerWithFakeTokenServer(t, resp, 400), time.Hour, 7*24*time.Hour)
 	w.runOnce(context.Background())
 
 	if len(st.deleteCalls) != 1 {
@@ -228,7 +263,7 @@ func TestRefreshWorker_TransientErrorNoDelete(t *testing.T) {
 	row := nearExpiry("r-transient", time.Now().Add(time.Hour))
 	st := &stubRefreshStore{rows: []store.SecureCLIUserCredentialWithBinary{row}}
 	// 503 from Google — transient, no revocation.
-	w := NewRefreshWorker(st, googleClientWithFakeTokenServer(t, `{}`, 503), time.Hour, 7*24*time.Hour)
+	w := NewRefreshWorker(st, googleManagerWithFakeTokenServer(t, `{}`, 503), time.Hour, 7*24*time.Hour)
 	w.runOnce(context.Background())
 
 	if len(st.deleteCalls) != 0 {
@@ -247,7 +282,7 @@ func TestRefreshWorker_Healthy_BeforeFirstTick(t *testing.T) {
 }
 
 func TestRefreshWorker_Healthy_FlipsUnhealthyAfterStaleTick(t *testing.T) {
-	w := NewRefreshWorker(&stubRefreshStore{}, googleClientWithFakeTokenServer(t, `{}`, 200), 50*time.Millisecond, time.Hour)
+	w := NewRefreshWorker(&stubRefreshStore{}, googleManagerWithFakeTokenServer(t, `{}`, 200), 50*time.Millisecond, time.Hour)
 	w.runOnce(context.Background())
 	if !w.Healthy() {
 		t.Fatal("worker should be healthy right after tick")
@@ -262,7 +297,7 @@ func TestRefreshWorker_DisabledWhenGoogleNotConfigured(t *testing.T) {
 	st := &stubRefreshStore{rows: []store.SecureCLIUserCredentialWithBinary{
 		nearExpiry("r", time.Now().Add(time.Hour)),
 	}}
-	bare := NewGoogleClient(config.OAuthGoogleConfig{}) // not configured
+	bare := NewGoogleClientManager(config.OAuthGoogleConfig{}, nil, nil) // not configured
 	w := NewRefreshWorker(st, bare, time.Hour, time.Hour)
 	ctx, cancel := context.WithCancel(context.Background())
 	w.Start(ctx)
