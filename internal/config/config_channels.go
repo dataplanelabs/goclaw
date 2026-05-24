@@ -227,7 +227,7 @@ type ZaloPersonalConfig struct {
 	BlockReply          *bool               `json:"block_reply,omitempty"`        // override gateway block_reply (nil = inherit)
 	QuoteUserMessageInGroup *bool `json:"quote_user_message_in_group,omitempty"` // default true; group quoting disambiguates target in busy chats
 	QuoteUserMessageInDM    *bool `json:"quote_user_message_in_dm,omitempty"`    // default false; DM has no ambiguity
-	EnableNativeStyles      *bool `json:"enable_native_styles,omitempty"`        // default true; off = legacy markdown strip
+	EnableNativeStyles      *bool `json:"enable_native_styles,omitempty"`        // default false; opt-in for textProperties native styling
 	DisablePolls        bool                `json:"disable_polls,omitempty"`         // kill switch for the 5 poll tools
 	DisableReactions    bool                `json:"disable_reactions,omitempty"`     // kill switch for the inbound reaction feedback path
 	ListenSelfReactions bool                `json:"listen_self_reactions,omitempty"` // opt-in: surface reactions to the bot's own messages
