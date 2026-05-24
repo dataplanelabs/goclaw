@@ -30,10 +30,7 @@ type dedupEntry struct {
 // NewDedup returns a Dedup with TTL and global cap. Per-instance cap is
 // derived as max(maxGlobal/4, 1) so tenants can't starve each other.
 func NewDedup(ttl time.Duration, maxGlobal int) *Dedup {
-	perInst := maxGlobal / 4
-	if perInst < 1 {
-		perInst = 1
-	}
+	perInst := max(maxGlobal/4, 1)
 	return &Dedup{
 		ttl:            ttl,
 		maxGlobal:      maxGlobal,

@@ -508,6 +508,9 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 	if senderName == "" {
 		senderName = senderID
 	}
+	if c.memberCache != nil && msg.Data.DName != "" {
+		c.memberCache.Set(threadID, senderID, msg.Data.DName)
+	}
 
 	// Step 2: @mention gating — record non-mentioned messages in history and return.
 	if c.RequireMention() {
@@ -575,11 +578,15 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		"platform":     channels.TypeZaloPersonal,
 		"group_id":     threadID,
 		"display_name": channels.SanitizeDisplayName(senderName),
+		"sender_uid":   senderID,
 	}
 	if c.quoteUserMessageEnabled() {
 		if qm := buildSelfQuoteMetadata(&msg.Data.TMessage, senderID); qm != nil {
 			maps.Copy(metadata, qm)
 		}
+	}
+	if len(msg.Data.Mentions) > 0 {
+		stampMentionsMetadata(metadata, msg.Data.Mentions, c.groupNameResolver(threadID))
 	}
 	c.HandleMessage(senderID, threadID, finalContent, allMedia, metadata, "group")
 

@@ -44,6 +44,10 @@ type Channel struct {
 	groups             *groupCache
 	lastGroupBootstrap atomic.Int64
 
+	memberCache        *MemberCache
+	memberFetchLimiter *MemberFetchLimiter
+	memberFetcher      func(ctx context.Context, sess *protocol.Session, groupID string) ([]protocol.GroupMember, error)
+
 	stopCh   chan struct{}
 	stopOnce sync.Once
 }
@@ -71,10 +75,13 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 	}
 
 	ch := &Channel{
-		BaseChannel: base,
-		config:      cfg,
-		groups:      newGroupCache(),
-		stopCh:      make(chan struct{}),
+		BaseChannel:        base,
+		config:             cfg,
+		groups:             newGroupCache(),
+		stopCh:             make(chan struct{}),
+		memberCache:        NewMemberCache(),
+		memberFetchLimiter: NewMemberFetchLimiter(60 * time.Second),
+		memberFetcher:      protocol.FetchGroupMembers,
 	}
 	ch.SetPairingService(pairingSvc)
 	ch.SetGroupHistory(channels.MakeHistory(channels.TypeZaloPersonal, pendingStore, base.TenantID()))

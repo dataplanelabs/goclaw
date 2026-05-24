@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -17,11 +18,11 @@ import (
 // reactionTestServer is a counting http server that signals each request
 // onto reqCh so tests can wait deterministically instead of fixed sleeps.
 type reactionTestServer struct {
-	srv     *httptest.Server
-	reqCh   chan capturedRequest
-	count   atomic.Int32
-	mu      sync.Mutex
-	bodies  []map[string]any
+	srv    *httptest.Server
+	reqCh  chan capturedRequest
+	count  atomic.Int32
+	mu     sync.Mutex
+	bodies []map[string]any
 }
 
 func newReactionCountingServer(t *testing.T) *reactionTestServer {
@@ -114,9 +115,7 @@ func TestResolveReactionEmoji_FallbackOnUnsupported(t *testing.T) {
 	// with tests that resolve reactions.
 	// Snapshot + restore the supported set so we can shrink it for one test.
 	orig := make(map[string]bool, len(zaloSupportedReactions))
-	for k, v := range zaloSupportedReactions {
-		orig[k] = v
-	}
+	maps.Copy(orig, zaloSupportedReactions)
 	t.Cleanup(func() {
 		zaloSupportedReactions = orig
 	})
@@ -125,9 +124,7 @@ func TestResolveReactionEmoji_FallbackOnUnsupported(t *testing.T) {
 	// advances to the fallback.
 	primary := statusReactionVariants["thinking"][0]
 	zaloSupportedReactions = map[string]bool{}
-	for k, v := range orig {
-		zaloSupportedReactions[k] = v
-	}
+	maps.Copy(zaloSupportedReactions, orig)
 	delete(zaloSupportedReactions, primary)
 
 	icon := resolveReactionEmoji("thinking")

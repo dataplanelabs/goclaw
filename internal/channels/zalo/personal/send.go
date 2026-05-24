@@ -6,12 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/mentions"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/typing"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/common"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
+	pkgproto "github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
 const maxTextLength = 2000
@@ -65,6 +68,9 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		}
 	}
 
+	rendered, allMentions := c.parseOutboundMentions(ctx, msg.ChatID, threadType, msg.Content)
+	msg.Content = rendered
+
 	quote := readQuoteFromMetadata(msg.Metadata)
 
 	if quote != nil {
@@ -72,7 +78,7 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		// the reply, then media (always unquoted — Zalo's /quote endpoint takes
 		// only text + qmsg* params, matching zca-js's two-request split).
 		if msg.Content != "" {
-			if err := c.sendChunkedText(ctx, sess, msg.ChatID, threadType, msg.Content, quote); err != nil {
+			if err := c.sendChunkedText(ctx, sess, msg.ChatID, threadType, msg.Content, quote, allMentions); err != nil {
 				return err
 			}
 		}
@@ -84,9 +90,30 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	// zalo-personal users see no regression.
 	c.sendMediaBestEffort(ctx, sess, msg.ChatID, threadType, msg.Media)
 	if msg.Content != "" {
-		return c.sendChunkedText(ctx, sess, msg.ChatID, threadType, msg.Content, nil)
+		return c.sendChunkedText(ctx, sess, msg.ChatID, threadType, msg.Content, nil, allMentions)
 	}
 	return nil
+}
+
+func (c *Channel) parseOutboundMentions(ctx context.Context, threadID string, threadType protocol.ThreadType, text string) (string, []pkgproto.Mention) {
+	if text == "" || !strings.Contains(text, "@[") {
+		return text, nil
+	}
+	resolve := func(marker string) (string, string, bool) {
+		name, ok := c.LookupGroupMember(ctx, threadID, marker)
+		if !ok {
+			return "", "", false
+		}
+		return marker, name, true
+	}
+	rendered, ms := mentions.ParseMarkers(text, resolve)
+	slog.Info("mention.parse",
+		"channel", "zalo_personal",
+		"thread_type", threadType,
+		"resolved", len(ms),
+		"unresolved", strings.Count(rendered, "@["),
+	)
+	return rendered, ms
 }
 
 // sendMediaBestEffort sends each attachment, logging (not returning) per-item
@@ -143,19 +170,30 @@ func (c *Channel) cacheOutboundMedia(msgID, kind, filePath, caption string) {
 	c.recordOutboundMessage(msgID, mediaPreview(kind, filePath, caption))
 }
 
-// sendChunkedText splits text and sends each chunk. When quote is non-nil it
-// attaches to the FIRST chunk only — continuation chunks ride unquoted to
-// match zca-js behavior and the zalo-oa convention. On ErrQuoteRejected
-// (e.g. quoted source deleted) the helper retries once without the quote so
-// the reply still lands.
-func (c *Channel) sendChunkedText(ctx context.Context, sess *protocol.Session, chatID string, threadType protocol.ThreadType, text string, quote *protocol.SendMessageQuote) error {
+// sendChunkedText sends one chunk per request. Quote attaches to chunk 0 only.
+// Mentions only ride on single-chunk sends — ChunkMarkdown's whitespace trim
+// + fence injection drift the offsets for chunks 1..N, so multi-chunk drops
+// mentions (text still renders as @DisplayName).
+func (c *Channel) sendChunkedText(ctx context.Context, sess *protocol.Session, chatID string, threadType protocol.ThreadType, text string, quote *protocol.SendMessageQuote, allMentions []pkgproto.Mention) error {
 	chunks := channels.ChunkMarkdown(text, maxTextLength)
 	for i, chunk := range chunks {
 		var q *protocol.SendMessageQuote
 		if i == 0 {
 			q = quote
 		}
-		msgID, err := c.sendChunkWithQuoteFallback(ctx, sess, chatID, threadType, chunk, q)
+		var chunkMentions []pkgproto.Mention
+		if len(allMentions) > 0 {
+			if len(chunks) == 1 {
+				chunkMentions = allMentions
+			} else if i == 0 {
+				slog.Warn("zalo_personal.mention.dropped_multichunk",
+					"chat_id", chatID,
+					"mentions", len(allMentions),
+					"chunks", len(chunks),
+					"hint", "multi-chunk send: highlight dropped, @DisplayName text intact")
+			}
+		}
+		msgID, err := c.sendChunkWithFallbacks(ctx, sess, chatID, threadType, chunk, q, chunkMentions)
 		if err != nil {
 			return err
 		}
@@ -164,23 +202,34 @@ func (c *Channel) sendChunkedText(ctx context.Context, sess *protocol.Session, c
 	return nil
 }
 
-// sendChunkWithQuoteFallback sends a single text chunk with an optional quote.
-// On ErrQuoteRejected (quote source deleted, expired, cross-thread, etc.) it
-// retries once without the quote and logs a structured warn so ops can
-// observe quote-drop rate. Mirrors zalo-oa's FamilyPayload retry at
-// internal/channels/zalo/oa/send.go::postCSWithQuoteFallback.
-func (c *Channel) sendChunkWithQuoteFallback(ctx context.Context, sess *protocol.Session, chatID string, threadType protocol.ThreadType, text string, quote *protocol.SendMessageQuote) (string, error) {
-	if quote == nil {
-		return protocol.SendMessage(ctx, sess, chatID, threadType, text, nil)
+// sendChunkWithFallbacks: ErrMentionRejected → retry without mentions;
+// ErrQuoteRejected → retry without quote.
+func (c *Channel) sendChunkWithFallbacks(ctx context.Context, sess *protocol.Session, chatID string, threadType protocol.ThreadType, text string, quote *protocol.SendMessageQuote, ms []pkgproto.Mention) (string, error) {
+	opts := protocol.SendOptions{Text: text, Quote: quote, Mentions: ms}
+	id, err := protocol.SendMessageWithOptions(ctx, sess, chatID, threadType, opts)
+	if errors.Is(err, protocol.ErrMentionRejected) {
+		slog.Warn("zalo_personal.mention.fallback_no_mention",
+			"chat_id", chatID,
+			"err", err,
+			"hint", "mention endpoint rejected payload; retrying via /sendmsg with rewritten text")
+		opts.Mentions = nil
+		id, err = protocol.SendMessageWithOptions(ctx, sess, chatID, threadType, opts)
 	}
-	id, err := protocol.SendMessage(ctx, sess, chatID, threadType, text, quote)
 	if errors.Is(err, protocol.ErrQuoteRejected) {
 		slog.Warn("zalo_personal.quote.fallback_no_quote",
 			"chat_id", chatID,
-			"quoted_msg_id", quote.MsgID,
+			"quoted_msg_id", quoteIDOrEmpty(quote),
 			"err", err,
 			"hint", "quoted source likely deleted/expired or wire format mismatch; retrying without quote")
-		return protocol.SendMessage(ctx, sess, chatID, threadType, text, nil)
+		opts.Quote = nil
+		id, err = protocol.SendMessageWithOptions(ctx, sess, chatID, threadType, opts)
 	}
 	return id, err
+}
+
+func quoteIDOrEmpty(q *protocol.SendMessageQuote) string {
+	if q == nil {
+		return ""
+	}
+	return q.MsgID
 }

@@ -263,11 +263,11 @@ func extractReactionReactor(summary string) string {
 
 func extractReactionPreview(summary string) string {
 	const sep = `on your reply: "`
-	idx := strings.Index(summary, sep)
-	if idx < 0 {
+	_, after, ok := strings.Cut(summary, sep)
+	if !ok {
 		return ""
 	}
-	rest := summary[idx+len(sep):]
+	rest := after
 	if end := strings.LastIndex(rest, `"`); end >= 0 {
 		return rest[:end]
 	}

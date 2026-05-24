@@ -64,15 +64,13 @@ func (c *Channel) runCatchUpSweepGoroutine() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	c.catchUpWG.Add(1)
-	go func() {
-		defer c.catchUpWG.Done()
+	c.catchUpWG.Go(func() {
 		select {
 		case <-c.stopCh:
 			cancel()
 		case <-ctx.Done():
 		}
-	}()
+	})
 
 	c.runCatchUpSweep(ctx)
 }
