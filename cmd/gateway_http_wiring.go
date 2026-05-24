@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -106,6 +107,15 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 		uiBase := d.cfg.Gateway.UIBaseURL
 		integrationsH := httpapi.NewIntegrationsHandler(d.pgStores.SecureCLI, googleClient, d.msgBus, uiBase)
 		d.server.SetIntegrationsHandler(integrationsH)
+
+		// B3-01 Phase 4: refresh worker — only starts when Google OAuth is
+		// configured (worker no-ops via internal guard otherwise).
+		tick := envDurationSeconds("GOCLAW_OAUTH_REFRESH_TICK_SECONDS", 24*time.Hour)
+		threshold := envDurationSeconds("GOCLAW_OAUTH_REFRESH_THRESHOLD_SECONDS", 7*24*time.Hour)
+		worker := oauth.NewRefreshWorker(d.pgStores.SecureCLI, googleClient, tick, threshold)
+		worker.Start(context.Background())
+		healthH := httpapi.NewOAuthRefreshHealthHandler(worker)
+		d.server.SetOAuthRefreshHealthHandler(healthH)
 	}
 
 	// Activity audit log API
@@ -376,4 +386,19 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 		backfillWebFetchSettings(context.Background(), d.pgStores.BuiltinTools)
 		applyBuiltinToolDisables(context.Background(), d.pgStores.BuiltinTools, d.toolsReg)
 	}
+}
+
+// envDurationSeconds reads an integer env var (seconds) and returns the
+// matching time.Duration; falls back to defaultDur when unset/invalid.
+func envDurationSeconds(key string, defaultDur time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultDur
+	}
+	var secs int
+	if _, err := fmt.Sscanf(v, "%d", &secs); err != nil || secs <= 0 {
+		slog.Warn("invalid duration env var, using default", "key", key, "value", v, "default", defaultDur)
+		return defaultDur
+	}
+	return time.Duration(secs) * time.Second
 }

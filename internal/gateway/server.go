@@ -477,6 +477,11 @@ func (s *Server) SetIntegrationsHandler(h *httpapi.IntegrationsHandler) {
 	s.handlers = append(s.handlers, h)
 }
 
+// SetOAuthRefreshHealthHandler sets the liveness probe for the OAuth refresh worker (B3-01 P4).
+func (s *Server) SetOAuthRefreshHealthHandler(h *httpapi.OAuthRefreshHealthHandler) {
+	s.handlers = append(s.handlers, h)
+}
+
 // SetAPIKeysHandler sets the API key management handler.
 func (s *Server) SetAPIKeysHandler(h *httpapi.APIKeysHandler) {
 	s.handlers = append(s.handlers, h)
