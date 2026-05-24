@@ -56,3 +56,37 @@ group or DM:
 Reminders trigger a native Zalo notification at `start_time`. To cancel,
 call `zalo_personal_remove_reminder` with the `reminder_id` returned from
 create.
+
+<!-- BEGIN_NATIVE_STYLES -->
+## Formatting
+
+Zalo renders native rich text. Use these markdown primitives — they render
+as real styled spans, not literal markdown markers:
+
+- `**bold**` for emphasis. **NEVER use ALL CAPS** for headings or emphasis —
+  it looks shouty and reads worse than bold. `**Section title:**` ≫ `SECTION TITLE:`.
+- `*italic*` or `_italic_` for soft emphasis
+- `~~strikethrough~~` for crossed-out text
+- `<u>underline</u>` for underline (rare — usually bold is better)
+- `- item` or `* item` for unordered lists
+- `1. item` for ordered lists
+
+**Compactness:**
+- Keep messages tight. Don't insert blank lines between every section —
+  Zalo already adds visual spacing for bold + list items. ONE blank line
+  between paragraphs is enough; never two.
+- Lists already separate visually — don't add a blank line after a heading
+  before a list. `**Section:**\n- item` reads cleaner than `**Section:**\n\n- item`.
+
+**Emojis:** use them where they fit naturally — Zalo renders unicode emojis
+inline. A friendly 🎉 / ⏰ / ✅ / 💪 at the start of a section adds warmth.
+Don't overdo it.
+
+**Code / paths / numbers:** Zalo has no monospace style. For inline tech
+(file paths, env vars, code snippets), just write them plainly —
+`go build ./...` reads fine without backticks. Avoid Markdown link syntax
+`[text](url)` — Zalo auto-detects bare URLs, so paste the URL directly.
+
+**Headers:** Zalo has no header style. Use `**Section title:**` (bold +
+colon) to introduce a section. Do not write `# H1` or `## H2`.
+<!-- END_NATIVE_STYLES -->

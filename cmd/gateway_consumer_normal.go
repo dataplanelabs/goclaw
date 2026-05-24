@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -397,6 +398,7 @@ func processNormalMessage(
 		ToolAllow:         msg.ToolAllow,
 		ExtraSystemPrompt: extraPrompt,
 		SkillFilter:       skillFilter,
+		EnableNativeStyles: parseBoolMetadata(msg.Metadata, "enable_native_styles"),
 	}, scheduler.ScheduleOpts{
 		MaxConcurrent: maxConcurrent,
 	})
@@ -548,4 +550,19 @@ func buildOutboundReplyMeta(in map[string]string, channelName string, isGroup bo
 		out["reply_to_message_id"] = mid
 	}
 	return out
+}
+
+// parseBoolMetadata reads a "true"/"false" metadata value. Missing or
+// unparseable values default to false — channels that opt into a feature
+// MUST stamp "true" explicitly.
+func parseBoolMetadata(meta map[string]string, key string) bool {
+	v, ok := meta[key]
+	if !ok {
+		return false
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false
+	}
+	return b
 }

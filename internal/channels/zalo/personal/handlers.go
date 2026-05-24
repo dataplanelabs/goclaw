@@ -25,6 +25,15 @@ import (
 // First match wins; Zalo's quote-reply frame puts the user's new text in `title`.
 var quotedReplyTextFields = []string{"title", "text", "msg", "content", "body", "description"}
 
+// boolMetadata renders a bool into a metadata string ("true"/"false") so
+// downstream consumers can ParseBool without a missing-key special case.
+func boolMetadata(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
+}
+
 func extractTextFromRawContent(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -475,10 +484,11 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 	}
 
 	metadata := map[string]string{
-		"message_id":   msg.Data.MsgID,
-		"cli_msg_id":   msg.Data.CliMsgID.String(),
-		"platform":     channels.TypeZaloPersonal,
-		"display_name": channels.SanitizeDisplayName(senderName),
+		"message_id":           msg.Data.MsgID,
+		"cli_msg_id":           msg.Data.CliMsgID.String(),
+		"platform":             channels.TypeZaloPersonal,
+		"display_name":         channels.SanitizeDisplayName(senderName),
+		"enable_native_styles": boolMetadata(c.enableNativeStyles),
 	}
 	if c.quoteInDM() {
 		if qm := buildSelfQuoteMetadata(&msg.Data, senderID); qm != nil {
@@ -573,12 +583,13 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 	}
 
 	metadata := map[string]string{
-		"message_id":   msg.Data.MsgID,
-		"cli_msg_id":   msg.Data.CliMsgID.String(),
-		"platform":     channels.TypeZaloPersonal,
-		"group_id":     threadID,
-		"display_name": channels.SanitizeDisplayName(senderName),
-		"sender_uid":   senderID,
+		"message_id":           msg.Data.MsgID,
+		"cli_msg_id":           msg.Data.CliMsgID.String(),
+		"platform":             channels.TypeZaloPersonal,
+		"group_id":             threadID,
+		"display_name":         channels.SanitizeDisplayName(senderName),
+		"sender_uid":           senderID,
+		"enable_native_styles": boolMetadata(c.enableNativeStyles),
 	}
 	if c.quoteInGroup() {
 		if qm := buildSelfQuoteMetadata(&msg.Data.TMessage, senderID); qm != nil {
