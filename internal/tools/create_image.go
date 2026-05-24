@@ -122,6 +122,26 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Res
 		}
 	}
 
+	// Defensive auto-inject: when the LLM omits reference_image_ids despite
+	// the user having uploaded an image in the current turn, inject those
+	// refs anyway. Triggered by weaker tool-using models (e.g. glm-5-turbo)
+	// that compose detailed prompts from read_image output but forget to
+	// carry the photo's id forward to create_image — producing generated
+	// images with random faces instead of the user's actual photo subject.
+	if len(refImages) == 0 {
+		if currentRefs := CurrentTurnUserImageRefsFromCtx(ctx); len(currentRefs) > 0 {
+			ids := make([]string, 0, len(currentRefs))
+			for _, r := range currentRefs {
+				ids = append(ids, r.ID)
+			}
+			refImages = resolveRefImageIDs(ctx, ids, currentRefs, maxRefImages)
+			if len(refImages) > 0 {
+				slog.Info("create_image: auto-injected user current-turn images as references",
+					"ref_count", len(refImages), "ref_ids", ids)
+			}
+		}
+	}
+
 	chain := ResolveMediaProviderChain(ctx, "create_image", "", "",
 		imageGenProviderPriority, imageGenModelDefaults, t.registry)
 
