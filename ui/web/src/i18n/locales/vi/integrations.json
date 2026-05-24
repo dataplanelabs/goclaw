@@ -1,0 +1,20 @@
+{
+  "section": {
+    "title": "Tích hợp người dùng",
+    "description": "Kết nối tài khoản cá nhân của bạn (Google Workspace, sẽ có thêm). Mỗi người dùng kết nối tài khoản riêng — thông tin xác thực được lưu theo từng người, mã hóa khi lưu trữ."
+  },
+  "google": {
+    "name": "Google Workspace",
+    "description": "Cần thiết cho: gws-calendar-read. Chỉ đọc lịch + metadata email; không có quyền ghi.",
+    "connectButton": "Kết nối Google",
+    "connecting": "Đang kết nối…",
+    "connectedAs": "Đã kết nối: {{email}}",
+    "disconnectButton": "Ngắt kết nối",
+    "disconnectConfirmTitle": "Ngắt kết nối tài khoản Google?",
+    "disconnectConfirmDescription": "Thao tác này sẽ gỡ {{email}} khỏi tài khoản. Bạn có thể kết nối lại bất cứ lúc nào.",
+    "disconnectConfirmAction": "Ngắt kết nối",
+    "errorPopupBlocked": "Cửa sổ popup bị chặn — vui lòng cho phép popup cho trang này rồi thử lại.",
+    "errorTimeout": "OAuth quá thời gian — vui lòng thử lại.",
+    "errorGeneric": "Không thể kết nối Google. Vui lòng thử lại."
+  }
+}

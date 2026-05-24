@@ -1,0 +1,20 @@
+{
+  "section": {
+    "title": "用户集成",
+    "description": "连接您的个人账户（Google Workspace，更多即将推出）。每位操作者连接自己的账户 — 凭据按用户存储，静态加密。"
+  },
+  "google": {
+    "name": "Google Workspace",
+    "description": "用于：gws-calendar-read。仅读取日历 + Gmail 元数据；无写入权限。",
+    "connectButton": "连接 Google 账户",
+    "connecting": "连接中…",
+    "connectedAs": "已连接为 {{email}}",
+    "disconnectButton": "断开连接",
+    "disconnectConfirmTitle": "断开 Google 账户连接?",
+    "disconnectConfirmDescription": "这将从此账户中移除 {{email}}。您可以随时重新连接。",
+    "disconnectConfirmAction": "断开连接",
+    "errorPopupBlocked": "弹出窗口被阻止 — 请允许此网站的弹出窗口后重试。",
+    "errorTimeout": "OAuth 超时 — 请重试。",
+    "errorGeneric": "无法连接 Google。请重试。"
+  }
+}
