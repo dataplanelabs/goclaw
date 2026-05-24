@@ -233,6 +233,12 @@ func isAdminMethod(method string) bool {
 		protocol.MethodChannelInstancesZaloOAExchangeCode,
 		protocol.MethodChannelInstancesZaloWebhookURL,
 
+		// Standby schedules — write paths.
+		protocol.MethodChannelsScheduleSet,
+		protocol.MethodChannelsScheduleDelete,
+		protocol.MethodChannelsThreadScheduleSet,
+		protocol.MethodChannelsThreadScheduleDelete,
+
 		// Pairing management (approve/revoke/list/deny require admin).
 		protocol.MethodPairingApprove,
 		protocol.MethodPairingDeny,
@@ -380,6 +386,9 @@ func isReadMethod(method string) bool {
 		protocol.MethodChannelsStatus,
 		protocol.MethodChannelInstancesList,
 		protocol.MethodChannelInstancesGet,
+		protocol.MethodChannelsScheduleGet,
+		protocol.MethodChannelsThreadScheduleList,
+		protocol.MethodChannelsThreadScheduleGet,
 
 		// Usage / quota
 		protocol.MethodUsageGet,
