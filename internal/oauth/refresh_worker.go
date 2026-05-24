@@ -24,14 +24,14 @@ import (
 // RefreshWorker proactively refreshes per-operator OAuth tokens.
 type RefreshWorker struct {
 	store          store.SecureCLIStore
-	google         *GoogleOAuthClient
+	google         *GoogleClientManager
 	tick           time.Duration
 	refreshThreshold time.Duration // refresh when expires_at < now + threshold
 	healthLastTick atomic.Int64   // unix-nano of last successful tick
 	binaryName     string         // "gws" for v0; extensible later
 }
 
-func NewRefreshWorker(s store.SecureCLIStore, g *GoogleOAuthClient, tick, refreshThreshold time.Duration) *RefreshWorker {
+func NewRefreshWorker(s store.SecureCLIStore, g *GoogleClientManager, tick, refreshThreshold time.Duration) *RefreshWorker {
 	if tick == 0 {
 		tick = 24 * time.Hour
 	}
@@ -54,10 +54,14 @@ func (w *RefreshWorker) Start(ctx context.Context) {
 }
 
 func (w *RefreshWorker) run(ctx context.Context) {
-	if w.google == nil || !w.google.IsConfigured() {
-		slog.Info("oauth.refresh_worker.disabled", "reason", "google_not_configured")
+	if w.google == nil {
+		slog.Info("oauth.refresh_worker.disabled", "reason", "google_manager_nil")
 		return
 	}
+	// Note: env-fallback presence is not strictly required — tenants may have
+	// their own per-tenant config. We let the per-row refresh path handle
+	// "not configured for this tenant" by returning an error (which counts
+	// as transient and is retried next tick).
 	// Initial delay to settle startup; honors test override via tick<1min.
 	initialDelay := 60 * time.Second
 	if w.tick < initialDelay {
@@ -142,7 +146,7 @@ func (w *RefreshWorker) handleRow(ctx context.Context, row store.SecureCLIUserCr
 		return actionErrored
 	}
 
-	_, newRefresh, newExpiry, err := w.google.RefreshToken(ctx, refreshToken)
+	_, newRefresh, newExpiry, err := w.google.RefreshToken(ctx, row.TenantID, refreshToken)
 	if err != nil {
 		if isInvalidGrant(err) {
 			// Token revoked — drop the row, UI flips to disconnected next /me poll.

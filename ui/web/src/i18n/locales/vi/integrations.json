@@ -16,5 +16,25 @@
     "errorPopupBlocked": "Cửa sổ popup bị chặn — vui lòng cho phép popup cho trang này rồi thử lại.",
     "errorTimeout": "OAuth quá thời gian — vui lòng thử lại.",
     "errorGeneric": "Không thể kết nối Google. Vui lòng thử lại."
+  },
+  "admin": {
+    "googleConfigTitle": "Cấu hình Google OAuth",
+    "googleConfigDescription": "Chỉ admin. Dán thông tin OAuth client từ Google Cloud Console. Lưu mã hóa, theo từng tenant.",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client Secret",
+    "clientSecretPlaceholderExisting": "Để trống nếu giữ secret hiện tại",
+    "clientSecretPlaceholderNew": "Từ Google Cloud Console",
+    "redirectUrlLabel": "Authorized Redirect URI",
+    "redirectUrlHint": "Phải khớp với URI cấu hình trên OAuth client trong Google Cloud Console. Ví dụ: https://<host>/v1/auth/google/callback",
+    "statusConfigured": "Đã cấu hình",
+    "statusInheritsFromEnv": "Kế thừa từ biến môi trường",
+    "statusNotConfigured": "Chưa cấu hình",
+    "saveButton": "Lưu",
+    "clearButton": "Xóa (về biến môi trường)",
+    "clearConfirmTitle": "Xóa cấu hình Google OAuth?",
+    "clearConfirmDescription": "Thao tác này gỡ thông tin OAuth client của tenant. Nếu có biến môi trường fallback thì sẽ dùng; ngược lại không người dùng nào kết nối được Google cho đến khi cấu hình lại.",
+    "saveSuccess": "Đã lưu cấu hình Google OAuth",
+    "clearSuccess": "Đã xóa cấu hình Google OAuth",
+    "saveError": "Không thể lưu cấu hình"
   }
 }

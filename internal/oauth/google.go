@@ -173,12 +173,24 @@ func (c *GoogleOAuthClient) PendingFlowsCount() int {
 }
 
 func (c *GoogleOAuthClient) fetchUserEmail(ctx context.Context, tok *oauth2.Token) (string, error) {
+	return fetchUserEmailWithClient(ctx, c.httpClient, tok)
+}
+
+// fetchUserEmail is the package-level helper used by both GoogleOAuthClient
+// and GoogleClientManager (B3-01.1). Uses a default 15s-timeout client.
+var defaultUserinfoClient = &http.Client{Timeout: 15 * time.Second}
+
+func fetchUserEmail(ctx context.Context, tok *oauth2.Token) (string, error) {
+	return fetchUserEmailWithClient(ctx, defaultUserinfoClient, tok)
+}
+
+func fetchUserEmailWithClient(ctx context.Context, httpClient *http.Client, tok *oauth2.Token) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, userinfoURL, nil)
 	if err != nil {
 		return "", err
 	}
 	tok.SetAuthHeader(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}

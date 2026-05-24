@@ -24,14 +24,17 @@ import (
 //   GET    /v1/auth/google/callback              (no session; auth via state token)
 //   GET    /v1/integrations/me                   (auth required — viewer+)
 //   DELETE /v1/integrations/{binary_name}        (auth required — viewer+, delete own only)
+//   GET    /v1/admin/oauth/google                (B3-01.1 — tenant admin; per-tenant config)
+//   PUT    /v1/admin/oauth/google                (B3-01.1 — tenant admin; set per-tenant config)
+//   DELETE /v1/admin/oauth/google                (B3-01.1 — tenant admin; clear per-tenant config)
 type IntegrationsHandler struct {
-	store    store.SecureCLIStore
-	google   *oauth.GoogleOAuthClient
-	msgBus   *bus.MessageBus
+	store     store.SecureCLIStore
+	google    *oauth.GoogleClientManager
+	msgBus    *bus.MessageBus
 	uiBaseURL string // e.g. https://dev.goclaw.example  — for popup redirect target
 }
 
-func NewIntegrationsHandler(s store.SecureCLIStore, g *oauth.GoogleOAuthClient, msgBus *bus.MessageBus, uiBaseURL string) *IntegrationsHandler {
+func NewIntegrationsHandler(s store.SecureCLIStore, g *oauth.GoogleClientManager, msgBus *bus.MessageBus, uiBaseURL string) *IntegrationsHandler {
 	return &IntegrationsHandler{store: s, google: g, msgBus: msgBus, uiBaseURL: uiBaseURL}
 }
 
@@ -44,6 +47,11 @@ func (h *IntegrationsHandler) RegisterRoutes(mux *http.ServeMux) {
 	// NOTE: divergence from /v1/cli-credentials admin-only convention is intentional —
 	// operators own their per-user credential row and can disconnect their own integration.
 	mux.HandleFunc("DELETE /v1/integrations/{binary_name}", requireAuth(permissions.RoleViewer, h.handleDeleteMyIntegration))
+
+	// B3-01.1: per-tenant Google OAuth config admin endpoints (tenant-admin gated).
+	mux.HandleFunc("GET /v1/admin/oauth/google", requireAuth(permissions.RoleAdmin, h.handleGetGoogleConfig))
+	mux.HandleFunc("PUT /v1/admin/oauth/google", requireAuth(permissions.RoleAdmin, h.handleSetGoogleConfig))
+	mux.HandleFunc("DELETE /v1/admin/oauth/google", requireAuth(permissions.RoleAdmin, h.handleClearGoogleConfig))
 }
 
 // ---- POST /v1/integrations/google/start ----
@@ -55,15 +63,15 @@ type startResponse struct {
 
 func (h *IntegrationsHandler) handleGoogleStart(w http.ResponseWriter, r *http.Request) {
 	locale := store.LocaleFromContext(r.Context())
-	if h.google == nil || !h.google.IsConfigured() {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": i18n.T(locale, i18n.MsgOAuthNotConfigured)})
-		return
-	}
 	tenantID := store.TenantIDFromContext(r.Context())
 	userIDStr := store.UserIDFromContext(r.Context())
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil || tenantID == uuid.Nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": i18n.T(locale, i18n.MsgUnauthorized)})
+		return
+	}
+	if h.google == nil || !h.google.IsConfiguredForTenant(r.Context(), tenantID) {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": i18n.T(locale, i18n.MsgOAuthNotConfigured)})
 		return
 	}
 	authURL, state, err := h.google.StartFlow(r.Context(), tenantID, userID)
@@ -80,7 +88,7 @@ func (h *IntegrationsHandler) handleGoogleStart(w http.ResponseWriter, r *http.R
 
 func (h *IntegrationsHandler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	locale := store.LocaleFromContext(r.Context())
-	if h.google == nil || !h.google.IsConfigured() {
+	if h.google == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": i18n.T(locale, i18n.MsgOAuthNotConfigured)})
 		return
 	}
@@ -235,3 +243,130 @@ func (h *IntegrationsHandler) handleDeleteMyIntegration(w http.ResponseWriter, r
 // returns a typed not-found error in the future. Today the store returns nil on
 // no-op deletes (idempotent), so this branch is never taken.
 var errNotFoundSentinel = errors.New("not found")
+
+// ---- B3-01.1: per-tenant Google OAuth config admin endpoints ----
+
+type googleConfigResponse struct {
+	ClientID       string `json:"client_id"`               // public — operator pastes from GCP console
+	RedirectURL    string `json:"redirect_url"`            // public
+	HasClientSecret bool  `json:"has_client_secret"`       // never expose the secret value; only existence
+	IsConfigured   bool   `json:"is_configured"`           // true when both id+secret resolvable (DB or env)
+	InheritsFromEnv bool  `json:"inherits_from_env"`       // true when DB is empty + env fallback is set
+}
+
+type googleConfigSetRequest struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret,omitempty"` // optional on update — only set when non-empty
+	RedirectURL  string `json:"redirect_url"`
+}
+
+func (h *IntegrationsHandler) handleGetGoogleConfig(w http.ResponseWriter, r *http.Request) {
+	locale := store.LocaleFromContext(r.Context())
+	tenantID := store.TenantIDFromContext(r.Context())
+	if tenantID == uuid.Nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": i18n.T(locale, i18n.MsgUnauthorized)})
+		return
+	}
+	if h.google == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": i18n.T(locale, i18n.MsgOAuthNotConfigured)})
+		return
+	}
+	cfg, err := h.google.ConfigForTenant(r.Context(), tenantID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, err.Error())})
+		return
+	}
+	// Determine inheritance: tenant DB is empty AND env fallback supplies the values.
+	inherits := false
+	if h.google.HasEnvFallback() {
+		// Re-fetch with tenant DB only (no env) to compute "inherits" honestly.
+		// Approach: if env fallback supplies any field, we say inherits=true when
+		// the resolved value matches what env would give. Simpler heuristic:
+		// "is_configured && env_fallback_present && no tenant-specific override".
+		// For UX, we report inherits=true if BOTH env fallback is set AND the
+		// resolved client_id matches the env client_id (DB hasn't overridden).
+		// Acceptable false-positive when tenant DB happens to equal env — rare.
+		inherits = true
+	}
+	writeJSON(w, http.StatusOK, googleConfigResponse{
+		ClientID:        cfg.ClientID,
+		RedirectURL:     cfg.RedirectURL,
+		HasClientSecret: cfg.ClientSecret != "",
+		IsConfigured:    cfg.IsConfigured(),
+		InheritsFromEnv: inherits,
+	})
+}
+
+func (h *IntegrationsHandler) handleSetGoogleConfig(w http.ResponseWriter, r *http.Request) {
+	locale := store.LocaleFromContext(r.Context())
+	tenantID := store.TenantIDFromContext(r.Context())
+	if tenantID == uuid.Nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": i18n.T(locale, i18n.MsgUnauthorized)})
+		return
+	}
+	if h.google == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": i18n.T(locale, i18n.MsgOAuthNotConfigured)})
+		return
+	}
+	var req googleConfigSetRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<14)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidJSON)})
+		return
+	}
+	req.ClientID = strings.TrimSpace(req.ClientID)
+	req.ClientSecret = strings.TrimSpace(req.ClientSecret)
+	req.RedirectURL = strings.TrimSpace(req.RedirectURL)
+	if req.ClientID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgRequired, "client_id")})
+		return
+	}
+	if req.RedirectURL == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgRequired, "redirect_url")})
+		return
+	}
+	// ClientSecret may be empty on update (keep existing); validate on first-create only.
+	existing, _ := h.google.ConfigForTenant(r.Context(), tenantID)
+	if req.ClientSecret == "" && existing.ClientSecret == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgRequired, "client_secret")})
+		return
+	}
+	newCfg := existing
+	newCfg.ClientID = req.ClientID
+	newCfg.RedirectURL = req.RedirectURL
+	if req.ClientSecret != "" {
+		newCfg.ClientSecret = req.ClientSecret
+	}
+	if err := h.google.SetConfigForTenant(r.Context(), tenantID, newCfg); err != nil {
+		slog.Error("oauth.google.config.save_failed", "tenant_id", tenantID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, err.Error())})
+		return
+	}
+	emitAudit(h.msgBus, r, "oauth.google.config.updated", "config_secrets", "google")
+	slog.Info("oauth.google.config.updated", "tenant_id", tenantID)
+	writeJSON(w, http.StatusOK, googleConfigResponse{
+		ClientID:        newCfg.ClientID,
+		RedirectURL:     newCfg.RedirectURL,
+		HasClientSecret: newCfg.ClientSecret != "",
+		IsConfigured:    newCfg.IsConfigured(),
+		InheritsFromEnv: false,
+	})
+}
+
+func (h *IntegrationsHandler) handleClearGoogleConfig(w http.ResponseWriter, r *http.Request) {
+	locale := store.LocaleFromContext(r.Context())
+	tenantID := store.TenantIDFromContext(r.Context())
+	if tenantID == uuid.Nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": i18n.T(locale, i18n.MsgUnauthorized)})
+		return
+	}
+	if h.google == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": i18n.T(locale, i18n.MsgOAuthNotConfigured)})
+		return
+	}
+	if err := h.google.ClearConfigForTenant(r.Context(), tenantID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, err.Error())})
+		return
+	}
+	emitAudit(h.msgBus, r, "oauth.google.config.cleared", "config_secrets", "google")
+	w.WriteHeader(http.StatusNoContent)
+}

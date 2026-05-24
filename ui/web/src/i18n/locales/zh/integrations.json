@@ -16,5 +16,25 @@
     "errorPopupBlocked": "弹出窗口被阻止 — 请允许此网站的弹出窗口后重试。",
     "errorTimeout": "OAuth 超时 — 请重试。",
     "errorGeneric": "无法连接 Google。请重试。"
+  },
+  "admin": {
+    "googleConfigTitle": "Google OAuth 配置",
+    "googleConfigDescription": "仅管理员。从 Google Cloud Console 粘贴 OAuth 客户端凭据。按租户加密存储。",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client Secret",
+    "clientSecretPlaceholderExisting": "留空以保留现有 secret",
+    "clientSecretPlaceholderNew": "来自 Google Cloud Console",
+    "redirectUrlLabel": "授权重定向 URI",
+    "redirectUrlHint": "必须与 Google Cloud Console 中 OAuth 客户端配置的 URI 匹配。例如：https://<host>/v1/auth/google/callback",
+    "statusConfigured": "已配置",
+    "statusInheritsFromEnv": "继承自环境变量",
+    "statusNotConfigured": "未配置",
+    "saveButton": "保存",
+    "clearButton": "清除（还原至环境变量）",
+    "clearConfirmTitle": "清除 Google OAuth 配置？",
+    "clearConfirmDescription": "这将删除本租户的 Google OAuth 客户端凭据。如设置了环境变量 fallback，则使用它；否则在重新配置之前，没有操作员可以连接 Google。",
+    "saveSuccess": "Google OAuth 配置已保存",
+    "clearSuccess": "Google OAuth 配置已清除",
+    "saveError": "无法保存配置"
   }
 }
