@@ -76,7 +76,7 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 		requireMention = *cfg.RequireMention
 	}
 
-	enableNativeStyles := true
+	enableNativeStyles := false
 	if cfg.EnableNativeStyles != nil {
 		enableNativeStyles = *cfg.EnableNativeStyles
 	}

@@ -262,7 +262,7 @@
     },
     "enable_native_styles": {
       "label": "原生文本样式",
-      "help": "将 markdown 渲染为 Zalo 原生样式跨度（加粗/斜体/删除线/下划线/列表）通过 textProperties 字段。关闭 = 完全剥离 markdown（v3.21.10 行为）。"
+      "help": "将 markdown 渲染为 Zalo 原生样式跨度（加粗/斜体/删除线/下划线/列表）通过 textProperties 字段。默认关闭 — 如果你的 LLM 能稳定输出 markdown，可启用。关闭 = 完全剥离 markdown（v3.21.10 行为）。"
     },
     "media_max_mb": { "label": "最大媒体大小 (MB)" },
     "link_preview": { "label": "链接预览" },

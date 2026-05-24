@@ -262,7 +262,7 @@
     },
     "enable_native_styles": {
       "label": "Định dạng văn bản gốc",
-      "help": "Hiển thị markdown (in đậm/in nghiêng/gạch ngang/gạch chân/danh sách) thành định dạng gốc của Zalo qua trường textProperties. Tắt = loại bỏ toàn bộ markdown (như v3.21.10)."
+      "help": "Hiển thị markdown (in đậm/in nghiêng/gạch ngang/gạch chân/danh sách) thành định dạng gốc của Zalo qua trường textProperties. Mặc định TẮT — bật nếu LLM bạn dùng xuất markdown ổn định. Tắt = loại bỏ toàn bộ markdown (như v3.21.10)."
     },
     "media_max_mb": { "label": "Kích thước media tối đa (MB)" },
     "link_preview": { "label": "Xem trước liên kết" },

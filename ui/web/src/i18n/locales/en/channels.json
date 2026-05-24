@@ -298,7 +298,7 @@
     },
     "enable_native_styles": {
       "label": "Native text styles",
-      "help": "Render LLM markdown (bold/italic/strike/underline/lists) as native Zalo styled spans via textProperties. Off = full markdown strip (legacy v3.21.10 behavior)."
+      "help": "Render LLM markdown (bold/italic/strike/underline/lists) as native Zalo styled spans via textProperties. Default OFF — opt in if your LLM emits markdown reliably. Off = full markdown strip (legacy v3.21.10 behavior)."
     },
     "media_max_mb": { "label": "Max Media Size (MB)" },
     "link_preview": { "label": "Link Preview" },
