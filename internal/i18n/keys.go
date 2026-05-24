@@ -379,4 +379,14 @@ const (
 	TeamCaptureRPCInvalidConfig = "team_capture.rpc.invalid_config"
 	TeamEvalNotFound            = "team_eval.not_found"
 	TeamEvalJudgeError          = "team_eval.judge_error"
+
+	// --- Trace retry ---
+	TraceRetryPayloadOversize = "trace.retry.payload_oversize"
+	TraceRetryLocked          = "trace.retry.locked"
+	TraceRetryAgentGone       = "trace.retry.agent_gone"
+	TraceRetryProviderGone    = "trace.retry.provider_gone"
+	TraceRetryPayloadMissing  = "trace.retry.payload_missing"
+	TraceRetryConfirmRequired = "trace.retry.confirm_required"
+	TraceRetryStarted         = "trace.retry.started"
+	TraceRetryNotFailed       = "trace.retry.not_failed"
 )

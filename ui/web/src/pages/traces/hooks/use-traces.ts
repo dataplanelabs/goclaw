@@ -58,5 +58,15 @@ export function useTraces(filters: TraceFilters = {}) {
     [http],
   );
 
-  return { traces, total, loading, fetching: isFetching, refresh: invalidate, getTrace };
+  const retryTrace = useCallback(
+    async ({ traceId, confirmDoubleSend }: { traceId: string; confirmDoubleSend?: boolean }) => {
+      const qs = confirmDoubleSend ? "?confirm_double_send=true" : "";
+      return http.post<{ message: string; original_trace_id: string; provider: string }>(
+        `/v1/traces/${traceId}/retry${qs}`,
+      );
+    },
+    [http],
+  );
+
+  return { traces, total, loading, fetching: isFetching, refresh: invalidate, getTrace, retryTrace };
 }

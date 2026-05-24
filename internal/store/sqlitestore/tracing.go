@@ -62,7 +62,7 @@ func (s *SQLiteTracingStore) GetTrace(ctx context.Context, traceID uuid.UUID) (*
 	query := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0), span_count, llm_call_count, tool_call_count,
-		 status, error, metadata, tags, team_id, created_at
+		 status, error, metadata, tags, team_id, outbound_emitted, created_at
 		 FROM traces WHERE id = ?`
 	qArgs := []any{traceID}
 	if !store.IsCrossTenant(ctx) {
@@ -131,7 +131,7 @@ func (s *SQLiteTracingStore) ListTraces(ctx context.Context, opts store.TraceLis
 	q := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0), span_count, llm_call_count, tool_call_count,
-		 status, error, metadata, tags, team_id, created_at
+		 status, error, metadata, tags, team_id, outbound_emitted, created_at
 		 FROM traces` + where +
 		fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d OFFSET %d", limit, opts.Offset)
 
@@ -147,7 +147,7 @@ func (s *SQLiteTracingStore) ListChildTraces(ctx context.Context, parentTraceID 
 	q := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0), span_count, llm_call_count, tool_call_count,
-		 status, error, metadata, tags, team_id, created_at
+		 status, error, metadata, tags, team_id, outbound_emitted, created_at
 		 FROM traces WHERE parent_trace_id = ?`
 	qArgs := []any{parentTraceID}
 	if !store.IsCrossTenant(ctx) {
@@ -165,6 +165,18 @@ func (s *SQLiteTracingStore) ListChildTraces(ctx context.Context, parentTraceID 
 	}
 	defer rows.Close()
 	return scanTraceRows(rows)
+}
+
+func (s *SQLiteTracingStore) SetOutboundEmitted(ctx context.Context, traceID uuid.UUID) error {
+	tenantID := store.TenantIDFromContext(ctx)
+	if tenantID == uuid.Nil {
+		return fmt.Errorf("tenant_id required")
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE traces SET outbound_emitted = 1
+		 WHERE id = ? AND tenant_id = ? AND outbound_emitted = 0`,
+		traceID, tenantID)
+	return err
 }
 
 func (s *SQLiteTracingStore) GetMonthlyAgentCost(ctx context.Context, agentID uuid.UUID, year int, month time.Month) (float64, error) {

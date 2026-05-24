@@ -91,7 +91,7 @@ export function TracesPage() {
 
   const [abortingRunId, setAbortingRunId] = useState<string | null>(null);
 
-  const { traces, total, loading, fetching, refresh, getTrace } = useTraces({
+  const { traces, total, loading, fetching, refresh, getTrace, retryTrace } = useTraces({
     agentId: agentFilter,
     channel: channelFilter,
     limit: pageSize,
@@ -312,6 +312,8 @@ export function TracesPage() {
           traceId={selectedTraceId}
           onClose={() => setSelectedTraceId(null)}
           getTrace={getTrace}
+          retryTrace={retryTrace}
+          onRetried={() => refresh()}
           onNavigateTrace={setSelectedTraceId}
           onAbortRun={handleAbortRun}
         />

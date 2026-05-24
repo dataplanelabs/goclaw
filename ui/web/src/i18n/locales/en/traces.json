@@ -83,5 +83,23 @@
     "abortNotFound": "Run already finished",
     "abortUnauthorized": "Not authorized to stop this run",
     "abortFailed": "Failed to stop run"
+  },
+  "retry": {
+    "button": "Retry",
+    "success": "Retry started — original trace #{{shortId}}",
+    "confirm": {
+      "title": "Retry this run?",
+      "body": "This run already sent a message to the channel. Retrying may double-send. Continue?",
+      "action": "Retry anyway",
+      "cancel": "Cancel"
+    },
+    "error": {
+      "locked": "Retry already in progress.",
+      "agent_gone": "The agent for this trace was deleted.",
+      "provider_gone": "The provider for this trace was removed.",
+      "payload_missing": "Replay data no longer available.",
+      "payload_oversize": "Payload too large to replay (>2 MB).",
+      "generic": "Retry failed: {{message}}"
+    }
   }
 }

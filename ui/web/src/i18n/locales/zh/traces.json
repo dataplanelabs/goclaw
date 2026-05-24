@@ -82,5 +82,23 @@
     "unknown": "其他"
   },
   "unnamed": "未命名",
-  "stopRun": "停止运行"
+  "stopRun": "停止运行",
+  "retry": {
+    "button": "重试",
+    "success": "重试已开始——原追踪 #{{shortId}}",
+    "confirm": {
+      "title": "重试此次运行？",
+      "body": "此次运行已向频道发送过消息。重试可能造成重复发送。是否继续？",
+      "action": "仍然重试",
+      "cancel": "取消"
+    },
+    "error": {
+      "locked": "重试正在进行中。",
+      "agent_gone": "此追踪的智能体已被删除。",
+      "provider_gone": "此追踪的提供方已被移除。",
+      "payload_missing": "重放数据已不可用。",
+      "payload_oversize": "负载过大，无法重试（>2 MB）。",
+      "generic": "重试失败：{{message}}"
+    }
+  }
 }

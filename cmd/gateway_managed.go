@@ -251,6 +251,7 @@ func wireExtras(
 		MediaStore:             mediaStore,
 		ModelPricing:           appCfg.Telemetry.ModelPricing,
 		TracingStore:           stores.Tracing,
+		ReplayPayloadStore:     stores.ReplayPayloads,
 		MemoryStore:            stores.Memory,
 		ContactStore:           stores.Contacts,
 		TenantStore:            stores.Tenants,

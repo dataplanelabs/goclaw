@@ -375,6 +375,8 @@ func runGateway() {
 	defer exportTokenStore.Stop()
 	agentsH, skillsH, tracesH, mcpH, channelInstancesH, providersH, builtinToolsH, pendingMessagesH, teamEventsH, secureCLIH, secureCLIGrantH, mcpUserCredsH := wireHTTP(pgStores, cfg.Agents.Defaults.Workspace, dataDir, bundledSkillsDir, msgBus, toolsReg, providerRegistry, modelReg, permPE.IsOwner, gatewayAddr, mcpToolLister)
 
+	wireTraceRetry(tracesH, pgStores, agentRouter)
+
 	// Wire dependencies for system prompt preview parity.
 	if agentsH != nil {
 		agentsH.SetPreviewDeps(toolsReg, skillsLoader)
@@ -480,6 +482,7 @@ func runGateway() {
 
 	// Channel manager
 	channelMgr := channels.NewManager(msgBus)
+	channelMgr.SetTracingStore(pgStores.Tracing)
 	deps.channelMgr = channelMgr
 
 	// Wire channel member resolver into permission grant paths (WS + HTTP) so

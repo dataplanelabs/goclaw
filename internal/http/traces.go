@@ -17,14 +17,40 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
-// TracesHandler handles LLM trace listing and detail endpoints.
+// TracesHandler handles LLM trace listing, detail, and retry endpoints.
 type TracesHandler struct {
-	tracing store.TracingStore
+	tracing     store.TracingStore
+	agents      store.AgentStore
+	replay      store.ReplayPayloadStore
+	retryLocks  store.RetryLockStore
+	tenants     store.TenantStore
+	router      RetryAgentRunner
+}
+
+// RetryAgentRunner is the subset of agent.Router needed to invoke a retry run.
+type RetryAgentRunner interface {
+	GetAgent(ctx context.Context, agentID string) (RetryAgent, error)
+}
+
+// RetryAgent is the subset of agent.Agent the retry handler depends on.
+type RetryAgent interface {
+	UUID() uuid.UUID
+	ProviderName() string
 }
 
 // NewTracesHandler creates a handler for trace management endpoints.
 func NewTracesHandler(tracing store.TracingStore) *TracesHandler {
 	return &TracesHandler{tracing: tracing}
+}
+
+// SetRetryDeps wires the dependencies required by POST /v1/traces/{id}/retry.
+// Retry route is registered only when all are non-nil.
+func (h *TracesHandler) SetRetryDeps(agents store.AgentStore, replay store.ReplayPayloadStore, retryLocks store.RetryLockStore, tenants store.TenantStore, router RetryAgentRunner) {
+	h.agents = agents
+	h.replay = replay
+	h.retryLocks = retryLocks
+	h.tenants = tenants
+	h.router = router
 }
 
 // RegisterRoutes registers trace routes on the given mux.
@@ -33,6 +59,13 @@ func (h *TracesHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/traces/{traceID}/export", h.authMiddleware(h.handleExport))
 	mux.HandleFunc("GET /v1/traces/{traceID}", h.authMiddleware(h.handleGet))
 	mux.HandleFunc("GET /v1/costs/summary", h.authMiddleware(h.handleCostSummary))
+	if h.canRetry() {
+		mux.HandleFunc("POST /v1/traces/{traceID}/retry", h.authMiddleware(h.handleRetry))
+	}
+}
+
+func (h *TracesHandler) canRetry() bool {
+	return h.agents != nil && h.replay != nil && h.retryLocks != nil && h.tenants != nil && h.router != nil
 }
 
 func (h *TracesHandler) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
