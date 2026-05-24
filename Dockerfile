@@ -4,6 +4,15 @@
 # Must be declared before first FROM to use in stage selector.
 ARG ENABLE_EMBEDUI=false
 
+# GWS_CLI_VERSION must be declared in global scope so it can be used in a
+# stage selector below. buildx no longer supports variable expansion in
+# COPY --from (see https://github.com/moby/buildkit/pull/4034).
+ARG GWS_CLI_VERSION=0.1.0
+
+# Pre-pull the gws-cli site-packages as a named stage so the downstream
+# COPY --from=gws-cli can use a static stage name (no ARG in --from).
+FROM ghcr.io/dataplanelabs/gws-cli:${GWS_CLI_VERSION} AS gws-cli
+
 # ── Stage 0: Build Web UI ──
 # BuildKit skips this stage entirely when ENABLE_EMBEDUI=false
 # because no downstream stage in the dependency graph references it.
@@ -128,8 +137,7 @@ COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 # The image already has python3 from the full-skills layer. We copy the package
 # from the published gws-cli image to /app/gws-cli/ and symlink /usr/local/bin/gws
 # → `python3 -m gws_cli` shim so `secure_cli_run` can invoke `gws`.
-ARG GWS_CLI_VERSION=0.1.0
-COPY --from=ghcr.io/dataplanelabs/gws-cli:${GWS_CLI_VERSION} /app/site-packages /app/gws-cli/site-packages
+COPY --from=gws-cli /app/site-packages /app/gws-cli/site-packages
 RUN set -eux; \
     if [ "$ENABLE_FULL_SKILLS" = "true" ]; then \
         printf '#!/bin/sh\nexec python3 -c "import sys; sys.path.insert(0, \"/app/gws-cli/site-packages\"); from gws_cli.cli import main; main()" "$@"\n' > /usr/local/bin/gws; \
