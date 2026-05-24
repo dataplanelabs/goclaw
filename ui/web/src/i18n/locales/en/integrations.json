@@ -1,0 +1,20 @@
+{
+  "section": {
+    "title": "User Integrations",
+    "description": "Connect your personal accounts (Google Workspace, more coming). Each operator connects their own account — credentials are stored per-user, encrypted at rest."
+  },
+  "google": {
+    "name": "Google Workspace",
+    "description": "Required for: gws-calendar-read. Reads calendar + gmail metadata only; no write access.",
+    "connectButton": "Connect Google Account",
+    "connecting": "Connecting…",
+    "connectedAs": "Connected as {{email}}",
+    "disconnectButton": "Disconnect",
+    "disconnectConfirmTitle": "Disconnect Google account?",
+    "disconnectConfirmDescription": "This removes {{email}} from this account. You can reconnect any time.",
+    "disconnectConfirmAction": "Disconnect",
+    "errorPopupBlocked": "Popup was blocked — please allow popups for this site and try again.",
+    "errorTimeout": "OAuth timed out — please try again.",
+    "errorGeneric": "Could not connect Google. Please try again."
+  }
+}

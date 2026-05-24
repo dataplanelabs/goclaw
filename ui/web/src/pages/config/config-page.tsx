@@ -21,6 +21,7 @@ import { TtsSection } from "./sections/tts-section";
 import { CronSection } from "./sections/cron-section";
 import { TelemetrySection } from "./sections/telemetry-section";
 import { BindingsSection } from "./sections/bindings-section";
+import { UserCredentialsSection } from "./sections/user-credentials-section";
 
 export function ConfigPage() {
   const { t } = useTranslation("config");
@@ -151,6 +152,7 @@ export function ConfigPage() {
         </TabsContent>
 
         <TabsContent value="integrations" className="space-y-4">
+          <UserCredentialsSection />
           <TtsSection data={config.tts as any} />
           <CronSection
             data={config.cron as any}
