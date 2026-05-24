@@ -250,38 +250,57 @@ func (c *Channel) cacheOutboundMedia(msgID, kind, filePath, caption string) {
 }
 
 // sendChunkedText sends one chunk per request. Quote attaches to chunk 0 only.
-// Mentions only ride on single-chunk sends — ChunkMarkdown's whitespace trim
-// + fence injection drift the offsets for chunks 1..N, so multi-chunk drops
-// mentions (text still renders as @DisplayName).
+// Mentions/styles: on single-chunk sends, everything rides through. On
+// multi-chunk, mentions/styles fitting entirely within chunk 0 ride on
+// chunk 0 (positions are still valid since ChunkMarkdown only trims AFTER
+// chunk 0's boundary — head text is untouched). Entries whose
+// [Pos, Pos+Len) extends past chunk 0's UTF-16 length are dropped with a
+// warn log. Critical for the asker-prepend mention which always sits at
+// position 0 — it should not be dropped just because the reply is long.
 func (c *Channel) sendChunkedText(ctx context.Context, sess *protocol.Session, chatID string, threadType protocol.ThreadType, text string, quote *protocol.SendMessageQuote, allMentions []pkgproto.Mention, allStyles []common.Style) error {
 	chunks := channels.ChunkMarkdown(text, maxTextLength)
+	chunk0UTF16 := 0
+	if len(chunks) > 0 {
+		chunk0UTF16 = pkgproto.UTF16Len(chunks[0])
+	}
 	for i, chunk := range chunks {
 		var q *protocol.SendMessageQuote
 		if i == 0 {
 			q = quote
 		}
 		var chunkMentions []pkgproto.Mention
-		if len(allMentions) > 0 {
+		if len(allMentions) > 0 && i == 0 {
 			if len(chunks) == 1 {
 				chunkMentions = allMentions
-			} else if i == 0 {
-				slog.Warn("zalo_personal.mention.dropped_multichunk",
-					"chat_id", chatID,
-					"mentions", len(allMentions),
-					"chunks", len(chunks),
-					"hint", "multi-chunk send: highlight dropped, @DisplayName text intact")
+			} else {
+				kept, dropped := mentionsFittingChunk0(allMentions, chunk0UTF16)
+				chunkMentions = kept
+				if dropped > 0 {
+					slog.Warn("zalo_personal.mention.dropped_multichunk",
+						"chat_id", chatID,
+						"mentions_total", len(allMentions),
+						"kept_chunk0", len(kept),
+						"dropped", dropped,
+						"chunks", len(chunks))
+				}
 			}
 		}
 		var chunkStyles []common.Style
-		if len(allStyles) > 0 {
+		if len(allStyles) > 0 && i == 0 {
 			if len(chunks) == 1 {
 				chunkStyles = allStyles
-			} else if i == 0 {
-				slog.Warn("zalo_personal.style.dropped_multichunk",
-					"chat_id", chatID,
-					"styles", len(allStyles),
-					"chunks", len(chunks),
-					"text_preview", previewText(text, 80))
+			} else {
+				kept, dropped := stylesFittingChunk0(allStyles, chunk0UTF16)
+				chunkStyles = kept
+				if dropped > 0 {
+					slog.Warn("zalo_personal.style.dropped_multichunk",
+						"chat_id", chatID,
+						"styles_total", len(allStyles),
+						"kept_chunk0", len(kept),
+						"dropped", dropped,
+						"chunks", len(chunks),
+						"text_preview", previewText(text, 80))
+				}
 			}
 		}
 		msgID, err := c.sendChunkWithFallbacks(ctx, sess, chatID, threadType, chunk, q, chunkMentions, chunkStyles)
@@ -323,4 +342,42 @@ func quoteIDOrEmpty(q *protocol.SendMessageQuote) string {
 		return ""
 	}
 	return q.MsgID
+}
+
+// mentionsFittingChunk0 returns mentions whose [Position, Position+Length)
+// fits entirely within the first chunk (positions are UTF-16 code units).
+// Used when the message gets chunked — chunk 0 keeps the head's text
+// untouched, so mention positions remain valid; later chunks would need
+// re-anchoring which is out of scope.
+func mentionsFittingChunk0(all []pkgproto.Mention, chunk0UTF16 int) ([]pkgproto.Mention, int) {
+	if chunk0UTF16 <= 0 {
+		return nil, len(all)
+	}
+	kept := all[:0:0]
+	dropped := 0
+	for _, m := range all {
+		if m.Position >= 0 && m.Position+m.Length <= chunk0UTF16 {
+			kept = append(kept, m)
+		} else {
+			dropped++
+		}
+	}
+	return kept, dropped
+}
+
+// stylesFittingChunk0 is the style-side mirror of mentionsFittingChunk0.
+func stylesFittingChunk0(all []common.Style, chunk0UTF16 int) ([]common.Style, int) {
+	if chunk0UTF16 <= 0 {
+		return nil, len(all)
+	}
+	kept := all[:0:0]
+	dropped := 0
+	for _, s := range all {
+		if s.Start >= 0 && s.Start+s.Len <= chunk0UTF16 {
+			kept = append(kept, s)
+		} else {
+			dropped++
+		}
+	}
+	return kept, dropped
 }
