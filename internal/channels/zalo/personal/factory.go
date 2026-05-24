@@ -26,8 +26,10 @@ type zaloInstanceConfig struct {
 	RequireMention      *bool    `json:"require_mention,omitempty"`
 	HistoryLimit        int      `json:"history_limit,omitempty"`
 	AllowFrom           []string `json:"allow_from,omitempty"`
-	BlockReply          *bool    `json:"block_reply,omitempty"`
-	QuoteUserMessage    *bool    `json:"quote_user_message,omitempty"`
+	BlockReply              *bool    `json:"block_reply,omitempty"`
+	QuoteUserMessage        *bool    `json:"quote_user_message,omitempty"`           // deprecated: shim fallback
+	QuoteUserMessageInGroup *bool    `json:"quote_user_message_in_group,omitempty"`
+	QuoteUserMessageInDM    *bool    `json:"quote_user_message_in_dm,omitempty"`
 	DisablePolls        bool     `json:"disable_polls,omitempty"`
 	DisableReactions    bool     `json:"disable_reactions,omitempty"`
 	ListenSelfReactions bool     `json:"listen_self_reactions,omitempty"`
@@ -70,8 +72,10 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 		GroupPolicy:         ic.GroupPolicy,
 		RequireMention:      ic.RequireMention,
 		HistoryLimit:        ic.HistoryLimit,
-		BlockReply:          ic.BlockReply,
-		QuoteUserMessage:    ic.QuoteUserMessage,
+		BlockReply:              ic.BlockReply,
+		QuoteUserMessage:        ic.QuoteUserMessage,
+		QuoteUserMessageInGroup: ic.QuoteUserMessageInGroup,
+		QuoteUserMessageInDM:    ic.QuoteUserMessageInDM,
 		DisablePolls:        ic.DisablePolls,
 		DisableReactions:    ic.DisableReactions,
 		ListenSelfReactions: ic.ListenSelfReactions,
@@ -133,6 +137,8 @@ func FactoryWithPendingStore(pendingStore store.PendingMessageStore, episodicSto
 			HistoryLimit:               ic.HistoryLimit,
 			BlockReply:                 ic.BlockReply,
 			QuoteUserMessage:           ic.QuoteUserMessage,
+			QuoteUserMessageInGroup:    ic.QuoteUserMessageInGroup,
+			QuoteUserMessageInDM:       ic.QuoteUserMessageInDM,
 			DisablePolls:               ic.DisablePolls,
 			DisableReactions:           ic.DisableReactions,
 			ListenSelfReactions:        ic.ListenSelfReactions,

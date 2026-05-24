@@ -251,6 +251,14 @@
       "label": "Trích dẫn tin của người dùng",
       "help": "Trả lời kèm trích dẫn tin nhắn gần nhất của người dùng (reply-to của Zalo). Tắt để gửi trả lời thường, không kèm trích dẫn."
     },
+    "quote_user_message_in_group": {
+      "label": "Trích dẫn tin nhắn trong nhóm",
+      "help": "Trả lời kèm trích dẫn tin nhắn gần nhất của người dùng trong nhóm. Giúp xác định rõ tin nào được phản hồi trong nhóm đông."
+    },
+    "quote_user_message_in_dm": {
+      "label": "Trích dẫn tin nhắn trong DM",
+      "help": "Trả lời kèm trích dẫn tin nhắn gần nhất trong DM. Thường không cần thiết trong hội thoại 1-1."
+    },
     "media_max_mb": { "label": "Kích thước media tối đa (MB)" },
     "link_preview": { "label": "Xem trước liên kết" },
     "allow_from": { "label": "Người dùng được phép" },
