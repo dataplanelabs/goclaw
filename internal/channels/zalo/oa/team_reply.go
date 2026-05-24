@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -43,13 +45,17 @@ func (c *Channel) startTeamReplyWorker() {
 		return
 	}
 	if c.teamReplyTenantID == "" {
-		inst, err := c.ciStore.Get(context.Background(), c.instanceID)
-		if err != nil || inst == nil {
-			slog.Warn("zalo_oa.team_reply.tenant_lookup_fail",
-				"instance", c.Name(), "err", err)
+		// instance_loader.go stamps tenantID on BaseChannel via SetTenantID
+		// before Start() is called. Read it directly — no DB lookup, no
+		// tenant-scoped Get failure mode.
+		tid := c.TenantID()
+		if tid == uuid.Nil {
+			slog.Warn("zalo_oa.team_reply.no_tenant_on_channel",
+				"instance", c.Name(),
+				"hint", "instance_loader did not stamp tenantID before Start")
 			return
 		}
-		c.teamReplyTenantID = inst.TenantID.String()
+		c.teamReplyTenantID = tid.String()
 	}
 	tokenSrc := func() string {
 		tok, _ := c.tokens.Access(context.Background())
