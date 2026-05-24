@@ -114,6 +114,10 @@ LLMs ignore the "use marker syntax" constraint frequently. New `wrapBareMentions
 
 ## 2026-05-24
 
+### Channels: team-reply capture + evaluation (Zalo OA)
+
+Captures every human-team-typed reply on Zalo OA channels into the bot's transcript + a new `team_reply_evaluations` table (PG migration 000074 + SQLite slot 44, `RequiredSchemaVersion=74`, `SchemaVersion=44`). Per-channel polling worker (`/onbehalf/conversation`, 60s tick) opted in via `config.capture_team_replies=true`. New `team.reply.observed` DomainEvent subscribed by a `JudgeWorker` (consolidation pipeline) that invokes a per-tenant judge agent via `agent.Router.Get(...).Run(...)` to produce hypothesized bot reply + diff score 0–1 + reasoning, then writes verdict to the evaluations table. Per-tenant rate limit (10/min, 5 burst) prevents runaway eval costs. 4 new WS RPCs (`channels.team_replies_list|get|export_jsonl|team_capture_toggle`) — toggle is admin-only. Web UI: new "Team Analytics" tab on channel detail with 10-bucket diff distribution histogram, recent captures table, thread filter, JSONL export in OpenAI chat-completions training shape. Polling chosen over webhook after research showed `oa_send_*` webhook delivery for Manager-app human-typed sends is undocumented + empirically NO-GO. Phase 2 outbox correlation deferred to v2 (Option C hybrid). See `docs/team-reply-evaluation.md`.
+
 ### Zalo Personal: @[uid] mention support for group chats
 
 **Features**
@@ -138,7 +142,6 @@ LLMs ignore the "use marker syntax" constraint frequently. New `wrapBareMentions
 - 11 LookupGroupMember + MemberCache + rate-limiter tests including opportunistic warming.
 - Bot strip-marker tests + DM short-circuit test.
 - Integration test for byte-equality against a zca-js wire-capture fixture is scaffolded but skipped pending one-off Node + zca-js fixture capture (Path B from Phase 1 spike); Phase 5 manual dogfood remains the load-bearing verification until fixture lands.
-
 ### Channels: agent standby mode
 
 Declarative per-channel + per-thread silence schedule (`channel_instances.silence_schedule` JSONB + `channel_thread_schedules`). New `StandbyGate` pipeline stage gates message processing at iteration entry: when a `(tenant, channel, thread)` resolves to `standby`, the gate sets `AbortRun` — Think/Tool/Observe skipped, FinalizeStage still writes working + episodic memory. Per-thread overrides REPLACE the instance default (no merge); one-shot windows beat recurring on overlap. Agent self-pause via `enter_standby(duration_seconds, reason)` tool. 7 new WS RPCs under `channels.schedule_*` + `channels.thread_schedule_*` (tenant admin guard). PG migration 000071 + SQLite slot 41 (`RequiredSchemaVersion=71`, `SchemaVersion=41`). Web UI: new "Standby" tab on channel detail with raw-JSON editor + thread override list. Frozen-clock unit tests cover DST, cross-midnight, one-shot-beats-recurring; PG integration tests cover round-trip + cross-tenant isolation + FK cascade. See `docs/standby-mode.md`.

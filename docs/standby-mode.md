@@ -197,6 +197,7 @@ Defined once in `internal/pipeline/standby_gate.go::BuildStandbyThreadKey`. Both
 - LLM calls and tool runs are skipped — zero token spend during silent windows.
 - Cron-fired outbound bypasses standby (intentional traffic). Synthetic events (e.g. Zalo reactions) ARE gated.
 - Channel rename/delete must call `registry.InvalidateInstance(tenantID, channelName)` to flush the name→id cache.
+- **Team-reply capture pairing (Zalo OA):** when standby + operators handle customers manually, enable `capture_team_replies=true` on the channel to record what the team types. Captured replies become part of the bot's conversation history (memory continuity preserved) AND feed `JudgeWorker` for diff-vs-bot scoring. See `docs/team-reply-evaluation.md`.
 
 ## Known limitations (v1)
 

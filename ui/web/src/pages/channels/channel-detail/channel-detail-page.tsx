@@ -11,6 +11,7 @@ import { ChannelCredentialsTab } from "./channel-credentials-tab";
 import { ChannelGroupsTab } from "./channel-groups-tab";
 import { ChannelManagersTab } from "./channel-managers-tab";
 import { ChannelStandbyTab } from "./channel-standby-tab";
+import { ChannelTeamAnalyticsTab } from "./channel-team-analytics-tab";
 import { ChannelDiagnosticsCard } from "./channel-diagnostics-card";
 import { DetailPageSkeleton } from "@/components/shared/loading-skeleton";
 import { useChannels } from "../hooks/use-channels";
@@ -81,6 +82,7 @@ export function ChannelDetailPage({
   })();
 
   const isTelegram = instance?.channel_type === "telegram";
+  const isZaloOA = instance?.channel_type === "zalo_oa";
   const supportsReauth = instance
     ? channelsWithAuth.has(instance.channel_type)
     : false;
@@ -205,6 +207,11 @@ export function ChannelDetailPage({
               <TabsTrigger value="standby">
                 {t("detail.tabs.standby")}
               </TabsTrigger>
+              {isZaloOA && (
+                <TabsTrigger value="team-analytics">
+                  {t("detail.tabs.teamAnalytics")}
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="general" className="mt-4">
@@ -245,6 +252,20 @@ export function ChannelDetailPage({
             <TabsContent value="standby" className="mt-4">
               <ChannelStandbyTab channelInstanceId={instance.id} />
             </TabsContent>
+
+            {isZaloOA && (
+              <TabsContent value="team-analytics" className="mt-4">
+                <ChannelTeamAnalyticsTab
+                  channelInstanceId={instance.id}
+                  channelName={instance.name}
+                  initialConfig={instance.config as {
+                    capture_team_replies?: boolean;
+                    judge_evaluation?: boolean;
+                    judge_agent_key?: string;
+                  }}
+                />
+              </TabsContent>
+            )}
           </Tabs>
         </div>
       </div>

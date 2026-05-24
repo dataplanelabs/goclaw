@@ -1,0 +1,272 @@
+package oa
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
+)
+
+// PollWorker captures human-team-typed replies on a Zalo OA channel by
+// polling /onbehalf/conversation per recently-active partner. OA-side
+// messages (src_id == self UID) are persisted as assistant messages with
+// metadata.source="team" + emit team.reply.observed events.
+//
+// v1 intentionally does NOT distinguish bot-API vs Manager-app sends —
+// both look like "team" sends. Phase 5 judge worker dedups against recent
+// content if needed.
+type PollWorker struct {
+	instanceID   uuid.UUID
+	instanceName string
+	tenantID     string
+	channelType  string
+
+	interval time.Duration
+	onBehalf *OnBehalfClient
+
+	sessions store.SessionCoreStore
+	evals    store.TeamReplyEvalStore
+	bus      eventbus.DomainEventBus
+
+	cursorMu sync.Mutex
+	cursors  map[string]int64 // uid → last-seen msg time (Unix ms)
+
+	customerLast func(ctx context.Context, sessionKey string) string
+	selfUID      string
+
+	stopOnce sync.Once
+	stopCh   chan struct{}
+	runWG    sync.WaitGroup
+}
+
+// PollWorkerDeps groups required collaborators. Keeps the constructor
+// signature stable as new fields are added.
+type PollWorkerDeps struct {
+	OnBehalf     *OnBehalfClient
+	Sessions     store.SessionCoreStore
+	Evals        store.TeamReplyEvalStore
+	Bus          eventbus.DomainEventBus
+	CustomerLast func(ctx context.Context, sessionKey string) string
+}
+
+func NewPollWorker(instanceID uuid.UUID, name, tenantID, channelType, selfUID string,
+	interval time.Duration, deps PollWorkerDeps) *PollWorker {
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+	return &PollWorker{
+		instanceID:   instanceID,
+		instanceName: name,
+		tenantID:     tenantID,
+		channelType:  channelType,
+		interval:     interval,
+		onBehalf:     deps.OnBehalf,
+		sessions:     deps.Sessions,
+		evals:        deps.Evals,
+		bus:          deps.Bus,
+		customerLast: deps.CustomerLast,
+		selfUID:      selfUID,
+		cursors:      make(map[string]int64),
+		stopCh:       make(chan struct{}),
+	}
+}
+
+// Run blocks until ctx is cancelled or Stop() is called. Safe to invoke
+// in a goroutine. Stop waits via runWG for in-flight ticks to drain.
+func (w *PollWorker) Run(ctx context.Context) {
+	if w == nil || w.onBehalf == nil {
+		return
+	}
+	w.runWG.Add(1)
+	defer w.runWG.Done()
+	t := time.NewTicker(w.interval)
+	defer t.Stop()
+	slog.Info("oa.poll_worker.start",
+		"instance", w.instanceName, "interval", w.interval.String())
+	// First tick immediately to avoid 60s warmup window.
+	w.tick(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("oa.poll_worker.ctx_done", "instance", w.instanceName)
+			return
+		case <-w.stopCh:
+			slog.Info("oa.poll_worker.stop", "instance", w.instanceName)
+			return
+		case <-t.C:
+			w.tick(ctx)
+		}
+	}
+}
+
+// Stop signals the Run loop to exit and blocks until in-flight work
+// drains. Idempotent.
+func (w *PollWorker) Stop() {
+	w.stopOnce.Do(func() {
+		close(w.stopCh)
+	})
+	w.runWG.Wait()
+}
+
+func (w *PollWorker) tick(ctx context.Context) {
+	entries, err := w.onBehalf.ListRecentChat(ctx, 0, 50)
+	if err != nil {
+		w.classifyErr(err, "list_recent_chat")
+		return
+	}
+	for _, entry := range entries {
+		if entry.UID == "" {
+			continue
+		}
+		msgs, err := w.onBehalf.GetConversation(ctx, entry.UID, 0, 50)
+		if err != nil {
+			w.classifyErr(err, "get_conversation")
+			continue
+		}
+		w.applyMessages(ctx, entry.UID, msgs)
+	}
+}
+
+func (w *PollWorker) applyMessages(ctx context.Context, uid string, msgs []ConversationMessage) {
+	last := w.cursor(uid)
+	var newCursor int64 = last
+	ctx2 := ctx
+	if tid, err := uuid.Parse(w.tenantID); err == nil {
+		ctx2 = store.WithTenantID(ctx, tid)
+	}
+	sessionKey := w.sessionKeyFor(uid)
+	threadKey := "direct:" + uid
+	for _, m := range msgs {
+		if m.Time > newCursor {
+			newCursor = m.Time
+		}
+		if m.Time <= last || m.MsgID == "" {
+			continue
+		}
+		if m.SrcID == uid {
+			// Customer-side; already captured via the existing user-msg pipeline.
+			continue
+		}
+		if w.selfUID != "" && m.SrcID != w.selfUID {
+			// Drop messages from any non-self UID (defensive guard).
+			continue
+		}
+		w.persistTeamReply(ctx2, uid, threadKey, sessionKey, m)
+	}
+	if newCursor > last {
+		w.setCursor(uid, newCursor)
+	}
+}
+
+func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessionKey string, m ConversationMessage) {
+	captured := time.UnixMilli(m.Time).UTC()
+	if m.Time == 0 {
+		captured = time.Now().UTC()
+	}
+	evalRow := store.TeamReplyEvaluation{
+		ChannelInstanceID: w.instanceID.String(),
+		TenantID:          w.tenantID,
+		ThreadKey:         threadKey,
+		SessionKey:        sessionKey,
+		TeamMsgID:         m.MsgID,
+		CapturedAt:        captured,
+		TeamReply:         m.Text,
+	}
+	customer := ""
+	if w.customerLast != nil {
+		customer = w.customerLast(ctx, sessionKey)
+		evalRow.CustomerMessage = customer
+	}
+	evalID, err := w.evals.Insert(ctx, evalRow)
+	if err != nil {
+		slog.Warn("oa.poll_worker.eval_insert_fail",
+			"instance", w.instanceName, "msg_id", m.MsgID, "err", err)
+		return
+	}
+
+	msg := providers.Message{
+		Role:    "assistant",
+		Content: m.Text,
+		Metadata: map[string]any{
+			"source":       providers.MessageSourceTeam,
+			"team_msg_id":  m.MsgID,
+			"captured_at":  captured.Format(time.RFC3339Nano),
+			"poll_origin":  true,
+		},
+	}
+	w.sessions.AddMessage(ctx, sessionKey, msg)
+	if err := w.sessions.Save(ctx, sessionKey); err != nil {
+		slog.Warn("oa.poll_worker.session_save_fail",
+			"instance", w.instanceName, "session", sessionKey, "err", err)
+	}
+
+	event := eventbus.DomainEvent{
+		ID:        uuid.NewString(),
+		Type:      eventbus.EventTeamReplyObserved,
+		SourceID:  eventbus.TeamReplyObservedSourceID(w.instanceID.String(), m.MsgID),
+		TenantID:  w.tenantID,
+		Timestamp: time.Now().UTC(),
+		Payload: eventbus.TeamReplyObservedPayload{
+			EvaluationID:      evalID,
+			TenantID:          w.tenantID,
+			ChannelInstanceID: w.instanceID.String(),
+			ChannelName:       w.instanceName,
+			ThreadKey:         threadKey,
+			SessionKey:        sessionKey,
+			TeamMsgID:         m.MsgID,
+			TeamReply:         m.Text,
+			CustomerMessage:   customer,
+			CapturedAt:        captured,
+		},
+	}
+	if w.bus != nil {
+		w.bus.Publish(event)
+	}
+}
+
+func (w *PollWorker) classifyErr(err error, op string) {
+	if errors.Is(err, ErrInvalidRefreshToken) {
+		slog.Error("oa.poll_worker.refresh_token_invalid",
+			"instance", w.instanceName, "op", op,
+			"action_required", "re-consent OA in Credentials tab")
+		return
+	}
+	if errors.Is(err, ErrRateLimit) {
+		slog.Warn("oa.poll_worker.rate_limited", "instance", w.instanceName, "op", op)
+		return
+	}
+	slog.Warn("oa.poll_worker.tick_error", "instance", w.instanceName, "op", op, "err", err)
+}
+
+func (w *PollWorker) cursor(uid string) int64 {
+	w.cursorMu.Lock()
+	defer w.cursorMu.Unlock()
+	return w.cursors[uid]
+}
+
+func (w *PollWorker) setCursor(uid string, t int64) {
+	w.cursorMu.Lock()
+	defer w.cursorMu.Unlock()
+	w.cursors[uid] = t
+}
+
+// SeedCursorsForTest lets tests pre-populate cursors. Production cursor
+// state is per-pod in-memory (single-pod assumption documented in plan).
+func (w *PollWorker) SeedCursorsForTest(c map[string]int64) {
+	w.cursorMu.Lock()
+	defer w.cursorMu.Unlock()
+	for k, v := range c {
+		w.cursors[k] = v
+	}
+}
+
+func (w *PollWorker) sessionKeyFor(uid string) string {
+	return w.channelType + ":" + uid
+}

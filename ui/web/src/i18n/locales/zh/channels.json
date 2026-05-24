@@ -119,7 +119,8 @@
       "config": "配置",
       "credentials": "凭据",
       "groups": "群组",
-      "managers": "管理员"
+      "managers": "管理员",
+      "teamAnalytics": "团队分析"
     },
     "zaloWebhook": {
       "title": "Webhook 设置",
@@ -521,5 +522,24 @@
     "reason": "原因",
     "createdBy": "创建者",
     "rowDelete": "删除"
+  },
+  "teamAnalytics": {
+    "title": "团队分析",
+    "description": "采集到的人工客服回复及与机器人建议的对比评估。",
+    "captureToggle": "采集团队回复",
+    "judgeToggle": "自动评估",
+    "judgeAgent": "评估 agent key",
+    "diffDistribution": "差异分数分布",
+    "recentCaptures": "最近采集",
+    "filterByThread": "按会话过滤",
+    "allThreads": "全部",
+    "noCaptures": "暂无数据。请先在上方开启采集，等待团队回复。",
+    "judgePending": "处理中",
+    "judgeFailed": "失败",
+    "exportJsonl": "导出训练数据 (JSONL)",
+    "exporting": "导出中…",
+    "exportSuccess": "已下载 {{count}} 条（{{bytes}} 字节）",
+    "configSaved": "配置已保存",
+    "save": "保存"
   }
 }

@@ -119,7 +119,8 @@
       "config": "Cấu hình",
       "credentials": "Thông tin xác thực",
       "groups": "Nhóm",
-      "managers": "Quản lý"
+      "managers": "Quản lý",
+      "teamAnalytics": "Phân tích team"
     },
     "zaloWebhook": {
       "title": "Cấu hình Webhook",
@@ -521,5 +522,24 @@
     "reason": "Lý do",
     "createdBy": "Tác giả",
     "rowDelete": "Xóa"
+  },
+  "teamAnalytics": {
+    "title": "Phân tích team",
+    "description": "Các phản hồi của team đã được thu thập và đánh giá so với gợi ý của bot.",
+    "captureToggle": "Thu thập phản hồi team",
+    "judgeToggle": "Tự đánh giá",
+    "judgeAgent": "Khóa agent đánh giá",
+    "diffDistribution": "Phân phối điểm khác biệt",
+    "recentCaptures": "Phản hồi gần đây",
+    "filterByThread": "Lọc theo cuộc trò chuyện",
+    "allThreads": "Tất cả",
+    "noCaptures": "Chưa có dữ liệu. Bật thu thập ở trên và chờ team trả lời.",
+    "judgePending": "Đang chờ",
+    "judgeFailed": "Thất bại",
+    "exportJsonl": "Xuất dữ liệu huấn luyện (JSONL)",
+    "exporting": "Đang xuất…",
+    "exportSuccess": "Đã tải {{count}} mẫu ({{bytes}} bytes)",
+    "configSaved": "Đã lưu cấu hình",
+    "save": "Lưu"
   }
 }

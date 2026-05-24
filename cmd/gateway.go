@@ -294,6 +294,20 @@ func runGateway() {
 	}
 	slog.Info("agents will be resolved lazily from database")
 
+	// Phase 5: wire JudgeWorker once agentRouter exists.
+	if pgStores.TeamReplyEvals != nil && pgStores.Tenants != nil && pgStores.Agents != nil {
+		resolver := consolidation.NewTenantJudgeResolver(pgStores.Tenants, pgStores.Agents, pgStores.ChannelInstances)
+		cleanupJudge := consolidation.RegisterJudgeWorker(consolidation.JudgeRegistrationDeps{
+			Evals:    pgStores.TeamReplyEvals,
+			Router:   agentRouter,
+			Resolver: resolver,
+			EventBus: domainBus,
+			Timeout:  60 * time.Second,
+		})
+		defer cleanupJudge()
+		slog.Info("judge worker registered for team-reply evaluations")
+	}
+
 	// Create gateway server and wire enforcement
 	server := gateway.NewServer(cfg, msgBus, agentRouter, pgStores.Sessions, toolsReg)
 	server.SetVersion(Version)
@@ -529,7 +543,7 @@ func runGateway() {
 		instanceLoader.RegisterFactory(channels.TypeDiscord, discord.FactoryWithStoresAndAudio(pgStores.Agents, pgStores.ConfigPermissions, pgStores.PendingMessages, audioMgr))
 		instanceLoader.RegisterFactory(channels.TypeFeishu, feishu.FactoryWithPendingStoreAndAudio(pgStores.PendingMessages, audioMgr))
 		instanceLoader.RegisterFactory(channels.TypeZaloBot, zalobot.Factory)
-		instanceLoader.RegisterFactory(channels.TypeZaloOA, zalooa.Factory(pgStores.ChannelInstances))
+		instanceLoader.RegisterFactory(channels.TypeZaloOA, zalooa.FactoryWithDeps(pgStores.ChannelInstances, domainBus, pgStores.Sessions, pgStores.TeamReplyEvals))
 		instanceLoader.RegisterFactory(channels.TypeZaloPersonal, zalopersonal.FactoryWithPendingStore(pgStores.PendingMessages, pgStores.Episodic))
 		instanceLoader.RegisterFactory(channels.TypeWhatsApp, whatsapp.FactoryWithDBAudio(pgStores.DB, pgStores.PendingMessages, "pgx", audioMgr, pgStores.BuiltinTools))
 		instanceLoader.RegisterFactory(channels.TypeSlack, slackchannel.FactoryWithPendingStore(pgStores.PendingMessages))

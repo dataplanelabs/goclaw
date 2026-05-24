@@ -9,11 +9,14 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/agent"
 	"github.com/nextlevelbuilder/goclaw/internal/bgalert"
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
+
+var _ = agent.NewRouter // keep agent import referenced even when JudgeWorker disabled
 
 // ConsolidationDeps bundles all dependencies for the consolidation pipeline.
 type ConsolidationDeps struct {
@@ -30,6 +33,7 @@ type ConsolidationDeps struct {
 	// per-agent overrides from MemoryConfig.Dreaming. If nil, the worker
 	// uses its built-in defaults for every agent.
 	AgentStore store.AgentCRUDStore
+
 }
 
 // Register wires all consolidation workers to the event bus.
@@ -69,6 +73,9 @@ func Register(deps ConsolidationDeps) func() {
 	unsub3 := deps.EventBus.Subscribe(eventbus.EventEntityUpserted, dedup.Handle)
 	unsub4 := deps.EventBus.Subscribe(eventbus.EventEpisodicCreated, dreaming.Handle)
 
+	// JudgeWorker is registered separately via RegisterJudgeWorker after
+	// agentRouter is constructed (cmd/gateway.go ordering constraint).
+
 	// Periodic pruning of expired episodic summaries (runs every 6 hours).
 	pruneStop := make(chan struct{})
 	go func() {
@@ -90,6 +97,33 @@ func Register(deps ConsolidationDeps) func() {
 	}()
 
 	return func() { unsub1(); unsub2(); unsub3(); unsub4(); close(pruneStop) }
+}
+
+// RegisterJudgeWorker wires the JudgeWorker subscriber. Called separately
+// from Register because agentRouter is built after consolidation.Register
+// in cmd/gateway.go. Returns a no-op cleanup if any dep is nil.
+func RegisterJudgeWorker(deps JudgeRegistrationDeps) func() {
+	if deps.Evals == nil || deps.Router == nil || deps.Resolver == nil || deps.EventBus == nil {
+		slog.Info("judge worker registration skipped",
+			"reason", "missing deps (Evals/Router/Resolver/EventBus)")
+		return func() {}
+	}
+	judge := NewJudgeWorker(JudgeDeps{
+		Evals:    deps.Evals,
+		Router:   deps.Router,
+		Resolver: deps.Resolver,
+		Timeout:  deps.Timeout,
+	})
+	return deps.EventBus.Subscribe(eventbus.EventTeamReplyObserved, judge.Handle)
+}
+
+// JudgeRegistrationDeps bundles inputs for RegisterJudgeWorker.
+type JudgeRegistrationDeps struct {
+	Evals    store.TeamReplyEvalStore
+	Router   *agent.Router
+	Resolver JudgeAgentResolver
+	EventBus eventbus.DomainEventBus
+	Timeout  time.Duration
 }
 
 // summarizationPrompt for LLM session summarization.

@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 // PendingCompactionConfig configures LLM-based compaction of pending group messages.
 // When a group accumulates more than Threshold pending messages, older messages are
 // summarized by an LLM and replaced with a compact summary, keeping KeepRecent raw messages.
@@ -186,6 +188,32 @@ type ZaloOAConfig struct {
 	// Polling knobs. Ignored when Transport="webhook".
 	PollCount            int `json:"poll_count,omitempty"`              // page size; default 10, clamp [1, 10] (Zalo hard cap, error -210 above)
 	PollBurndownMaxPages int `json:"poll_burndown_max_pages,omitempty"` // max pages per cycle; default 10, clamp [1, 20]; 1 disables burn-down
+
+	// Team-reply capture (Phase 4): polls /onbehalf/conversation for OA-side
+	// messages typed via Manager app, persists with metadata.source="team",
+	// emits team.reply.observed event. Distinct from the customer-msg poller.
+	CaptureTeamReplies           *bool  `json:"capture_team_replies,omitempty"`
+	JudgeEvaluation              *bool  `json:"judge_evaluation,omitempty"`
+	JudgeAgentKey                string `json:"judge_agent_key,omitempty"`
+	TeamReplyPollIntervalSeconds int    `json:"team_reply_poll_interval_seconds,omitempty"` // default 60
+}
+
+// TeamReplyPollInterval returns the configured polling interval clamped
+// to [30s, ...] with a 60s default. Floor avoids hammering /onbehalf
+// when an operator misconfigures `team_reply_poll_interval_seconds: 1`.
+func (c *ZaloOAConfig) TeamReplyPollInterval() time.Duration {
+	const (
+		defaultInterval = 60 * time.Second
+		minInterval     = 30 * time.Second
+	)
+	if c.TeamReplyPollIntervalSeconds <= 0 {
+		return defaultInterval
+	}
+	d := time.Duration(c.TeamReplyPollIntervalSeconds) * time.Second
+	if d < minInterval {
+		return minInterval
+	}
+	return d
 }
 
 type ZaloPersonalConfig struct {

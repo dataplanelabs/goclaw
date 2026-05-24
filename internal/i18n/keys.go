@@ -373,4 +373,10 @@ const (
 	StandbyEntered              = "standby.entered"
 	StandbyRPCInvalidSchedule   = "standby.rpc.invalid_schedule"
 	StandbyRPCNoPermission      = "standby.rpc.no_permission"
+
+	// Team-reply capture + evaluation (Phase 6+7)
+	TeamCaptureRPCNoPermission  = "team_capture.rpc.no_permission"
+	TeamCaptureRPCInvalidConfig = "team_capture.rpc.invalid_config"
+	TeamEvalNotFound            = "team_eval.not_found"
+	TeamEvalJudgeError          = "team_eval.judge_error"
 )

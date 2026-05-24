@@ -17,6 +17,10 @@ func TestStandbyKeysCoverage(t *testing.T) {
 		StandbyEntered,
 		StandbyRPCInvalidSchedule,
 		StandbyRPCNoPermission,
+		TeamCaptureRPCNoPermission,
+		TeamCaptureRPCInvalidConfig,
+		TeamEvalNotFound,
+		TeamEvalJudgeError,
 	}
 	locales := []string{"en", "vi", "zh"}
 	for _, loc := range locales {

@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 43
+const SchemaVersion = 44
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -760,6 +760,40 @@ CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source);`,
 	// cross-check (mirrors PG 000073_secure_cli_binaries_version).
 	42: `ALTER TABLE secure_cli_binaries ADD COLUMN version TEXT;
 CREATE INDEX IF NOT EXISTS idx_secure_cli_binaries_version ON secure_cli_binaries(version) WHERE version IS NOT NULL;`,
+
+	// Version 43 → 44: team_reply_evaluations (mirrors PG 000074).
+	43: `CREATE TABLE IF NOT EXISTS team_reply_evaluations (
+    id                     TEXT PRIMARY KEY,
+    channel_instance_id    TEXT NOT NULL REFERENCES channel_instances(id) ON DELETE CASCADE,
+    tenant_id              TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    thread_key             TEXT NOT NULL,
+    session_key            TEXT NOT NULL,
+    team_msg_id            TEXT NOT NULL,
+    captured_at            DATETIME NOT NULL,
+    customer_message       TEXT NOT NULL DEFAULT '',
+    team_reply             TEXT NOT NULL,
+    hypothesized_bot_reply TEXT,
+    diff_score             REAL,
+    diff_reasoning         TEXT,
+    judge_agent_key        TEXT,
+    judge_model            TEXT,
+    judge_provider         TEXT,
+    judge_latency_ms       INTEGER,
+    judge_error            TEXT,
+    judge_completed_at     DATETIME,
+    created_at             DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at             DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (channel_instance_id, team_msg_id)
+);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_tenant_time
+    ON team_reply_evaluations(tenant_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_channel_time
+    ON team_reply_evaluations(channel_instance_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_thread
+    ON team_reply_evaluations(channel_instance_id, thread_key, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_pending_judge
+    ON team_reply_evaluations(captured_at)
+    WHERE judge_completed_at IS NULL AND judge_error IS NULL;`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.

@@ -340,6 +340,11 @@ func init() {
 		StandbyRPCInvalidSchedule:   "调度不合法：%s",
 		StandbyRPCNoPermission:      "需要租户管理员权限才能编辑频道调度",
 
+		TeamCaptureRPCNoPermission:  "需要租户管理员权限才能切换团队回复采集",
+		TeamCaptureRPCInvalidConfig: "采集配置无效：%s",
+		TeamEvalNotFound:            "未找到团队回复评估",
+		TeamEvalJudgeError:          "评估失败：%s",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 已按请求转发至 %s:%q",
 

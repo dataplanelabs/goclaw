@@ -443,6 +443,15 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`ALTER TABLE secure_cli_binaries DROP COLUMN version`)
 	}
 
+	if targetVersion < 44 {
+		// Migration 43→44 adds team_reply_evaluations table.
+		db.Exec(`DROP INDEX IF EXISTS idx_team_reply_evals_tenant_time`)
+		db.Exec(`DROP INDEX IF EXISTS idx_team_reply_evals_channel_time`)
+		db.Exec(`DROP INDEX IF EXISTS idx_team_reply_evals_thread`)
+		db.Exec(`DROP INDEX IF EXISTS idx_team_reply_evals_pending_judge`)
+		db.Exec(`DROP TABLE IF EXISTS team_reply_evaluations`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db
