@@ -124,6 +124,20 @@ COPY --from=builder /src/migrations/ /app/migrations/
 COPY --from=builder /src/skills/ /app/bundled-skills/
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
+# B3-01 Phase 5: bake the gws-cli Python wrapper when ENABLE_FULL_SKILLS=true.
+# The image already has python3 from the full-skills layer. We copy the package
+# from the published gws-cli image to /app/gws-cli/ and symlink /usr/local/bin/gws
+# → `python3 -m gws_cli` shim so `secure_cli_run` can invoke `gws`.
+ARG GWS_CLI_VERSION=0.1.0
+COPY --from=ghcr.io/dataplanelabs/gws-cli:${GWS_CLI_VERSION} /app/site-packages /app/gws-cli/site-packages
+RUN set -eux; \
+    if [ "$ENABLE_FULL_SKILLS" = "true" ]; then \
+        printf '#!/bin/sh\nexec python3 -c "import sys; sys.path.insert(0, \"/app/gws-cli/site-packages\"); from gws_cli.cli import main; main()" "$@"\n' > /usr/local/bin/gws; \
+        chmod +x /usr/local/bin/gws; \
+    else \
+        rm -rf /app/gws-cli; \
+    fi
+
 # Fix Windows git clone issues:
 # 1. CRLF line endings in shell scripts (Windows git adds \r)
 # 2. Broken symlinks: On Windows (core.symlinks=false), git creates text files

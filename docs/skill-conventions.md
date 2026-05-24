@@ -117,6 +117,79 @@ A future grant flag will gate certain calls behind a human-ack flow (Slack /
 goclaw web). Currently NOT implemented — track in
 `plans/260524-0949-system-skills/brainstorm-b2-cli-wrapping-conventions.md`.
 
+## Per-tenant OAuth credentials (gws, Pancake / Misa / Zalo OA later)
+
+Skills that wrap APIs with PER-OPERATOR credentials (each user has their own
+Google account, gmail, etc.) follow the OAuth pattern shipped in B3-01.
+
+### How the flow works
+
+1. **Operator provisions credentials via web UI** — Settings → Integrations
+   → "Connect Google Account" → OAuth popup → backend writes encrypted
+   refresh_token to `secure_cli_user_credentials(tenant_id, binary_id,
+   user_id)` keyed by the OPERATOR's user_id.
+2. **Backend refresh worker** (cron, 24h default) keeps access tokens fresh
+   via `internal/oauth/refresh_worker.go`. On token revocation, clears the
+   row + logs `goclaw.alert.oauth_revoked` event for the UI badge.
+3. **Skills invoke `secure_cli_run`** as usual; the `(*ExecTool).executeCredentialed`
+   path's `mergeCredentialedEnv` automatically overlays the user's env vars
+   (refresh_token) on top of the binary's shared env (client_id + secret).
+4. **Skill author UX:** declare `requires.cli: { <binary>: ">=X.Y" }` in
+   SKILL.md frontmatter. Instruct the LLM to ask the user to "Connect <X>
+   in Settings → Integrations" if `secure_cli_run` returns "no grant".
+
+### `secure_cli_binaries` shape for OAuth binaries
+
+```yaml
+binary_name: gws                    # the binary the skill invokes
+is_global: false                    # REQUIRED — forces per-grant lookup so
+                                    # LookupByBinary resolves user-specific creds
+encrypted_env:
+  GWS_CLIENT_ID: "${GOOGLE_CLIENT_ID}"      # shared across all tenants
+  GWS_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+deny_args:
+  - '^(gmail|calendar|drive)\s+(send|create|update|delete|patch)'  # write subcommands
+version: "0.1.0"                    # gcplane validate cross-checks via /v1/system/cli-versions
+```
+
+The per-user **refresh_token** is NOT in the binary's `encrypted_env` — it
+lives in `secure_cli_user_credentials.encrypted_env` per-user (written by
+the OAuth callback). The two are merged at exec time per the env hierarchy:
+`binary env → grant overrides → user env overrides`.
+
+### HTTP surface (B3-01 Phase 2)
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `POST /v1/integrations/google/start` | RoleViewer | Returns `{auth_url, state}` for the popup |
+| `GET /v1/auth/google/callback` | NONE (state-token auth) | Exchanges code, writes credential, redirects |
+| `GET /v1/integrations/me` | RoleViewer | Lists caller's connected integrations |
+| `DELETE /v1/integrations/{binary_name}` | RoleViewer | Deletes caller's own credential row |
+| `GET /v1/healthz/oauth-refresh-worker` | NONE | Liveness probe for the refresh worker |
+
+### Env vars (operator-set)
+
+| Variable | Purpose |
+|---|---|
+| `GOCLAW_GOOGLE_CLIENT_ID` | OAuth client ID from Google Cloud Console |
+| `GOCLAW_GOOGLE_CLIENT_SECRET` | OAuth client secret |
+| `GOCLAW_GOOGLE_REDIRECT_URL` | Callback URL (e.g. `https://goclaw.example/v1/auth/google/callback`) |
+| `GOCLAW_UI_BASE_URL` | Web UI base — popup redirect target after callback success |
+| `GOCLAW_OAUTH_REFRESH_TICK_SECONDS` | Refresh worker tick (default 86400 = 24h) |
+| `GOCLAW_OAUTH_REFRESH_THRESHOLD_SECONDS` | Refresh window (default 604800 = 7d) |
+
+Endpoints return `MsgOAuthNotConfigured` (503) when `CLIENT_ID`/`SECRET` are
+unset, so safe to deploy unconfigured.
+
+### B-conv-2 retrofit candidate
+
+`gh-read` can adopt this pattern in the future when we want per-operator
+GitHub PATs. Currently uses a global read-only PAT (Option A carveout per
+B2 brainstorm). The pattern generalizes to Pancake (per-tenant API keys —
+different shape from OAuth) and Zalo OA (webhooks + keys — also different)
+but the **storage** (secure_cli_user_credentials) and **invocation**
+(secure_cli_run) layers are reusable.
+
 ## CI lint
 
 `goclaw-config/.github/workflows/skill-lint.yaml` rejects PRs that introduce
