@@ -27,8 +27,8 @@ func TestOnBehalfClient_ListRecentChat(t *testing.T) {
 			t.Errorf("missing access_token header: %q", got)
 		}
 		_, _ = io.WriteString(w, `{"error":0,"message":"ok","data":[
-			{"uid":"u1","last_msg_id":"m100","last_msg_time":1735041000123,"display_name":"Alice"},
-			{"uid":"u2","last_msg_id":"m200","last_msg_time":1735041000456}
+			{"message_id":"m100","from_id":"u1","to_id":"oa-self","type":"text","message":"hi","time":1735041000123,"from_display_name":"Alice"},
+			{"message_id":"m200","from_id":"u2","to_id":"oa-self","type":"text","message":"ya","time":1735041000456}
 		]}`)
 	}))
 	defer srv.Close()
@@ -49,8 +49,8 @@ func TestOnBehalfClient_GetConversation(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		_, _ = io.WriteString(w, `{"error":0,"data":[
-			{"msg_id":"m1","src_id":"oa-self","dst_id":"u1","type":"text","message":"hi sir","time":1735041000000},
-			{"msg_id":"m2","src_id":"u1","dst_id":"oa-self","type":"text","message":"who?","time":1735041001000}
+			{"message_id":"m1","from_id":"oa-self","to_id":"u1","type":"text","message":"hi sir","time":1735041000000},
+			{"message_id":"m2","from_id":"u1","to_id":"oa-self","type":"text","message":"who?","time":1735041001000}
 		]}`)
 	}))
 	defer srv.Close()
