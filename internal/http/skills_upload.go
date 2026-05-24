@@ -240,8 +240,24 @@ func (h *SkillsHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 			"name":    name,
 			"status":  "unchanged",
 		}
-		if len(managerAgentIDs) > 0 {
-			if existing, ok := h.skills.GetSkill(r.Context(), slug); ok && existing.ID != "" {
+		// Source-on-hash-match (#109): close the rollout-race gap where a
+		// skill row can end up with a stale `source` value because the owning
+		// client started sending the `source` field AFTER the row's hash had
+		// already landed. Even though the body is unchanged, reconcile the
+		// source column when the incoming source differs from stored.
+		if existing, ok := h.skills.GetSkill(r.Context(), slug); ok && existing.ID != "" {
+			if currentSrc, srcOk := h.skills.GetSkillSourceBySlug(r.Context(), slug); srcOk && currentSrc != incomingSource {
+				if existingID, err := uuid.Parse(existing.ID); err == nil {
+					if uerr := h.skills.UpdateSkill(r.Context(), existingID, map[string]any{"source": incomingSource}); uerr != nil {
+						slog.Warn("skill_source_reconcile_failed", "slug", slug, "from", currentSrc, "to", incomingSource, "error", uerr)
+					} else {
+						slog.Info("skill_source_reconciled", "slug", slug, "from", currentSrc, "to", incomingSource)
+						emitAudit(h.msgBus, r, "skill.source_reconciled", "skill", slug)
+						response["source_updated"] = map[string]string{"from": currentSrc, "to": incomingSource}
+					}
+				}
+			}
+			if len(managerAgentIDs) > 0 {
 				if existingID, err := uuid.Parse(existing.ID); err == nil {
 					grantErrors := h.grantUploadedSkillManagers(r.Context(), existingID, managerAgentIDs, existingVer, userID)
 					if len(grantErrors) > 0 {
