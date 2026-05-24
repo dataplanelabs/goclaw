@@ -6,6 +6,19 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- **Skill ownership attribution + force_imperative overwrite gate** — `POST /v1/skills/upload`
+  now accepts `source` (`unknown` | `cli` | `gcplane`) and `force_imperative` form fields.
+  Skills stamped `source=gcplane` (uploaded via the declarative pipeline) refuse to be
+  overwritten from a non-gcplane source with **HTTP 409 `managed_skill_overwrite`**,
+  unless `force_imperative=true` is set — which is audit-logged both via
+  `slog.Warn("security.skill_force_imperative_overwrite", …)` AND via the persistent
+  msgBus event `skill.force_overwrite` (so SIEM subscribers see it as a distinct
+  security event, not a routine upload). `GET /v1/skills/{id}` response now also
+  exposes `content_hash` (= existing `file_hash` column) for client-side dedup
+  verification. New `skills.source` column (PG migration 000072, SQLite v41→v42).
+  Tenant-scoped enforcement; 4 behavioral tests (refuse, allow-with-force,
+  invalid-source × 5 cases, tenant-scoped). 3 new i18n keys across en/vi/zh.
+
 - **General JPEG XL (.jxl) inbound support** — Zalo HD photos (and any other
   `.jxl` input) now decode transparently before reaching the LLM, since
   Anthropic / OpenAI / Gemini reject `image/jxl`. Two-layer fix:
