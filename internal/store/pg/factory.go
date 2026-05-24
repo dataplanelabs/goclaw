@@ -35,6 +35,7 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Tracing:   NewPGTracingStore(db),
 		MCP:              NewPGMCPServerStore(db, cfg.EncryptionKey),
 		ChannelInstances: NewPGChannelInstanceStore(db, cfg.EncryptionKey),
+		ChannelSchedules: NewPGChannelScheduleStore(db),
 		ConfigSecrets:    NewPGConfigSecretsStore(db, cfg.EncryptionKey),
 		AgentLinks:       NewPGAgentLinkStore(db),
 		Teams:            NewPGTeamStore(db),

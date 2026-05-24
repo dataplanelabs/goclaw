@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/hooks"
@@ -253,6 +255,10 @@ type Loop struct {
 	// User identity resolver: maps channel contacts to merged tenant users for credential lookups.
 	userResolver UserIdentityResolver
 
+	// standbyResolveMode resolves the effective standby/active mode for an
+	// (tenant, channel, thread, time) tuple. nil = standby disabled.
+	standbyResolveMode func(ctx context.Context, tenantID, channelName, threadKey string, now time.Time) schedule.Mode
+
 	// Per-session cache-touch timestamps for the cache-TTL pruning gate (Phase 06).
 	// Key: sessionKey (string), Value: time.Time of last prune mutation.
 	// sync.Map zero value is ready to use — no init required.
@@ -449,6 +455,10 @@ type LoopConfig struct {
 
 	// User identity resolver for credential lookups (maps channel contacts → tenant users)
 	UserResolver UserIdentityResolver
+
+	// StandbyResolveMode is the optional resolver wired into the pipeline's
+	// StandbyGate stage. nil = standby disabled (no gating overhead).
+	StandbyResolveMode func(ctx context.Context, tenantID, channelName, threadKey string, now time.Time) schedule.Mode
 }
 
 const defaultMaxTokens = config.DefaultMaxTokens
@@ -577,6 +587,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		delegateTargets:        cfg.DelegateTargets,
 		evolutionMetricsStore:  cfg.EvolutionMetricsStore,
 		userResolver:           cfg.UserResolver,
+		standbyResolveMode:     cfg.StandbyResolveMode,
 	}
 }
 

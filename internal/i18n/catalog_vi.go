@@ -315,6 +315,16 @@ func init() {
 		MsgGrantEnvTooManyKeys:  "quá nhiều khóa env: tối đa 50",
 		MsgGrantEnvRevealLimit:  "đã vượt giới hạn yêu cầu xem env — vui lòng thử lại sau",
 
+		// Standby mode
+		StandbyToolDescription:      "Tạm dừng trả lời trong cuộc trò chuyện hiện tại. Trợ lý vẫn quan sát và ghi nhớ tin nhắn nhưng sẽ không trả lời cho đến khi hết thời gian tạm dừng.",
+		StandbyToolParamDuration:    "Thời gian tạm dừng tính bằng giây (60-86400).",
+		StandbyToolParamReason:      "Lý do (tùy chọn) được ghi lại cùng lần tạm dừng.",
+		StandbyErrorInvalidDuration: "duration_seconds phải nằm trong khoảng 60 đến 86400",
+		StandbyErrorNoChannelCtx:    "enter_standby cần ngữ cảnh channel và không gọi được từ caller này",
+		StandbyEntered:              "Đã vào chế độ chờ trong %s (lý do: %s)",
+		StandbyRPCInvalidSchedule:   "lịch không hợp lệ: %s",
+		StandbyRPCNoPermission:      "cần quyền admin của tenant để sửa lịch channel",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Đã forward sang %s theo yêu cầu: %q",
 

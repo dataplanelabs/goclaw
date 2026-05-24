@@ -74,6 +74,12 @@ func wireExtraTools(
 	toolsReg.Register(tools.NewZaloPersonalAddPollOptionsTool())
 	slog.Info("zalo_personal poll tools registered", "count", 5)
 
+	// enter_standby — agent self-pause. Reload callback set later via wireExtras (nil-safe).
+	if pgStores.ChannelSchedules != nil {
+		toolsReg.Register(tools.NewEnterStandbyTool(pgStores.ChannelSchedules, nil))
+		slog.Info("enter_standby tool registered")
+	}
+
 	// Register legacy tool aliases (backward-compat names from policy.go).
 	for alias, canonical := range tools.LegacyToolAliases() {
 		toolsReg.RegisterAlias(alias, canonical)

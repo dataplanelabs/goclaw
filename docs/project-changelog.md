@@ -4,6 +4,14 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ---
 
+## 2026-05-24
+
+### Channels: agent standby mode
+
+Declarative per-channel + per-thread silence schedule (`channel_instances.silence_schedule` JSONB + `channel_thread_schedules`). New `StandbyGate` pipeline stage gates message processing at iteration entry: when a `(tenant, channel, thread)` resolves to `standby`, the gate sets `AbortRun` — Think/Tool/Observe skipped, FinalizeStage still writes working + episodic memory. Per-thread overrides REPLACE the instance default (no merge); one-shot windows beat recurring on overlap. Agent self-pause via `enter_standby(duration_seconds, reason)` tool. 7 new WS RPCs under `channels.schedule_*` + `channels.thread_schedule_*` (tenant admin guard). PG migration 000071 + SQLite slot 41 (`RequiredSchemaVersion=71`, `SchemaVersion=41`). Web UI: new "Standby" tab on channel detail with raw-JSON editor + thread override list. Frozen-clock unit tests cover DST, cross-midnight, one-shot-beats-recurring; PG integration tests cover round-trip + cross-tenant isolation + FK cascade. See `docs/standby-mode.md`.
+
+---
+
 ## 2026-05-18
 
 ### Packages: GitHub installer runtime path

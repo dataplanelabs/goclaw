@@ -315,6 +315,16 @@ func init() {
 		MsgGrantEnvTooManyKeys:  "环境变量键过多：最多 50 个",
 		MsgGrantEnvRevealLimit:  "env 查看请求超出速率限制，请稍后再试",
 
+		// Standby mode
+		StandbyToolDescription:      "在当前会话中暂停回复一段时间。代理仍会观察并记录消息，但在暂停结束前不会回复。",
+		StandbyToolParamDuration:    "暂停时长（秒，60-86400）。",
+		StandbyToolParamReason:      "可选原因，记录到暂停日志。",
+		StandbyErrorInvalidDuration: "duration_seconds 必须在 60 到 86400 之间",
+		StandbyErrorNoChannelCtx:    "enter_standby 需要 channel 上下文，无法从当前调用方使用",
+		StandbyEntered:              "已进入待命模式 %s（原因：%s）",
+		StandbyRPCInvalidSchedule:   "调度不合法：%s",
+		StandbyRPCNoPermission:      "需要租户管理员权限才能编辑频道调度",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 已按请求转发至 %s:%q",
 

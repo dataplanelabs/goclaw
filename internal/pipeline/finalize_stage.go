@@ -42,6 +42,12 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 	// Must run BEFORE session flush so the agent message is persisted even if suppressed.
 	isSilent := s.deps.IsSilentReply != nil && s.deps.IsSilentReply(state.Observe.FinalContent)
 
+	// 2a. Standby mode: same suppression contract as NO_REPLY. Memory writes survive.
+	if state.StandbyMode {
+		state.Observe.FinalContent = ""
+		isSilent = true
+	}
+
 	// 2b. Fallback for empty content (matching v2: channels need non-empty content to deliver).
 	if state.Observe.FinalContent == "" && !isSilent {
 		state.Observe.FinalContent = "..."

@@ -198,9 +198,10 @@ func (l *Loop) buildPipelineDeps(req *RunRequest, bridgeRS *runState) pipeline.P
 				})
 			}
 		},
-		UpdateMetadata:   cb.updateMetadata,
-		BootstrapCleanup: cb.bootstrapCleanup,
-		MaybeSummarize:   cb.maybeSummarize,
+		UpdateMetadata:     cb.updateMetadata,
+		BootstrapCleanup:   cb.bootstrapCleanup,
+		MaybeSummarize:     cb.maybeSummarize,
+		ResolveStandbyMode: l.standbyResolveMode,
 	}
 }
 
