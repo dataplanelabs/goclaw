@@ -238,20 +238,21 @@ func SendMessageWithOptions(
 		mentions = filtered
 	}
 
+	// Endpoint precedence matches zca-js sendMessage.ts:
+	//   quote ? "/quote" : (group && mentions ? "/mention" : group ? "/sendmsg" : "/sms")
+	// mentionInfo rides along on the /quote endpoint too.
 	serviceKey := "chat"
 	apiPath := apiPathDM
 	if threadType == ThreadTypeGroup {
 		serviceKey = "group"
 		apiPath = apiPathGroup
 	}
-	if quote != nil {
-		if threadType == ThreadTypeGroup {
-			apiPath = apiPathGroupQuote
-		} else {
-			apiPath = apiPathDMQuote
-		}
-	}
-	if len(mentions) > 0 && threadType == ThreadTypeGroup {
+	switch {
+	case quote != nil && threadType == ThreadTypeGroup:
+		apiPath = apiPathGroupQuote
+	case quote != nil:
+		apiPath = apiPathDMQuote
+	case len(mentions) > 0 && threadType == ThreadTypeGroup:
 		apiPath = apiPathGroupMention
 	}
 

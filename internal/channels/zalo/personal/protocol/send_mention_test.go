@@ -138,6 +138,11 @@ func TestSendMessageWithOptions_QuoteWithoutAttachment_AllowsMentions(t *testing
 	if _, ok := payload["qmsgId"]; !ok {
 		t.Errorf("expected qmsgId still present alongside mentionInfo: %v", payload)
 	}
+	// Quote endpoint must WIN when both quote and mentions are set (zca-js parity).
+	// Routing mention over quote drops the quote bubble on Zalo client.
+	if !strings.HasSuffix((*cap)[0].path, apiPathGroupQuote) {
+		t.Errorf("path = %q, want suffix %q (quote endpoint must win over mention when both set)", (*cap)[0].path, apiPathGroupQuote)
+	}
 }
 
 // zca-js does NOT drop mentions on quote-with-attachment — both ride together
