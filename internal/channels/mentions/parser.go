@@ -45,12 +45,12 @@ func ParseMarkers(text string, resolve Resolve) (string, []protocol.Mention) {
 
 		marker := text[capStart:capEnd]
 
-		if marker == "all" {
-			replacement := "@all"
+		if marker == "all" || marker == "All" || marker == "everyone" {
+			replacement := "@All"
 			out.WriteString(replacement)
 			mentions = append(mentions, protocol.Mention{
 				UserID:      protocol.MentionAllUID,
-				DisplayName: "all",
+				DisplayName: "All",
 				Position:    posUTF16,
 				Length:      protocol.UTF16Len(replacement),
 				Type:        1,

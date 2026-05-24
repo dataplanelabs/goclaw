@@ -41,6 +41,37 @@ func (mc *MemberCache) Set(threadID, uid, displayName string) {
 	g[uid] = displayName
 }
 
+// FindByName scans the per-group cache for entries whose normalized display
+// name matches needle (already normalized by caller). Returns uid+name on
+// unique match. Returns ok=false on zero or ≥2 matches (refuse on ambiguity).
+func (mc *MemberCache) FindByName(threadID, needle string) (string, string, bool) {
+	if mc == nil || needle == "" {
+		return "", "", false
+	}
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	g, ok := mc.byGroup[threadID]
+	if !ok {
+		return "", "", false
+	}
+	var foundUID, foundName string
+	hits := 0
+	for uid, dn := range g {
+		if normalizeName(dn) == needle {
+			foundUID = uid
+			foundName = dn
+			hits++
+			if hits > 1 {
+				return "", "", false
+			}
+		}
+	}
+	if hits == 1 {
+		return foundUID, foundName, true
+	}
+	return "", "", false
+}
+
 type MemberFetchLimiter struct {
 	window time.Duration
 	mu     sync.Mutex

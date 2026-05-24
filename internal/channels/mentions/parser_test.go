@@ -51,15 +51,27 @@ func TestParseMarkers_SingleIndividualMention(t *testing.T) {
 
 func TestParseMarkers_AtAll(t *testing.T) {
 	got, ms := ParseMarkers("@[all] meeting at 3pm", fixtureResolver(t))
-	want := "@all meeting at 3pm"
+	want := "@All meeting at 3pm"
 	if got != want {
 		t.Fatalf("rendered = %q, want %q", got, want)
 	}
 	wantMs := []protocol.Mention{
-		{UserID: "-1", DisplayName: "all", Position: 0, Length: 4, Type: 1},
+		{UserID: "-1", DisplayName: "All", Position: 0, Length: 4, Type: 1},
 	}
 	if !reflect.DeepEqual(ms, wantMs) {
 		t.Fatalf("mentions:\n got  %+v\n want %+v", ms, wantMs)
+	}
+}
+
+func TestParseMarkers_AtAllAliases(t *testing.T) {
+	for _, marker := range []string{"all", "All", "everyone"} {
+		got, ms := ParseMarkers("@["+marker+"] hello", fixtureResolver(t))
+		if got != "@All hello" {
+			t.Errorf("marker %q rendered %q, want %q", marker, got, "@All hello")
+		}
+		if len(ms) != 1 || ms[0].UserID != "-1" || ms[0].DisplayName != "All" {
+			t.Errorf("marker %q mentions: %+v", marker, ms)
+		}
 	}
 }
 
@@ -206,8 +218,8 @@ func TestParseMarkers_AllMarkerIgnoresResolver(t *testing.T) {
 	if resolverCalled {
 		t.Fatal("resolver invoked for @[all]")
 	}
-	if got != "@all" {
-		t.Fatalf("rendered=%q, want %q", got, "@all")
+	if got != "@All" {
+		t.Fatalf("rendered=%q, want %q", got, "@All")
 	}
 	if ms[0].UserID != "-1" || ms[0].Type != 1 {
 		t.Fatalf("ms[0]=%+v", ms[0])
