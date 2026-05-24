@@ -97,26 +97,18 @@ func (c *Channel) BlockReplyEnabled() *bool { return c.config.BlockReply }
 
 func (c *Channel) QuoteInboundOnDM() bool { return c.quoteInDM() }
 
-// quoteInGroup defaults true (groups need disambiguation); precedence:
-// new field > deprecated quote_user_message > default.
+// quoteInGroup defaults true (groups need disambiguation).
 func (c *Channel) quoteInGroup() bool {
 	if c.config.QuoteUserMessageInGroup != nil {
 		return *c.config.QuoteUserMessageInGroup
 	}
-	if c.config.QuoteUserMessage != nil {
-		return *c.config.QuoteUserMessage
-	}
 	return true
 }
 
-// quoteInDM defaults false (DM has no ambiguity); precedence:
-// new field > deprecated quote_user_message > default.
+// quoteInDM defaults false (DM has no ambiguity).
 func (c *Channel) quoteInDM() bool {
 	if c.config.QuoteUserMessageInDM != nil {
 		return *c.config.QuoteUserMessageInDM
-	}
-	if c.config.QuoteUserMessage != nil {
-		return *c.config.QuoteUserMessage
 	}
 	return false
 }

@@ -197,9 +197,8 @@ type ZaloPersonalConfig struct {
 	HistoryLimit        int                 `json:"history_limit,omitempty"`      // max pending group messages for context (default 50, 0=disabled)
 	CredentialsPath     string              `json:"credentials_path,omitempty"`   // path to saved cookies JSON
 	BlockReply          *bool               `json:"block_reply,omitempty"`        // override gateway block_reply (nil = inherit)
-	QuoteUserMessage        *bool           `json:"quote_user_message,omitempty"`           // deprecated: use quote_user_message_in_{group,dm}; kept as shim fallback
-	QuoteUserMessageInGroup *bool           `json:"quote_user_message_in_group,omitempty"`  // default true; group quoting disambiguates target in busy chats
-	QuoteUserMessageInDM    *bool           `json:"quote_user_message_in_dm,omitempty"`     // default false; DM has no ambiguity
+	QuoteUserMessageInGroup *bool `json:"quote_user_message_in_group,omitempty"` // default true; group quoting disambiguates target in busy chats
+	QuoteUserMessageInDM    *bool `json:"quote_user_message_in_dm,omitempty"`    // default false; DM has no ambiguity
 	DisablePolls        bool                `json:"disable_polls,omitempty"`         // kill switch for the 5 poll tools
 	DisableReactions    bool                `json:"disable_reactions,omitempty"`     // kill switch for the inbound reaction feedback path
 	ListenSelfReactions bool                `json:"listen_self_reactions,omitempty"` // opt-in: surface reactions to the bot's own messages

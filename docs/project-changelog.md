@@ -4,6 +4,22 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ---
 
+## 2026-05-24 (evening — quote-toggle bug fix)
+
+### Zalo Personal: removed legacy `quote_user_message` field entirely
+
+**Bug:** Dual-toggle split from PR #83 introduced silent fallback to the deprecated `quote_user_message` field whenever the new `quote_user_message_in_{dm,group}` keys were absent in the saved config. When users toggled "Quote in DMs" OFF in the UI, the save omitted the new key (default false) but left the legacy `quote_user_message: true` intact → `quoteInDM()` fell through to legacy → DM kept quoting despite the UI showing off.
+
+**Fix:**
+- Removed `QuoteUserMessage` from `ZaloPersonalConfig` (Go struct).
+- Simplified `quoteInDM()` / `quoteInGroup()` to use new fields directly with defaults (DM=false, Group=true) — no fallback chain.
+- Updated test factory + 3 affected handler tests to use new fields.
+- Backfilled prod DB rows: copied legacy value into missing new fields, then stripped `quote_user_message` key entirely from `zalo_personal` rows.
+
+**OA channel unchanged** — `quote_user_message` is still the active field for `zalo_oa` (not deprecated there).
+
+---
+
 ## 2026-05-24 (late afternoon — mention v3)
 
 ### Zalo Personal: mention v3 — zca-js fact-check corrections + bare-`@Name` auto-wrap

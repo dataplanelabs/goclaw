@@ -11,25 +11,22 @@ func TestQuoteResolve_Precedence(t *testing.T) {
 	ptr := func(b bool) *bool { return &b }
 
 	cases := []struct {
-		name        string
-		old         *bool
-		newGroup    *bool
-		newDM       *bool
-		wantGroup   bool
-		wantDM      bool
+		name      string
+		newGroup  *bool
+		newDM     *bool
+		wantGroup bool
+		wantDM    bool
 	}{
-		{"all nil → defaults (group=true, dm=false)", nil, nil, nil, true, false},
-		{"legacy on → both true (shim preserves)", ptr(true), nil, nil, true, true},
-		{"legacy off → both false (shim preserves)", ptr(false), nil, nil, false, false},
-		{"group override wins over legacy", ptr(true), ptr(false), nil, false, true},
-		{"dm override wins over legacy", ptr(false), nil, ptr(true), false, true},
-		{"both new set, legacy ignored", ptr(false), ptr(true), ptr(true), true, true},
+		{"both nil → defaults (group=true, dm=false)", nil, nil, true, false},
+		{"group=false explicit", ptr(false), nil, false, false},
+		{"dm=true explicit", nil, ptr(true), true, true},
+		{"both explicit", ptr(true), ptr(true), true, true},
+		{"both false explicit", ptr(false), ptr(false), false, false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &Channel{config: config.ZaloPersonalConfig{
-				QuoteUserMessage:        tc.old,
 				QuoteUserMessageInGroup: tc.newGroup,
 				QuoteUserMessageInDM:    tc.newDM,
 			}}
