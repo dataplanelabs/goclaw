@@ -7,9 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
+	"github.com/nextlevelbuilder/goclaw/internal/tracing"
 )
 
 // isTextMime returns true for MIME types representing human-readable text content.
@@ -107,6 +110,11 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 				imageFiles = append(imageFiles, bus.MediaFile{Path: ref.Path, MimeType: ref.MimeType, Filename: filepath.Base(ref.Path)})
 				imageRefs = append(imageRefs, ref)
 			}
+		}
+		// Expose current-turn user image refs for create_image auto-inject:
+		// when LLM omits reference_image_ids despite a fresh user upload.
+		if len(imageRefs) > 0 {
+			ctx = tools.WithCurrentTurnUserImageRefs(ctx, imageRefs)
 		}
 		if deferToReadImageTool {
 			// File-ref mode: images primarily accessed via read_image(path=...).
@@ -212,6 +220,30 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 			if lastMsg := messages[len(messages)-1]; lastMsg.Role == "user" {
 				if nameMap := tools.ExtractMediaNameMap(lastMsg.Content); len(nameMap) > 0 {
 					ctx = tools.WithRunMediaNames(ctx, nameMap)
+				}
+			}
+		}
+	}
+
+	// Refresh trace input_preview with the post-enrichment user content so the
+	// dashboard shows what the LLM actually saw (e.g. <media:image id="..."
+	// path="...">) instead of the raw inbound text (bare <media:image>).
+	// Without this, debugging tool-call inputs is misleading: trace input
+	// shows bare tag while LLM input had ids attached. See trace 019e5799.
+	if collector := tracing.CollectorFromContext(ctx); collector != nil {
+		if traceID := tracing.TraceIDFromContext(ctx); traceID != uuid.Nil {
+			for i := len(messages) - 1; i >= 0; i-- {
+				if messages[i].Role == "user" {
+					enriched := messages[i].Content
+					if enriched != "" {
+						update := map[string]any{
+							"input_preview": tracing.TruncateMid(enriched, collector.PreviewMaxLen()),
+						}
+						if err := collector.UpdateTrace(ctx, traceID, update); err != nil {
+							slog.Debug("tracing: failed to refresh input_preview", "err", err)
+						}
+					}
+					break
 				}
 			}
 		}

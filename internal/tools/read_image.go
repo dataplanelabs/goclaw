@@ -46,6 +46,22 @@ func MediaImageRefsFromCtx(ctx context.Context) []providers.MediaRef {
 	return v
 }
 
+const ctxCurrentTurnImageRefs toolContextKey = "tool_current_turn_image_refs"
+
+// WithCurrentTurnUserImageRefs stores MediaRefs for images the USER uploaded
+// in the CURRENT turn only (excludes historical refs). Used by create_image
+// to auto-inject a reference when the LLM forgets to pass reference_image_ids
+// despite the user having just uploaded a photo (common with weaker models).
+func WithCurrentTurnUserImageRefs(ctx context.Context, refs []providers.MediaRef) context.Context {
+	return context.WithValue(ctx, ctxCurrentTurnImageRefs, refs)
+}
+
+// CurrentTurnUserImageRefsFromCtx retrieves current-turn user image refs.
+func CurrentTurnUserImageRefsFromCtx(ctx context.Context) []providers.MediaRef {
+	v, _ := ctx.Value(ctxCurrentTurnImageRefs).([]providers.MediaRef)
+	return v
+}
+
 // --- ReadImageTool ---
 
 // visionProviderPriority is the order in which providers are tried for vision.
