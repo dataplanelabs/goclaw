@@ -96,10 +96,16 @@ func (s *stubSecureCLIStore) ListEnabled(ctx context.Context) ([]store.SecureCLI
 func (s *stubSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) ([]store.SecureCLIBinary, error) {
 	return nil, nil
 }
+func (s *stubSecureCLIStore) GetByName(ctx context.Context, binaryName string) (*store.SecureCLIBinary, error) {
+	return nil, nil
+}
+func (s *stubSecureCLIStore) ListUserCredentialsByBinaryName(ctx context.Context, binaryName string) ([]store.SecureCLIUserCredentialWithBinary, error) {
+	return nil, nil
+}
 func (s *stubSecureCLIStore) GetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string) (*store.SecureCLIUserCredential, error) {
 	return nil, nil
 }
-func (s *stubSecureCLIStore) SetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string, encryptedEnv []byte) error {
+func (s *stubSecureCLIStore) SetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string, encryptedEnv []byte, metadata json.RawMessage) error {
 	return nil
 }
 func (s *stubSecureCLIStore) DeleteUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string) error {

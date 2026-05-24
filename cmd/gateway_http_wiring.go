@@ -13,6 +13,7 @@ import (
 	httpapi "github.com/nextlevelbuilder/goclaw/internal/http"
 	mcpbridge "github.com/nextlevelbuilder/goclaw/internal/mcp"
 	"github.com/nextlevelbuilder/goclaw/internal/media"
+	"github.com/nextlevelbuilder/goclaw/internal/oauth"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/store/pg"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
@@ -95,6 +96,16 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	}
 	if h.secureCLIGrant != nil {
 		d.server.SetSecureCLIGrantHandler(h.secureCLIGrant)
+	}
+
+	// B3-01: per-operator Google integrations. Wire only when SecureCLI store
+	// exists; the handler returns MsgOAuthNotConfigured when client_id/secret
+	// env vars are unset, so safe to register unconditionally otherwise.
+	if d.pgStores != nil && d.pgStores.SecureCLI != nil {
+		googleClient := oauth.NewGoogleClient(d.cfg.OAuth.Google)
+		uiBase := d.cfg.Gateway.UIBaseURL
+		integrationsH := httpapi.NewIntegrationsHandler(d.pgStores.SecureCLI, googleClient, d.msgBus, uiBase)
+		d.server.SetIntegrationsHandler(integrationsH)
 	}
 
 	// Activity audit log API

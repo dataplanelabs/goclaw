@@ -322,6 +322,14 @@ func init() {
 		MsgSecureCliNoGrant:        "代理没有针对二进制 %q 的授权",
 		MsgSecureCliDeniedByPolicy: "调用被 deny_args 策略拒绝：%s",
 
+		// OAuth integrations
+		MsgOAuthStateMismatch:       "OAuth state 令牌不匹配或已过期 — 请重试",
+		MsgOAuthExchangeFailed:      "OAuth 授权码兑换失败：%s",
+		MsgOAuthBinaryNotFound:      "二进制 %q 在此租户尚未注册",
+		MsgOAuthIntegrationNotFound: "找不到 %q 的集成",
+		MsgOAuthRevoked:             "Google 凭据已被撤销 — 请通过 设置 → 集成 重新连接",
+		MsgOAuthNotConfigured:       "服务器未配置 Google OAuth",
+
 		// Standby mode
 		StandbyToolDescription:      "在当前会话中暂停回复一段时间。代理仍会观察并记录消息，但在暂停结束前不会回复。",
 		StandbyToolParamDuration:    "暂停时长（秒，60-86400）。",
