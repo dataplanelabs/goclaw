@@ -317,6 +317,11 @@ func init() {
 		MsgGrantEnvTooManyKeys:  "quá nhiều khóa env: tối đa 50",
 		MsgGrantEnvRevealLimit:  "đã vượt giới hạn yêu cầu xem env — vui lòng thử lại sau",
 
+		// Secure CLI execution
+		MsgSecureCliBinaryNotFound: "binary %q chưa được đăng ký cho secure exec",
+		MsgSecureCliNoGrant:        "agent chưa được cấp quyền cho binary %q",
+		MsgSecureCliDeniedByPolicy: "lời gọi bị từ chối bởi chính sách deny_args: %s",
+
 		// Standby mode
 		StandbyToolDescription:      "Tạm dừng trả lời trong cuộc trò chuyện hiện tại. Trợ lý vẫn quan sát và ghi nhớ tin nhắn nhưng sẽ không trả lời cho đến khi hết thời gian tạm dừng.",
 		StandbyToolParamDuration:    "Thời gian tạm dừng tính bằng giây (60-86400).",

@@ -27,12 +27,12 @@ func NewPGSecureCLIStore(db *sql.DB, encryptionKey string) *PGSecureCLIStore {
 }
 
 const secureCLISelectCols = `id, binary_name, binary_path, description, encrypted_env,
- deny_args, deny_verbose, timeout_seconds, tips, is_global, enabled, created_by, created_at, updated_at`
+ deny_args, deny_verbose, timeout_seconds, tips, is_global, enabled, created_by, version, created_at, updated_at`
 
 // secureCLISelectColsAliased is prefixed with table alias "b."
 // Required for LookupByBinary which uses LEFT JOIN (ambiguous column names without prefix).
 const secureCLISelectColsAliased = `b.id, b.binary_name, b.binary_path, b.description, b.encrypted_env,
- b.deny_args, b.deny_verbose, b.timeout_seconds, b.tips, b.is_global, b.enabled, b.created_by, b.created_at, b.updated_at`
+ b.deny_args, b.deny_verbose, b.timeout_seconds, b.tips, b.is_global, b.enabled, b.created_by, b.version, b.created_at, b.updated_at`
 
 func (s *PGSecureCLIStore) Create(ctx context.Context, b *store.SecureCLIBinary) error {
 	if err := store.ValidateUserID(b.CreatedBy); err != nil {
@@ -69,14 +69,14 @@ func (s *PGSecureCLIStore) Create(ctx context.Context, b *store.SecureCLIBinary)
 
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO secure_cli_binaries (id, binary_name, binary_path, description, encrypted_env,
-		 deny_args, deny_verbose, timeout_seconds, tips, is_global, enabled, created_by, created_at, updated_at, tenant_id)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		 deny_args, deny_verbose, timeout_seconds, tips, is_global, enabled, created_by, version, created_at, updated_at, tenant_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 		b.ID, b.BinaryName, nilStr(derefStr(b.BinaryPath)), b.Description,
 		envBytes,
 		jsonOrEmptyArray(b.DenyArgs), jsonOrEmptyArray(b.DenyVerbose),
 		b.TimeoutSeconds, b.Tips,
 		b.IsGlobal, b.Enabled,
-		b.CreatedBy, now, now, tenantID,
+		b.CreatedBy, nilStr(derefStr(b.Version)), now, now, tenantID,
 	)
 	return err
 }
@@ -102,17 +102,19 @@ func (s *PGSecureCLIStore) scanRow(row *sql.Row) (*store.SecureCLIBinary, error)
 	var denyArgs, denyVerbose *[]byte
 	var env []byte
 
+	var version *string
 	err := row.Scan(
 		&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 		&denyArgs, &denyVerbose,
 		&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
-		&b.Enabled, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt,
+		&b.Enabled, &b.CreatedBy, &version, &b.CreatedAt, &b.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	b.BinaryPath = binaryPath
+	b.Version = version
 	if denyArgs != nil {
 		b.DenyArgs = *denyArgs
 	}
@@ -143,17 +145,19 @@ func (s *PGSecureCLIStore) scanRows(rows *sql.Rows) ([]store.SecureCLIBinary, er
 		var binaryPath *string
 		var denyArgs, denyVerbose *[]byte
 		var env []byte
+		var version *string
 
 		if err := rows.Scan(
 			&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 			&denyArgs, &denyVerbose,
 			&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
-			&b.Enabled, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt,
+			&b.Enabled, &b.CreatedBy, &version, &b.CreatedAt, &b.UpdatedAt,
 		); err != nil {
 			continue
 		}
 
 		b.BinaryPath = binaryPath
+		b.Version = version
 		if denyArgs != nil {
 			b.DenyArgs = *denyArgs
 		}
@@ -178,6 +182,7 @@ var secureCLIAllowedFields = map[string]bool{
 	"binary_name": true, "binary_path": true, "description": true,
 	"encrypted_env": true, "deny_args": true, "deny_verbose": true,
 	"timeout_seconds": true, "tips": true, "is_global": true, "enabled": true,
+	"version":    true,
 	"updated_at": true,
 }
 
@@ -294,18 +299,20 @@ func (s *PGSecureCLIStore) scanRowsWithGrants(rows *sql.Rows) ([]store.SecureCLI
 		var denyArgs, denyVerbose *[]byte
 		var env []byte
 		var grantsJSON []byte
+		var version *string
 
 		if err := rows.Scan(
 			&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 			&denyArgs, &denyVerbose,
 			&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
-			&b.Enabled, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt,
+			&b.Enabled, &b.CreatedBy, &version, &b.CreatedAt, &b.UpdatedAt,
 			&grantsJSON,
 		); err != nil {
 			continue
 		}
 
 		b.BinaryPath = binaryPath
+		b.Version = version
 		if denyArgs != nil {
 			b.DenyArgs = *denyArgs
 		}
@@ -416,6 +423,7 @@ func (s *PGSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.Secu
 	var binaryPath *string
 	var denyArgs, denyVerbose *[]byte
 	var env []byte
+	var version *string
 	// Grant override columns (nullable)
 	var grantDenyArgs, grantDenyVerbose *[]byte
 	var grantTimeout *int
@@ -429,7 +437,7 @@ func (s *PGSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.Secu
 		&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 		&denyArgs, &denyVerbose,
 		&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
-		&b.Enabled, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt,
+		&b.Enabled, &b.CreatedBy, &version, &b.CreatedAt, &b.UpdatedAt,
 		// Grant columns
 		&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantEnabled, &grantID, &grantEncEnv,
 		// User env
@@ -443,6 +451,7 @@ func (s *PGSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.Secu
 	}
 
 	b.BinaryPath = binaryPath
+	b.Version = version
 	if denyArgs != nil {
 		b.DenyArgs = *denyArgs
 	}
@@ -581,6 +590,7 @@ func (s *PGSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) 
 		var binaryPath *string
 		var denyArgs, denyVerbose *[]byte
 		var env []byte
+		var version *string
 		var grantDenyArgs, grantDenyVerbose *[]byte
 		var grantTimeout *int
 		var grantTips *string
@@ -591,13 +601,14 @@ func (s *PGSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) 
 			&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 			&denyArgs, &denyVerbose,
 			&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
-			&b.Enabled, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt,
+			&b.Enabled, &b.CreatedBy, &version, &b.CreatedAt, &b.UpdatedAt,
 			&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantID, &grantEncEnv,
 		); err != nil {
 			continue
 		}
 
 		b.BinaryPath = binaryPath
+		b.Version = version
 		if denyArgs != nil {
 			b.DenyArgs = *denyArgs
 		}

@@ -317,6 +317,11 @@ func init() {
 		MsgGrantEnvTooManyKeys:  "环境变量键过多：最多 50 个",
 		MsgGrantEnvRevealLimit:  "env 查看请求超出速率限制，请稍后再试",
 
+		// Secure CLI execution
+		MsgSecureCliBinaryNotFound: "二进制 %q 未注册为安全执行项",
+		MsgSecureCliNoGrant:        "代理没有针对二进制 %q 的授权",
+		MsgSecureCliDeniedByPolicy: "调用被 deny_args 策略拒绝：%s",
+
 		// Standby mode
 		StandbyToolDescription:      "在当前会话中暂停回复一段时间。代理仍会观察并记录消息，但在暂停结束前不会回复。",
 		StandbyToolParamDuration:    "暂停时长（秒，60-86400）。",

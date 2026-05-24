@@ -351,6 +351,11 @@ const (
 	MsgGrantEnvTooManyKeys  = "error.grant_env_too_many_keys" // "too many env keys: max 50"
 	MsgGrantEnvRevealLimit  = "error.grant_env_reveal_limit"  // "rate limit exceeded for env reveal"
 
+	// --- Secure CLI execution ---
+	MsgSecureCliBinaryNotFound = "error.secure_cli_binary_not_found" // "binary %q is not registered for secure exec"
+	MsgSecureCliNoGrant        = "error.secure_cli_no_grant"         // "agent has no grant for binary %q"
+	MsgSecureCliDeniedByPolicy = "error.secure_cli_denied_by_policy" // "call denied by deny_args policy: %s"
+
 	// --- Standby mode ---
 	StandbyToolDescription      = "standby.tool.description"
 	StandbyToolParamDuration    = "standby.tool.param.duration"
