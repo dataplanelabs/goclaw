@@ -4,6 +4,23 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ---
 
+## 2026-05-25 (early morning — renderer list grouping)
+
+### Zalo Personal: fix `1.` restart bug in numbered lists
+
+`emitListStyles` now groups consecutive same-kind list items into ONE `lst_*` Style range. Previously each line emitted its own range, causing Zalo's native client to restart numbering at "1." for every range — a 5-item numbered list rendered as `1. ... 1. ... 1. ... 1. ... 1. ...`.
+
+**New behavior:**
+- Consecutive `1./2./3.` (or `- /- /-`) lines → ONE combined style range → Zalo numbers/bullets sequentially
+- Single isolated `1. foo` (surrounded by non-list content) → KEEPS the literal `"1."` prefix visible, no style
+- Single isolated `- foo` → strips `-` + emits `lst_1` (Zalo bullet looks cleaner than literal `-`)
+- Blank-line break or opposite-kind line terminates the run
+- Nested LLM patterns (numbered headers with unicode `•` sub-items) leave numbers visible as plain text
+
+Root cause: `plans/reports/debug-260525-0057-zalo-styles-list-numbering.md`. Trace `019e5b1f-c49f-7e0e-a646-5a4cfd11a39c` captured the original bug.
+
+---
+
 ## 2026-05-24 (late night — native styles)
 
 ### Zalo Personal: native rich-text styling via `textProperties`
