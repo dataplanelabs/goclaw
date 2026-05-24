@@ -251,6 +251,14 @@
       "label": "引用用户消息",
       "help": "回复时引用用户的最近一条入站消息（Zalo 的 reply-to）。关闭后仅发送普通回复，不带引用。"
     },
+    "quote_user_message_in_group": {
+      "label": "群聊中引用用户消息",
+      "help": "回复时引用用户在群聊中的最近一条消息。在繁忙群聊中可清楚区分回复对象。"
+    },
+    "quote_user_message_in_dm": {
+      "label": "私聊中引用用户消息",
+      "help": "回复时引用用户的最近一条私聊消息。1对1对话通常不需要。"
+    },
     "media_max_mb": { "label": "最大媒体大小 (MB)" },
     "link_preview": { "label": "链接预览" },
     "allow_from": { "label": "允许的用户" },

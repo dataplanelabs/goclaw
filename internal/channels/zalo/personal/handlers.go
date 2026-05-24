@@ -480,7 +480,7 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		"platform":     channels.TypeZaloPersonal,
 		"display_name": channels.SanitizeDisplayName(senderName),
 	}
-	if c.quoteUserMessageEnabled() {
+	if c.quoteInDM() {
 		if qm := buildSelfQuoteMetadata(&msg.Data, senderID); qm != nil {
 			maps.Copy(metadata, qm)
 		}
@@ -580,7 +580,7 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		"display_name": channels.SanitizeDisplayName(senderName),
 		"sender_uid":   senderID,
 	}
-	if c.quoteUserMessageEnabled() {
+	if c.quoteInGroup() {
 		if qm := buildSelfQuoteMetadata(&msg.Data.TMessage, senderID); qm != nil {
 			maps.Copy(metadata, qm)
 		}

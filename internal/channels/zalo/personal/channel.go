@@ -95,14 +95,30 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 // BlockReplyEnabled returns the per-channel block_reply override (nil = inherit gateway default).
 func (c *Channel) BlockReplyEnabled() *bool { return c.config.BlockReply }
 
-func (c *Channel) QuoteInboundOnDM() bool { return c.quoteUserMessageEnabled() }
+func (c *Channel) QuoteInboundOnDM() bool { return c.quoteInDM() }
 
-// quoteUserMessageEnabled defaults to false (opt-in), mirroring zalo-oa.
-func (c *Channel) quoteUserMessageEnabled() bool {
-	if c.config.QuoteUserMessage == nil {
-		return false
+// quoteInGroup defaults true (groups need disambiguation); precedence:
+// new field > deprecated quote_user_message > default.
+func (c *Channel) quoteInGroup() bool {
+	if c.config.QuoteUserMessageInGroup != nil {
+		return *c.config.QuoteUserMessageInGroup
 	}
-	return *c.config.QuoteUserMessage
+	if c.config.QuoteUserMessage != nil {
+		return *c.config.QuoteUserMessage
+	}
+	return true
+}
+
+// quoteInDM defaults false (DM has no ambiguity); precedence:
+// new field > deprecated quote_user_message > default.
+func (c *Channel) quoteInDM() bool {
+	if c.config.QuoteUserMessageInDM != nil {
+		return *c.config.QuoteUserMessageInDM
+	}
+	if c.config.QuoteUserMessage != nil {
+		return *c.config.QuoteUserMessage
+	}
+	return false
 }
 
 // session returns the current session snapshot (thread-safe).

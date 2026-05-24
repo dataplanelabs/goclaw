@@ -287,6 +287,14 @@
       "label": "Quote user message",
       "help": "Reply by quoting the user's last inbound message (Zalo's reply-to). Turn off for plain replies without quote."
     },
+    "quote_user_message_in_group": {
+      "label": "Quote user message in groups",
+      "help": "Reply by quoting the user's last group message. Disambiguates target in busy chats."
+    },
+    "quote_user_message_in_dm": {
+      "label": "Quote user message in DMs",
+      "help": "Reply by quoting the user's last DM. Usually unnecessary in 1-on-1 chats."
+    },
     "media_max_mb": { "label": "Max Media Size (MB)" },
     "link_preview": { "label": "Link Preview" },
     "allow_from": { "label": "Allowed Users" },
