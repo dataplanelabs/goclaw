@@ -115,26 +115,38 @@ func (w *PollWorker) Stop() {
 	w.runWG.Wait()
 }
 
-// pollPageCap is Zalo's hard cap on `count` for /listrecentchat and
-// /conversation. Asking for >10 returns error -210 "maximum count is 10".
+// pollPageCap is Zalo's hard cap on `count` for /listrecentchat. Asking
+// for >10 returns error -210 "maximum count is 10".
 const pollPageCap = 10
 
+// tick fetches recent messages and groups by peer uid so applyMessages
+// can advance per-peer cursors. /v2.0/oa/listrecentchat returns a flat
+// list of messages across all users; group locally — no per-peer
+// follow-up API call needed.
 func (w *PollWorker) tick(ctx context.Context) {
-	entries, err := w.onBehalf.ListRecentChat(ctx, 0, pollPageCap)
+	msgs, err := w.onBehalf.ListRecentMessages(ctx, 0, pollPageCap)
 	if err != nil {
 		w.classifyErr(err, "list_recent_chat")
 		return
 	}
-	for _, entry := range entries {
-		if entry.UID == "" {
+	if len(msgs) == 0 {
+		return
+	}
+	byPeer := make(map[string][]ConversationMessage)
+	for _, m := range msgs {
+		// Peer = the OTHER side of the conversation. OA→user: peer is to_id.
+		// user→OA: peer is from_id. Use whichever != selfUID.
+		peer := m.SrcID
+		if w.selfUID != "" && m.SrcID == w.selfUID {
+			peer = m.DstID
+		}
+		if peer == "" {
 			continue
 		}
-		msgs, err := w.onBehalf.GetConversation(ctx, entry.UID, 0, pollPageCap)
-		if err != nil {
-			w.classifyErr(err, "get_conversation")
-			continue
-		}
-		w.applyMessages(ctx, entry.UID, msgs)
+		byPeer[peer] = append(byPeer[peer], m)
+	}
+	for peer, group := range byPeer {
+		w.applyMessages(ctx, peer, group)
 	}
 }
 

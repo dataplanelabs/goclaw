@@ -27,28 +27,33 @@ func NewOnBehalfClient(client *Client, tokenSrc func() string) *OnBehalfClient {
 	return &OnBehalfClient{client: client, tokenSrc: tokenSrc}
 }
 
-// RecentChatEntry is one row from /onbehalf/listrecentchat.
+// RecentChatEntry / ConversationMessage retained as aliases for the
+// existing fake-store tests. Real Zalo /listrecentchat returns the same
+// shape as the customer-poll `message` struct in poll.go: each row IS a
+// message (not a thread summary).
 type RecentChatEntry struct {
-	UID         string `json:"uid"`
-	LastMsgID   string `json:"last_msg_id"`
-	LastMsgTime int64  `json:"last_msg_time"`
-	UserName    string `json:"display_name,omitempty"`
+	UID         string `json:"-"` // populated from FromID/ToID at process-time
+	LastMsgID   string `json:"-"`
+	LastMsgTime int64  `json:"-"`
+	UserName    string `json:"-"`
 }
 
-// ConversationMessage is one row from /onbehalf/conversation. Field names
-// are best-effort from SDK inspection; verify and revise after first real
-// response captured in prod.
+// ConversationMessage mirrors the customer poller's `message` shape:
+// `from_id`, `to_id`, `message_id`, `message` (text body), `time`.
 type ConversationMessage struct {
-	MsgID string `json:"msg_id"`
-	SrcID string `json:"src_id"`
-	DstID string `json:"dst_id"`
-	Type  string `json:"type"`
-	Text  string `json:"message"`
-	Time  int64  `json:"time"`
+	MsgID       string `json:"message_id"`
+	SrcID       string `json:"from_id"` // sender uid; OA's uid for OA→user, customer uid for user→OA
+	DstID       string `json:"to_id,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Text        string `json:"message,omitempty"`
+	Time        int64  `json:"time,omitempty"`
+	DisplayName string `json:"from_display_name,omitempty"`
 }
 
-// ListRecentChat pages over recently-active chat partners.
-func (c *OnBehalfClient) ListRecentChat(ctx context.Context, offset, count int) ([]RecentChatEntry, error) {
+// ListRecentMessages fetches the most-recent N messages across all users
+// on this OA. Zalo's /v2.0/oa/listrecentchat returns the same flat
+// message shape used by the customer poller.
+func (c *OnBehalfClient) ListRecentMessages(ctx context.Context, offset, count int) ([]ConversationMessage, error) {
 	tok := c.token()
 	if tok == "" {
 		return nil, ErrInvalidRefreshToken
@@ -60,14 +65,34 @@ func (c *OnBehalfClient) ListRecentChat(ctx context.Context, offset, count int) 
 		return nil, c.wrap(err)
 	}
 	var env struct {
-		Error   int               `json:"error"`
-		Message string            `json:"message"`
-		Data    []RecentChatEntry `json:"data"`
+		Error   int                   `json:"error"`
+		Message string                `json:"message"`
+		Data    []ConversationMessage `json:"data"`
 	}
 	if jerr := json.Unmarshal(raw, &env); jerr != nil {
 		return nil, fmt.Errorf("unmarshal listrecentchat: %w", jerr)
 	}
 	return env.Data, nil
+}
+
+// ListRecentChat is kept for backwards-compat with existing tests. Calls
+// ListRecentMessages and projects to legacy entry shape (one per uid).
+func (c *OnBehalfClient) ListRecentChat(ctx context.Context, offset, count int) ([]RecentChatEntry, error) {
+	msgs, err := c.ListRecentMessages(ctx, offset, count)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{})
+	out := make([]RecentChatEntry, 0, len(msgs))
+	for _, m := range msgs {
+		peer := m.SrcID
+		if _, ok := seen[peer]; ok {
+			continue
+		}
+		seen[peer] = struct{}{}
+		out = append(out, RecentChatEntry{UID: peer, LastMsgID: m.MsgID, LastMsgTime: m.Time, UserName: m.DisplayName})
+	}
+	return out, nil
 }
 
 // GetConversation pages messages for a given partner UID.
