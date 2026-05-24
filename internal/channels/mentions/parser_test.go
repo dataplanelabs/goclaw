@@ -250,3 +250,132 @@ func TestParseMarkers_TextBetweenMarkersHandled(t *testing.T) {
 		t.Fatalf("ms[1]=%+v", ms[1])
 	}
 }
+
+// ParseMarkersWithStyles: 5-case algorithm coverage.
+
+func TestParseMarkersWithStyles_NilStyles_DelegatesPlain(t *testing.T) {
+	got, ms, styles := ParseMarkersWithStyles("@[u_a] hi", fixtureResolver(t), nil)
+	if got != "@Alice hi" {
+		t.Fatalf("rendered=%q", got)
+	}
+	if len(ms) != 1 || styles != nil {
+		t.Fatalf("ms=%+v styles=%+v", ms, styles)
+	}
+}
+
+func TestParseMarkersWithStyles_StyleRightOfMarker_Shifts(t *testing.T) {
+	// "@[u_a] hi" — input UTF-16: @[u_a]=6, " "=1, hi=2.
+	// Marker [0,6) replaced with "@Alice" (6 cu) → delta=0.
+	// Style over "hi" at input pos 7 len 2 → stays at 7 len 2 in output.
+	in := "@[u_a] hi"
+	style := Style{Start: 7, Len: 2, St: "b"}
+	_, _, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if len(got) != 1 || got[0].Start != 7 || got[0].Len != 2 {
+		t.Fatalf("got=%+v want=[{7,2,b}]", got)
+	}
+}
+
+func TestParseMarkersWithStyles_StyleRightOfMarker_WithDelta(t *testing.T) {
+	// Marker @[u_vn] → @Đức. @[u_vn]=7 input UTF-16. "@Đức"=4 output UTF-16.
+	// delta = 4 - 7 = -3.
+	// "@[u_vn] hi" — style over "hi" at input pos 8 len 2 → 8-3=5, len 2.
+	in := "@[u_vn] hi"
+	style := Style{Start: 8, Len: 2, St: "b"}
+	_, _, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if len(got) != 1 || got[0].Start != 5 || got[0].Len != 2 {
+		t.Fatalf("got=%+v want=[{5,2,b}]", got)
+	}
+}
+
+func TestParseMarkersWithStyles_StyleLeftOfMarker_Unchanged(t *testing.T) {
+	in := "hi @[u_a]"
+	style := Style{Start: 0, Len: 2, St: "b"}
+	_, _, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if len(got) != 1 || got[0].Start != 0 || got[0].Len != 2 {
+		t.Fatalf("got=%+v want=[{0,2,b}]", got)
+	}
+}
+
+func TestParseMarkersWithStyles_MarkerInsideStyle_LenAdjusts(t *testing.T) {
+	// "**@[u_vn] hi**" — bold over the inner content
+	// Inner: "@[u_vn] hi" = 10 UTF-16 input.
+	// After replacement: "@Đức hi" = 7 UTF-16. delta = -3.
+	// Style {Start:0, Len:10, "b"} → Len becomes 10-3=7.
+	in := "@[u_vn] hi"
+	style := Style{Start: 0, Len: 10, St: "b"}
+	rendered, _, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if rendered != "@Đức hi" {
+		t.Fatalf("rendered=%q", rendered)
+	}
+	if len(got) != 1 || got[0].Start != 0 || got[0].Len != 7 {
+		t.Fatalf("got=%+v want=[{0,7,b}]", got)
+	}
+}
+
+func TestParseMarkersWithStyles_StyleInsideMarker_Dropped(t *testing.T) {
+	// Style exactly covering the marker — meaningless after replacement.
+	in := "@[u_a]"
+	style := Style{Start: 0, Len: 6, St: "b"}
+	_, _, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if len(got) != 0 {
+		t.Fatalf("got=%+v want=nil (drop)", got)
+	}
+}
+
+func TestParseMarkersWithStyles_MultipleMarkers_CumulativeDelta(t *testing.T) {
+	// "@[u_vn] hi @[u_vn] bye" — two markers each with delta=-3.
+	// Style over "bye" at input pos 18 len 3:
+	//   marker1 [0,7)  delta -3, style right of marker1 → shift -3
+	//   marker2 [11,18) delta -3, styleStart=18, sp.endUTF16=18 → 18>=18 → shift -3
+	// total shift = -6 → output Start = 18-6 = 12. In output "@Đức hi @Đức bye"
+	// = 4+1+2+1+4+1=13... let me recompute: "@Đức hi @Đức " = 4+1+2+1+4+1=13.
+	// "bye" starts at 12. So Start = 12, Len = 3.
+	in := "@[u_vn] hi @[u_vn] bye"
+	style := Style{Start: 18, Len: 3, St: "b"}
+	rendered, _, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if rendered != "@Đức hi @Đức bye" {
+		t.Fatalf("rendered=%q", rendered)
+	}
+	if len(got) != 1 || got[0].Start != 12 || got[0].Len != 3 {
+		t.Fatalf("got=%+v want=[{12,3,b}]", got)
+	}
+}
+
+func TestParseMarkersWithStyles_FiveStylesAcrossThreeMarkers(t *testing.T) {
+	// Sanity: lots of moving parts.
+	// "@[u_a] **bold** @[u_b] **italic**" — bold over "bold" at pos 9 len 4,
+	// italic over "italic" at pos 25 len 6.
+	in := "@[u_a] bold @[u_b] italic"
+	styles := []Style{
+		{Start: 7, Len: 4, St: "b"},   // "bold" at input pos 7
+		{Start: 19, Len: 6, St: "i"},  // "italic" at input pos 19
+	}
+	// markers: [0,6) delta 0 (@[u_a]→@Alice), [12,18) delta -2 (@[u_b]→@Bob)
+	// Style "bold" at 7: right of m1 (shift 0), left of m2 → final 7,4
+	// Style "italic" at 19: right of m1 (shift 0), right of m2 (shift -2) → 17,6
+	rendered, _, got := ParseMarkersWithStyles(in, fixtureResolver(t), styles)
+	if rendered != "@Alice bold @Bob italic" {
+		t.Fatalf("rendered=%q", rendered)
+	}
+	expected := []Style{
+		{Start: 7, Len: 4, St: "b"},
+		{Start: 17, Len: 6, St: "i"},
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("got=%+v want=%+v", got, expected)
+	}
+}
+
+// Regression pin: ParseMarkers (non-styles) must keep identical behavior to
+// before the ParseMarkersWithStyles addition — used by zalo/bot caller.
+func TestParseMarkers_BotPathUnchanged(t *testing.T) {
+	in := "@[u_a] hello @[u_b]"
+	want := "@Alice hello @Bob"
+	got, ms := ParseMarkers(in, fixtureResolver(t))
+	if got != want {
+		t.Fatalf("rendered=%q want=%q", got, want)
+	}
+	if len(ms) != 2 {
+		t.Fatalf("mentions=%+v", ms)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	zcommon "github.com/nextlevelbuilder/goclaw/internal/channels/zalo/common"
 	pkgproto "github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
@@ -184,6 +185,7 @@ type SendOptions struct {
 	Text     string
 	Quote    *SendMessageQuote
 	Mentions []pkgproto.Mention
+	Styles   []zcommon.Style
 }
 
 // SendMessage is a shim over SendMessageWithOptions kept for back-compat.
@@ -284,6 +286,16 @@ func SendMessageWithOptions(
 			return "", fmt.Errorf("zalo_personal: marshal mentionInfo: %w", err)
 		}
 		payload["mentionInfo"] = string(mentionBytes)
+	}
+	if len(opts.Styles) > 0 {
+		textPropsBytes, err := json.Marshal(map[string]any{
+			"styles": opts.Styles,
+			"ver":    0,
+		})
+		if err != nil {
+			return "", fmt.Errorf("zalo_personal: marshal textProperties: %w", err)
+		}
+		payload["textProperties"] = string(textPropsBytes)
 	}
 	if quote != nil {
 		// Field names mirror zca-js src/apis/sendMessage.ts:344-373. qmsgType is

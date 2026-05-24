@@ -4,6 +4,27 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ---
 
+## 2026-05-24 (late night — native styles)
+
+### Zalo Personal: native rich-text styling via `textProperties`
+
+The outbound renderer no longer strips markdown wholesale. LLM-emitted `**bold**`, `*italic*` / `_italic_`, `~~strike~~`, `<u>underline</u>`, `-`/`*` unordered lists, and `1.` ordered lists now land as **native Zalo styled spans** via the `textProperties` wire field (same field Zalo Web/Mobile clients use natively per zca-js).
+
+**Coverage** (Option A scope):
+- bold, italic, underline, strikethrough — direct 1:1 markdown → Zalo style
+- unordered + ordered lists — Zalo client auto-prefixes bullets/numbers
+- mentions inside styled spans still resolve correctly (`ParseMarkersWithStyles` adjusts positions across `@[uid]→@DisplayName` replacement with a 5-case overlap algorithm)
+- UTF-16 position math reuses the existing helper (`pkg/protocol.UTF16Len`) — Vietnamese diacritics + emoji handled
+- multi-chunk sends drop styles (mirrors mention behavior); single-chunk carries styles + mentions together
+
+**Cross-channel ready:** `Style` type + `RenderStyles` function live under `internal/channels/zalo/common/` (sibling to existing `StripMarkdown`). Future OA/Bot adoption reuses without code duplication — only needs config flag + wire payload write in each channel's own send-payload builder.
+
+**Config (Web UI):** "Native text styles" toggle under channel-detail Behavior section, default ON. Set `enable_native_styles: false` to fall back to legacy v3.21.10 markdown-strip behavior verbatim. Instant rollback, no code change.
+
+**Deferred** (see `plans/reports/researcher-260524-2208-zalo-personal-styling.md`): headers → Big font, colors, nested-list indent, code blocks (no Zalo native target), markdown links (Zalo auto-detects bare URLs).
+
+---
+
 ## 2026-05-24 (night — reminder tool)
 
 ### Zalo Personal: reminder scheduling tool
