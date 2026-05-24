@@ -88,7 +88,7 @@ type SkillCreateParams struct {
 	FileSize    int64
 	FileHash    *string
 	Frontmatter map[string]string
-	Source      string // ownership marker: "unknown" | "cli" | "gcplane" | "bundled". Empty → "unknown".
+	Source      string // ownership marker: "unknown" | "cli" | "gcplane" | "bundled" | "evolution". Empty → "unknown".
 }
 
 // SkillWithGrantStatus is a skill with its grant status for a specific agent.

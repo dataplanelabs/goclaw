@@ -82,6 +82,7 @@ func (h *EvolutionHandler) applySkillDraft(ctx context.Context, sg store.Evoluti
 		FileSize:    int64(len(contentBytes)),
 		FileHash:    &fileHash,
 		Frontmatter: frontmatter,
+		Source:      "evolution", // ownership marker — distinguishes auto-evolved skills from cli/gcplane/bundled (#110)
 	})
 	if err != nil {
 		return fmt.Errorf("register skill: %w", err)
