@@ -220,10 +220,7 @@ func (c *Channel) terminalReactionDelay(chatID string) time.Duration {
 	}
 	if v, ok := c.lastReplyChars.Load(chatID); ok {
 		if n, ok := v.(int); ok && n > 0 {
-			bonus := time.Duration(n) * reactionLengthBonusPerCharMs
-			if bonus > reactionLengthBonusCap {
-				bonus = reactionLengthBonusCap
-			}
+			bonus := min(time.Duration(n)*reactionLengthBonusPerCharMs, reactionLengthBonusCap)
 			d += bonus
 		}
 	}
@@ -287,9 +284,7 @@ func (c *Channel) OnReactionEvent(ctx context.Context, chatID, messageID, status
 				return
 			default:
 			}
-			c.reactionWG.Add(1)
-			go func() {
-				defer c.reactionWG.Done()
+			c.reactionWG.Go(func() {
 				t := time.NewTimer(reactionTombstoneTTL)
 				defer t.Stop()
 				select {
@@ -297,7 +292,7 @@ func (c *Channel) OnReactionEvent(ctx context.Context, chatID, messageID, status
 					c.reactions.CompareAndDelete(key, rc)
 				case <-c.stopCh:
 				}
-			}()
+			})
 		})
 	}
 	return nil

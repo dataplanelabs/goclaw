@@ -33,7 +33,7 @@ type ChannelCreds struct {
 	AccessToken           string    `json:"access_token,omitempty"`
 	RefreshToken          string    `json:"refresh_token,omitempty"`
 	ExpiresAt             time.Time `json:"expires_at"`
-	RefreshTokenExpiresAt time.Time `json:"refresh_token_expires_at,omitempty"`
+	RefreshTokenExpiresAt time.Time `json:"refresh_token_expires_at"`
 	LastRefreshAt         time.Time `json:"last_refresh_at"`
 }
 

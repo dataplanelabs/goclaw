@@ -12,11 +12,11 @@ const (
 	reactionDebounceMs = 700 * time.Millisecond
 	// Late stale events within this window hit the terminal rc and short-circuit
 	// instead of LoadOrStore-ing a fresh controller that would stomp the heart.
-	reactionTombstoneTTL          = 60 * time.Second
-	defaultReactionTerminalMinMs  = 800 * time.Millisecond
-	defaultReactionTerminalMaxMs  = 2000 * time.Millisecond
-	reactionLengthBonusPerCharMs  = 1 * time.Millisecond
-	reactionLengthBonusCap        = 1500 * time.Millisecond
+	reactionTombstoneTTL         = 60 * time.Second
+	defaultReactionTerminalMinMs = 800 * time.Millisecond
+	defaultReactionTerminalMaxMs = 2000 * time.Millisecond
+	reactionLengthBonusPerCharMs = 1 * time.Millisecond
+	reactionLengthBonusCap       = 1500 * time.Millisecond
 )
 
 // Tone tuned for OA's B2C surface: one "received, working" ack on the
@@ -174,10 +174,7 @@ func (c *Channel) terminalReactionDelay(chatID string) time.Duration {
 	}
 	if v, ok := c.lastReplyChars.Load(chatID); ok {
 		if n, ok := v.(int); ok && n > 0 {
-			bonus := time.Duration(n) * reactionLengthBonusPerCharMs
-			if bonus > reactionLengthBonusCap {
-				bonus = reactionLengthBonusCap
-			}
+			bonus := min(time.Duration(n)*reactionLengthBonusPerCharMs, reactionLengthBonusCap)
 			d += bonus
 		}
 	}
@@ -229,9 +226,7 @@ func (c *Channel) OnReactionEvent(ctx context.Context, chatID, messageID, status
 				return
 			default:
 			}
-			c.reactionWG.Add(1)
-			go func() {
-				defer c.reactionWG.Done()
+			c.reactionWG.Go(func() {
 				t := time.NewTimer(reactionTombstoneTTL)
 				defer t.Stop()
 				select {
@@ -239,7 +234,7 @@ func (c *Channel) OnReactionEvent(ctx context.Context, chatID, messageID, status
 					c.reactions.CompareAndDelete(key, rc)
 				case <-c.stopCh:
 				}
-			}()
+			})
 		})
 	}
 	return nil

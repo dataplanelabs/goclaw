@@ -207,10 +207,10 @@ func TestTokenCall_CapturesRefreshExpiry(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name      string
-		body      string
-		wantSet   bool
-		wantSecs  int64
+		name     string
+		body     string
+		wantSet  bool
+		wantSecs int64
 	}{
 		{
 			name:     "string_form",
@@ -231,7 +231,6 @@ func TestTokenCall_CapturesRefreshExpiry(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			srv, _ := newAuthServer(t, "k", "authorization_code", tc.body, http.StatusOK)

@@ -43,7 +43,7 @@ func TestBuildReactionFeedbackSection_CapsToTopReplies(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 5, 24, 10, 0, 0, 0, time.UTC)
 	var rows []store.EpisodicSummary
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		rows = append(rows, row("user", "❤", "positive",
 			"msg-"+itoa(i), "reply "+itoa(i), now.Add(-time.Duration(i)*time.Minute), "/-heart"))
 	}
@@ -75,11 +75,11 @@ func TestBuildReactionFeedbackSection_FallbackToMsgIDWhenPreviewMissing(t *testi
 func TestParseReactionSourceID(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"react:12345:alice:/-heart":       "12345",
-		"react:abc":                        "abc",
-		"react:xyz:user":                   "xyz",
-		"not-a-reaction-source":            "",
-		"":                                  "",
+		"react:12345:alice:/-heart": "12345",
+		"react:abc":                 "abc",
+		"react:xyz:user":            "xyz",
+		"not-a-reaction-source":     "",
+		"":                          "",
 	}
 	for in, want := range cases {
 		if got := parseReactionSourceID(in); got != want {

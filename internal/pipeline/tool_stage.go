@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -129,12 +130,7 @@ func (s *ToolStage) requiresSequential(toolCalls []providers.ToolCall) bool {
 	if s.deps.SequentialToolCall == nil {
 		return false
 	}
-	for _, tc := range toolCalls {
-		if s.deps.SequentialToolCall(tc) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(toolCalls, s.deps.SequentialToolCall)
 }
 
 func (s *ToolStage) shouldStopBeforeTool(ctx context.Context, state *RunState) bool {
