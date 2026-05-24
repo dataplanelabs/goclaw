@@ -7,21 +7,21 @@
 
 ## When to use which exec path
 
-```
-Skill needs to invoke an external CLI?
-├── Yes — auth credential is scope-restricted at the credential layer
-│   (e.g. a read-only GH_TOKEN, a service-account JSON limited to one
-│   project)
-│        → Option A is acceptable. Inject the credential via SOPS-encrypted
-│          env var. Document the auth limit in SKILL.md. gh-read is the
-│          reference (`_system/skills/gh-read/SKILL.md`).
-└── Yes — credential is NOT scope-restricted (writes, cluster ops, codex,
-    anything where the LLM could turn the credential into damage)
-         → Use Option B: `secure_cli_run` agent tool with `secure_cli_binaries`
-           registry + per-agent grants. Enforcement is at the GoClaw side
-           (shell-operator detection, deny_args regex, env scrub) — not the
-           SKILL.md honor system.
-```
+**ALL skills that wrap external CLIs use `secure_cli_run`** — the agent tool
+backed by the `secure_cli_binaries` registry + per-agent grants + per-user
+credentials. Enforcement is at the GoClaw side (shell-operator detection,
+deny_args regex, env scrub) — not the SKILL.md honor system.
+
+The previous "Option A carveout" for scope-restricted credentials (e.g. a
+read-only `GH_TOKEN` injected via env var) is **deprecated as of B-conv-2**.
+gh-read — the original carveout — was retrofitted to use `secure_cli_run`
+with `is_global: true` (single shared binary across agents) + `deny_args`
+blocking write subcommands defense-in-depth. The reference is now the same
+for every CLI skill.
+
+If you find yourself wanting bare exec because "the credential is read-only
+anyway" — register the binary with `is_global: true` instead. Same outcome,
+unified machinery.
 
 ## Option B — secure_cli_run usage
 
@@ -181,14 +181,14 @@ the OAuth callback). The two are merged at exec time per the env hierarchy:
 Endpoints return `MsgOAuthNotConfigured` (503) when `CLIENT_ID`/`SECRET` are
 unset, so safe to deploy unconfigured.
 
-### B-conv-2 retrofit candidate
+### Pattern reuse for non-OAuth credentials
 
-`gh-read` can adopt this pattern in the future when we want per-operator
-GitHub PATs. Currently uses a global read-only PAT (Option A carveout per
-B2 brainstorm). The pattern generalizes to Pancake (per-tenant API keys —
-different shape from OAuth) and Zalo OA (webhooks + keys — also different)
-but the **storage** (secure_cli_user_credentials) and **invocation**
-(secure_cli_run) layers are reusable.
+The pattern generalizes to Pancake (per-tenant API keys — different shape
+from OAuth) and Zalo OA (webhooks + keys — also different) but the
+**storage** (`secure_cli_user_credentials` for per-operator, binary's
+`encrypted_env` for shared) and **invocation** (`secure_cli_run`) layers are
+reusable. gh-read uses the binary-`encrypted_env` shape (shared PAT); gws
+uses the user-credentials shape (per-operator OAuth refresh token).
 
 ## CI lint
 
@@ -201,15 +201,19 @@ To suppress: don't. Use `secure_cli_run` instead. If you have a genuine
 exception (e.g. a setup script that must shell out), keep it OUT of the
 `scripts/` directory.
 
-## gh-read special case
+## gh-read history (B-conv-2 closure)
 
-`_system/skills/gh-read/` uses Option A (bare exec via `GH_TOKEN` env var)
-because the PAT is read-only at the credential layer — there is no
-write-level damage the LLM can do regardless of arguments. This is the only
-acceptable exception today. The principle:
+Originally the "Option A carveout" — bare exec via injected `GH_TOKEN`,
+justified by the PAT being read-only at the credential layer. As of
+B-conv-2 (closes #102) it routes through `secure_cli_run` like every other
+CLI skill: `is_global: true` SecureCLI binary at `_system/secure-cli/gh.yaml`
++ `deny_args` blocking write subcommands at the gate (defense-in-depth atop
+the GitHub-side 403 on writes). The SKILL.md body invokes `secure_cli_run`
+with `binary: "gh"` + an argv array, matching every other CLI skill.
 
-> If the auth credential itself is scope-restricted (read-only, single
-> resource), Option A is acceptable. Otherwise, Option B.
+The shared read-only PAT is still global (all agents see the same `gh`
+binary). Per-operator GitHub PATs would be a future B-conv-3 if needed,
+following the same shape as the gws per-tenant OAuth in B3-01.
 
 ## References
 
