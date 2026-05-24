@@ -101,10 +101,10 @@ func CreateReminderInDM(ctx context.Context, sess *Session, toUID string, opts C
 	if startTime == 0 {
 		startTime = time.Now().UnixMilli()
 	}
-	creatorUID := ""
-	if sess.LoginInfo != nil {
-		creatorUID = sess.LoginInfo.UID
+	if sess.LoginInfo == nil || sess.LoginInfo.UID == "" {
+		return "", fmt.Errorf("zalo_personal: createReminder DM requires logged-in session uid")
 	}
+	creatorUID := sess.LoginInfo.UID
 	// DM `params` is a NESTED OBJECT (not stringified) per zca-js.
 	objectData, err := json.Marshal(map[string]any{
 		"toUid":      toUID,

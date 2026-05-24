@@ -509,6 +509,8 @@ func runGateway() {
 		"zalo_personal_vote_poll",
 		"zalo_personal_lock_poll",
 		"zalo_personal_add_poll_options",
+		"zalo_personal_create_reminder",
+		"zalo_personal_remove_reminder",
 	} {
 		if t, ok := toolsReg.Get(name); ok {
 			if za, ok := t.(tools.ZaloPersonalActionAware); ok {
