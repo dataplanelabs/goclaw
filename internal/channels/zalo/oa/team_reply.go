@@ -9,6 +9,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -67,17 +68,7 @@ func (c *Channel) startTeamReplyWorker() {
 	onBehalf := NewOnBehalfClient(c.client, tokenSrc)
 	sessions := c.teamReplySessions
 	customerLast := func(ctx context.Context, sessionKey string) string {
-		msgs := sessions.GetHistory(ctx, sessionKey)
-		for i := len(msgs) - 1; i >= 0; i-- {
-			if msgs[i].Role == "user" && strings.TrimSpace(msgs[i].Content) != "" {
-				txt := msgs[i].Content
-				if len(txt) > teamReplyCustomerContextChars {
-					txt = txt[:teamReplyCustomerContextChars]
-				}
-				return txt
-			}
-		}
-		return ""
+		return recentCustomerContext(sessions.GetHistory(ctx, sessionKey))
 	}
 	deps := PollWorkerDeps{
 		OnBehalf:     onBehalf,
@@ -108,4 +99,35 @@ func (c *Channel) startTeamReplyWorker() {
 				"resolve_err", resolveErr)
 		}
 	}
+}
+
+// recentCustomerContext walks the session history backwards from the end,
+// collecting consecutive user-role messages into one chronological block.
+// Empty-content messages (standby placeholders) are transparent — they
+// don't break the run. A non-empty non-user message (an assistant or team
+// turn) is the back boundary. Caps the joined result at
+// teamReplyCustomerContextChars to bound the judge prompt size.
+func recentCustomerContext(msgs []providers.Message) string {
+	var parts []string
+	for i := len(msgs) - 1; i >= 0; i-- {
+		c := strings.TrimSpace(msgs[i].Content)
+		if c == "" {
+			continue
+		}
+		if msgs[i].Role != "user" {
+			break
+		}
+		parts = append(parts, c)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
+		parts[i], parts[j] = parts[j], parts[i]
+	}
+	out := strings.Join(parts, "\n")
+	if len(out) > teamReplyCustomerContextChars {
+		out = out[:teamReplyCustomerContextChars]
+	}
+	return out
 }
