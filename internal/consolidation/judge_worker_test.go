@@ -2,6 +2,7 @@ package consolidation
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -169,6 +170,119 @@ func TestJudgeWorker_RateLimiter_PerTenantIsolation(t *testing.T) {
 	}
 	if !w.limiter(tenantB).Allow() {
 		t.Fatal("tenant B must be independent")
+	}
+}
+
+type stubPublishBus struct {
+	mu        sync.Mutex
+	published []eventbus.DomainEvent
+}
+
+func (b *stubPublishBus) Publish(e eventbus.DomainEvent) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.published = append(b.published, e)
+}
+func (b *stubPublishBus) Subscribe(eventbus.EventType, eventbus.DomainEventHandler) func() {
+	return func() {}
+}
+func (b *stubPublishBus) Close()                          {}
+func (b *stubPublishBus) Start(context.Context)           {}
+func (b *stubPublishBus) Drain(time.Duration) error       { return nil }
+
+func TestParseThrottleAttempt(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"", 0},
+		{"foo", 0},
+		{"foo?throttle_retry=3", 3},
+		{"foo?throttle_retry=abc", 0},
+		{"foo?rejudge=x?throttle_retry=2", 2},
+		{"foo?throttle_retry=-1", 0},
+	}
+	for _, c := range cases {
+		if got := parseThrottleAttempt(c.in); got != c.want {
+			t.Errorf("parseThrottleAttempt(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+func TestJudgeWorker_ThrottleSchedulesRetry(t *testing.T) {
+	evals := &fakeEvalStore{}
+	bus := &stubPublishBus{}
+	w := NewJudgeWorker(JudgeDeps{Evals: evals, Bus: bus})
+	tenant := uuid.NewString()
+	for i := 0; i < 5; i++ {
+		w.limiter(tenant).Allow()
+	}
+	ev := eventbus.DomainEvent{
+		Type:     eventbus.EventTeamReplyObserved,
+		SourceID: "src-1",
+		Payload:  eventbus.TeamReplyObservedPayload{EvaluationID: "eid-1", TenantID: tenant},
+	}
+	if err := w.Handle(context.Background(), ev); err != nil {
+		t.Fatalf("Handle err: %v", err)
+	}
+	if got := w.inFlightRetries.Load(); got != 1 {
+		t.Fatalf("inFlightRetries=%d want 1", got)
+	}
+}
+
+func TestJudgeWorker_ThrottleMaxRetries(t *testing.T) {
+	evals := &fakeEvalStore{}
+	bus := &stubPublishBus{}
+	w := NewJudgeWorker(JudgeDeps{Evals: evals, Bus: bus})
+	tenant := uuid.NewString()
+	for i := 0; i < 5; i++ {
+		w.limiter(tenant).Allow()
+	}
+	ev := eventbus.DomainEvent{
+		Type:     eventbus.EventTeamReplyObserved,
+		SourceID: "src-2?throttle_retry=" + strconv.Itoa(throttleRetryMaxAttempts),
+		Payload:  eventbus.TeamReplyObservedPayload{EvaluationID: "eid-2", TenantID: tenant},
+	}
+	if err := w.Handle(context.Background(), ev); err != nil {
+		t.Fatalf("Handle err: %v", err)
+	}
+	if w.inFlightRetries.Load() != 0 {
+		t.Fatalf("should not schedule retry at max attempts")
+	}
+	found := false
+	for _, e := range evals.errs {
+		if e.id == "eid-2" && e.msg == "throttle_max_retries" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected throttle_max_retries markErr; got %+v", evals.errs)
+	}
+}
+
+func TestJudgeWorker_ThrottleOverflowCap(t *testing.T) {
+	evals := &fakeEvalStore{}
+	bus := &stubPublishBus{}
+	w := NewJudgeWorker(JudgeDeps{Evals: evals, Bus: bus})
+	w.inFlightRetries.Store(throttleRetryInFlightCap)
+	tenant := uuid.NewString()
+	for i := 0; i < 5; i++ {
+		w.limiter(tenant).Allow()
+	}
+	ev := eventbus.DomainEvent{
+		Type:     eventbus.EventTeamReplyObserved,
+		SourceID: "src-3",
+		Payload:  eventbus.TeamReplyObservedPayload{EvaluationID: "eid-3", TenantID: tenant},
+	}
+	_ = w.Handle(context.Background(), ev)
+	found := false
+	for _, e := range evals.errs {
+		if e.id == "eid-3" && e.msg == "throttle_overflow" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected throttle_overflow markErr; got %+v", evals.errs)
 	}
 }
 

@@ -112,9 +112,14 @@ func RegisterJudgeWorker(deps JudgeRegistrationDeps) func() {
 		Evals:    deps.Evals,
 		Router:   deps.Router,
 		Resolver: deps.Resolver,
+		Bus:      deps.EventBus,
 		Timeout:  deps.Timeout,
 	})
-	return deps.EventBus.Subscribe(eventbus.EventTeamReplyObserved, judge.Handle)
+	unsub := deps.EventBus.Subscribe(eventbus.EventTeamReplyObserved, judge.Handle)
+	return func() {
+		unsub()
+		judge.Stop()
+	}
 }
 
 // JudgeRegistrationDeps bundles inputs for RegisterJudgeWorker.
