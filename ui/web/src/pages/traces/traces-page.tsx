@@ -255,6 +255,11 @@ export function TracesPage() {
                               {trace.channel}
                             </Badge>
                           )}
+                          {trace.chat_title && (
+                            <span className="shrink-0 truncate text-xs text-muted-foreground max-w-[200px]" title={trace.chat_title}>
+                              {trace.chat_title}
+                            </span>
+                          )}
                           {trace.input_preview && (
                             <span className="truncate text-xs text-muted-foreground">
                               {cleanPreview(trace.input_preview)}

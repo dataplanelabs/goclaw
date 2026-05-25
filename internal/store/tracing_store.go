@@ -65,6 +65,9 @@ type TraceData struct {
 	TeamID            *uuid.UUID      `json:"team_id,omitempty" db:"team_id"`
 	OutboundEmitted   bool            `json:"outbound_emitted" db:"outbound_emitted"`
 	CreatedAt         time.Time       `json:"created_at" db:"created_at"`
+
+	// Resolved at HTTP handler time; not persisted.
+	ChatTitle string `json:"chat_title,omitempty" db:"-"`
 }
 
 // SpanData represents a single operation within a trace.
