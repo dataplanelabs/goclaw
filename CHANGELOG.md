@@ -4,6 +4,32 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ## Unreleased
 
+### Fixed
+
+- **Zalo Personal file upload no longer fails on IPv6 dial** — trace
+  `019e601a-…` showed a TTS audio that never reached the chat: the Session
+  HTTP client used Go's default transport, happy-eyeballs raced v6 and v4
+  for `tt-files-wpa.chat.zalo.me`, picked the AAAA address, and the K3S pod
+  (no IPv6 egress) instant-failed with `connect: network is unreachable`.
+  `Session.Client` now uses an explicit `*http.Transport` with a dialer
+  that promotes `tcp` / `tcp6` to `tcp4`, sidestepping the dual-stack
+  resolution entirely. Covers every Zalo Personal outbound (file upload,
+  message send, group ops, reactions) since they all share the session
+  client. Regression test verifies the network-string rewrite.
+
+- **Chunked upload retries transient network errors** — defense-in-depth on
+  top of the IPv4 force. `postChunkWithRetry` retries each chunk POST up to
+  3 times on `ENETUNREACH` / `EHOSTUNREACH` / `ECONNREFUSED` / `ECONNRESET` /
+  `io.EOF` / timeouts with `200ms × attempt²` backoff. Body rebuilt per
+  attempt (multipart `bytes.Buffer` is one-shot). Context cancellation and
+  deadline are NOT retried. Classifier covered by `TestIsRetryableNetErr`.
+
+- **Edge TTS voice name resolution** — trace `019e601e-…` configured
+  `voice: HoaiMy` in the UI but got a different voice in output because the
+  edge-tts CLI requires the full VoiceID (`vi-VN-HoaiMyNeural`).
+  `resolveVoiceID` now maps display Name → VoiceID before invoking the CLI.
+  Unknown values pass through unchanged so custom voice IDs still work.
+
 ### Changed (BREAKING for LLM behavior — see below)
 
 - **Media generation tools no longer auto-deliver** —

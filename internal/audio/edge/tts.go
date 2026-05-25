@@ -65,6 +65,7 @@ func (p *Provider) Synthesize(ctx context.Context, text string, opts audio.TTSOp
 	if opts.Voice != "" {
 		voice = opts.Voice
 	}
+	voice = resolveVoiceID(voice)
 
 	// Resolve rate/pitch/volume from opts.Params (int slider).
 	// When Params is nil or key absent, fall back to legacy p.rate string if set.

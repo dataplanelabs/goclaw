@@ -2,10 +2,15 @@ package protocol
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -92,6 +97,61 @@ func (c *chunkedUpload) run(ctx context.Context, sess *Session, endpoint, typePa
 	return nil
 }
 
+// postChunkWithRetry POSTs the chunk with up to 3 attempts on transient
+// network errors (dial / reset / timeout). Body is rebuilt each attempt.
+func postChunkWithRetry(ctx context.Context, sess *Session, uploadURL, fileName string, chunk []byte) (*http.Response, error) {
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		body, contentType, err := buildMultipartBody("chunkContent", fileName, chunk)
+		if err != nil {
+			return nil, fmt.Errorf("build multipart: %w", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, body)
+		if err != nil {
+			return nil, err
+		}
+		setDefaultHeaders(req, sess)
+		req.Header.Set("Content-Type", contentType)
+
+		resp, err := sess.Client.Do(req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if !isRetryableNetErr(err) || attempt == maxAttempts {
+			return nil, err
+		}
+		backoff := time.Duration(200*attempt*attempt) * time.Millisecond
+		slog.Warn("zalo_personal.upload: transient error, retrying", "attempt", attempt, "backoff", backoff, "err", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+	}
+	return nil, lastErr
+}
+
+func isRetryableNetErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if errors.Is(err, syscall.ENETUNREACH) || errors.Is(err, syscall.EHOSTUNREACH) ||
+		errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	return false
+}
+
 // uploadOneChunk POSTs one chunk and returns the decrypted JSON of the data
 // field, or nil if the envelope had no data (intermediate chunks may).
 func uploadOneChunk(ctx context.Context, sess *Session, endpoint, typeParam string, params map[string]any, fileName string, chunk []byte) ([]byte, error) {
@@ -104,18 +164,7 @@ func uploadOneChunk(ctx context.Context, sess *Session, endpoint, typeParam stri
 		"params": encParams,
 	}, true)
 
-	body, contentType, err := buildMultipartBody("chunkContent", fileName, chunk)
-	if err != nil {
-		return nil, fmt.Errorf("build multipart: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, body)
-	if err != nil {
-		return nil, err
-	}
-	setDefaultHeaders(req, sess)
-	req.Header.Set("Content-Type", contentType)
-
-	resp, err := sess.Client.Do(req)
+	resp, err := postChunkWithRetry(ctx, sess, uploadURL, fileName, chunk)
 	if err != nil {
 		return nil, fmt.Errorf("http: %w", err)
 	}

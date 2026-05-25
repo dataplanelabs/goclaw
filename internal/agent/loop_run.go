@@ -249,10 +249,6 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 				l.traceCollector.FinishTrace(ctx, traceID, store.TraceStatusCompleted, "", "")
 			}
 		}
-		// Cutoff selection — gateway.replay_retention_days > 0 sweeps by age
-		// (admin can retry any completed trace within the window). retention=0
-		// falls back to legacy runStart cutoff (only the latest run per session
-		// stays retryable).
 		if !isChildTrace && l.replayStore != nil && req.SessionKey != "" {
 			cutoff := runStart
 			if l.replayRetention > 0 {
