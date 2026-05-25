@@ -94,33 +94,37 @@ func (s *SQLiteTeamReplyEvalStore) MarkJudgeError(ctx context.Context, id string
 }
 
 func buildFilterClauseSQLite(tenantID string, f store.TeamReplyEvalFilter) ([]string, []any) {
-	conds := []string{"tenant_id = ?"}
+	return buildFilterClauseSQLiteAlias(tenantID, f, "")
+}
+
+func buildFilterClauseSQLiteAlias(tenantID string, f store.TeamReplyEvalFilter, alias string) ([]string, []any) {
+	conds := []string{alias + "tenant_id = ?"}
 	args := []any{tenantID}
 	if f.ChannelInstanceID != "" {
-		conds = append(conds, "channel_instance_id = ?")
+		conds = append(conds, alias+"channel_instance_id = ?")
 		args = append(args, f.ChannelInstanceID)
 	}
 	if f.ThreadKey != "" {
-		conds = append(conds, "thread_key = ?")
+		conds = append(conds, alias+"thread_key = ?")
 		args = append(args, f.ThreadKey)
 	}
 	if f.Since != nil {
-		conds = append(conds, "captured_at >= ?")
+		conds = append(conds, alias+"captured_at >= ?")
 		args = append(args, *f.Since)
 	}
 	if f.Until != nil {
-		conds = append(conds, "captured_at <= ?")
+		conds = append(conds, alias+"captured_at <= ?")
 		args = append(args, *f.Until)
 	}
 	if f.MaxDiffScore != nil {
-		conds = append(conds, "diff_score IS NOT NULL AND diff_score <= ?")
+		conds = append(conds, fmt.Sprintf("%sdiff_score IS NOT NULL AND %sdiff_score <= ?", alias, alias))
 		args = append(args, *f.MaxDiffScore)
 	}
 	if f.JudgeOnlyComplete {
-		conds = append(conds, "judge_completed_at IS NOT NULL")
+		conds = append(conds, alias+"judge_completed_at IS NOT NULL")
 	}
 	if f.ExcludeFailed {
-		conds = append(conds, "judge_error IS NULL")
+		conds = append(conds, alias+"judge_error IS NULL")
 	}
 	return conds, args
 }
@@ -129,19 +133,24 @@ func (s *SQLiteTeamReplyEvalStore) List(ctx context.Context, tenantID string, f 
 	if tenantID == "" {
 		return nil, nil
 	}
-	conds, args := buildFilterClauseSQLite(tenantID, f)
+	conds, args := buildFilterClauseSQLiteAlias(tenantID, f, "e.")
 	limit := f.Limit
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
 	args = append(args, limit)
-	q := `SELECT id, channel_instance_id, tenant_id, thread_key, session_key, team_msg_id,
-	             captured_at, customer_message, team_reply, hypothesized_bot_reply,
-	             diff_score, diff_reasoning, judge_agent_key, judge_model, judge_provider,
-	             judge_latency_ms, judge_error, judge_completed_at, created_at, updated_at
-	        FROM team_reply_evaluations
+	q := `SELECT e.id, e.channel_instance_id, e.tenant_id, e.thread_key, e.session_key, e.team_msg_id,
+	             e.captured_at, e.customer_message, e.team_reply, e.hypothesized_bot_reply,
+	             e.diff_score, e.diff_reasoning, e.judge_agent_key, e.judge_model, e.judge_provider,
+	             e.judge_latency_ms, e.judge_error, e.judge_completed_at, e.created_at, e.updated_at,
+	             COALESCE(cc.display_name, '') AS customer_name
+	        FROM team_reply_evaluations e
+	        JOIN channel_instances ci ON ci.id = e.channel_instance_id
+	   LEFT JOIN channel_contacts cc ON cc.tenant_id = e.tenant_id
+	                                AND cc.channel_type = ci.channel_type
+	                                AND cc.sender_id = CASE WHEN e.thread_key LIKE 'direct:%' THEN SUBSTR(e.thread_key, 8) ELSE NULL END
 	       WHERE ` + strings.Join(conds, " AND ") + `
-	    ORDER BY captured_at DESC
+	    ORDER BY e.captured_at DESC
 	       LIMIT ?`
 	if f.Offset > 0 {
 		q += " OFFSET ?"
@@ -154,7 +163,7 @@ func (s *SQLiteTeamReplyEvalStore) List(ctx context.Context, tenantID string, f 
 	defer rows.Close()
 	var out []store.TeamReplyEvaluation
 	for rows.Next() {
-		e, err := scanTeamReplyEval(rows)
+		e, err := scanTeamReplyEvalWithName(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -275,6 +284,59 @@ func (s *SQLiteTeamReplyEvalStore) DeleteByChannel(ctx context.Context, channelI
 		return 0, fmt.Errorf("delete by channel: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// scanTeamReplyEvalWithName scans the List() column shape, which includes
+// COALESCE(cc.display_name, '') AS customer_name as the trailing column.
+func scanTeamReplyEvalWithName(s scanner) (*store.TeamReplyEvaluation, error) {
+	var (
+		e                store.TeamReplyEvaluation
+		hypo             sql.NullString
+		score            sql.NullFloat64
+		reasoning        sql.NullString
+		agentKey         sql.NullString
+		model            sql.NullString
+		provider         sql.NullString
+		latencyMs        sql.NullInt64
+		judgeErr         sql.NullString
+		judgeCompletedAt sql.NullTime
+	)
+	if err := s.Scan(&e.ID, &e.ChannelInstanceID, &e.TenantID, &e.ThreadKey, &e.SessionKey, &e.TeamMsgID,
+		&e.CapturedAt, &e.CustomerMessage, &e.TeamReply, &hypo,
+		&score, &reasoning, &agentKey, &model, &provider,
+		&latencyMs, &judgeErr, &judgeCompletedAt, &e.CreatedAt, &e.UpdatedAt,
+		&e.CustomerName); err != nil {
+		return nil, err
+	}
+	if hypo.Valid {
+		e.HypothesizedBotReply = &hypo.String
+	}
+	if score.Valid {
+		e.DiffScore = &score.Float64
+	}
+	if reasoning.Valid {
+		e.DiffReasoning = &reasoning.String
+	}
+	if agentKey.Valid {
+		e.JudgeAgentKey = &agentKey.String
+	}
+	if model.Valid {
+		e.JudgeModel = &model.String
+	}
+	if provider.Valid {
+		e.JudgeProvider = &provider.String
+	}
+	if latencyMs.Valid {
+		v := int(latencyMs.Int64)
+		e.JudgeLatencyMs = &v
+	}
+	if judgeErr.Valid {
+		e.JudgeError = &judgeErr.String
+	}
+	if judgeCompletedAt.Valid {
+		e.JudgeCompletedAt = &judgeCompletedAt.Time
+	}
+	return &e, nil
 }
 
 func scanTeamReplyEval(s scanner) (*store.TeamReplyEvaluation, error) {

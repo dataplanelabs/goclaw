@@ -18,6 +18,7 @@ type TeamReplyEvaluation struct {
 	TeamMsgID            string
 	CapturedAt           time.Time
 	CustomerMessage      string
+	CustomerName         string // resolved from channel_contacts.display_name at List time; empty if unknown
 	TeamReply            string
 	HypothesizedBotReply *string
 	DiffScore            *float64

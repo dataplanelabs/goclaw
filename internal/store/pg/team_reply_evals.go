@@ -92,34 +92,41 @@ func (s *PGTeamReplyEvalStore) MarkJudgeError(ctx context.Context, id string, er
 	return nil
 }
 
+// buildFilterClause builds WHERE conditions. `alias` is the table alias to
+// prefix column names with (e.g. "e." for joined queries). Pass "" for
+// unjoined queries.
 func buildFilterClause(tenantID string, f store.TeamReplyEvalFilter) ([]string, []any) {
-	conds := []string{"tenant_id = $1"}
+	return buildFilterClauseAlias(tenantID, f, "")
+}
+
+func buildFilterClauseAlias(tenantID string, f store.TeamReplyEvalFilter, alias string) ([]string, []any) {
+	conds := []string{alias + "tenant_id = $1"}
 	args := []any{tenantID}
 	if f.ChannelInstanceID != "" {
 		args = append(args, f.ChannelInstanceID)
-		conds = append(conds, fmt.Sprintf("channel_instance_id = $%d", len(args)))
+		conds = append(conds, fmt.Sprintf("%schannel_instance_id = $%d", alias, len(args)))
 	}
 	if f.ThreadKey != "" {
 		args = append(args, f.ThreadKey)
-		conds = append(conds, fmt.Sprintf("thread_key = $%d", len(args)))
+		conds = append(conds, fmt.Sprintf("%sthread_key = $%d", alias, len(args)))
 	}
 	if f.Since != nil {
 		args = append(args, *f.Since)
-		conds = append(conds, fmt.Sprintf("captured_at >= $%d", len(args)))
+		conds = append(conds, fmt.Sprintf("%scaptured_at >= $%d", alias, len(args)))
 	}
 	if f.Until != nil {
 		args = append(args, *f.Until)
-		conds = append(conds, fmt.Sprintf("captured_at <= $%d", len(args)))
+		conds = append(conds, fmt.Sprintf("%scaptured_at <= $%d", alias, len(args)))
 	}
 	if f.MaxDiffScore != nil {
 		args = append(args, *f.MaxDiffScore)
-		conds = append(conds, fmt.Sprintf("diff_score IS NOT NULL AND diff_score <= $%d", len(args)))
+		conds = append(conds, fmt.Sprintf("%sdiff_score IS NOT NULL AND %sdiff_score <= $%d", alias, alias, len(args)))
 	}
 	if f.JudgeOnlyComplete {
-		conds = append(conds, "judge_completed_at IS NOT NULL")
+		conds = append(conds, alias+"judge_completed_at IS NOT NULL")
 	}
 	if f.ExcludeFailed {
-		conds = append(conds, "judge_error IS NULL")
+		conds = append(conds, alias+"judge_error IS NULL")
 	}
 	return conds, args
 }
@@ -128,7 +135,7 @@ func (s *PGTeamReplyEvalStore) List(ctx context.Context, tenantID string, f stor
 	if tenantID == "" {
 		return nil, nil
 	}
-	conds, args := buildFilterClause(tenantID, f)
+	conds, args := buildFilterClauseAlias(tenantID, f, "e.")
 
 	limit := f.Limit
 	if limit <= 0 || limit > 1000 {
@@ -142,13 +149,21 @@ func (s *PGTeamReplyEvalStore) List(ctx context.Context, tenantID string, f stor
 		offsetClause = fmt.Sprintf("OFFSET $%d", len(args))
 	}
 
-	q := `SELECT id, channel_instance_id, tenant_id, thread_key, session_key, team_msg_id,
-	             captured_at, customer_message, team_reply, hypothesized_bot_reply,
-	             diff_score, diff_reasoning, judge_agent_key, judge_model, judge_provider,
-	             judge_latency_ms, judge_error, judge_completed_at, created_at, updated_at
-	        FROM team_reply_evaluations
+	// LEFT JOIN channel_contacts so the analytics UI can label rows with the
+	// customer's display name. Falls back to '' for group threads or unknown
+	// contacts; UI then shows the truncated thread_key.
+	q := `SELECT e.id, e.channel_instance_id, e.tenant_id, e.thread_key, e.session_key, e.team_msg_id,
+	             e.captured_at, e.customer_message, e.team_reply, e.hypothesized_bot_reply,
+	             e.diff_score, e.diff_reasoning, e.judge_agent_key, e.judge_model, e.judge_provider,
+	             e.judge_latency_ms, e.judge_error, e.judge_completed_at, e.created_at, e.updated_at,
+	             COALESCE(cc.display_name, '') AS customer_name
+	        FROM team_reply_evaluations e
+	        JOIN channel_instances ci ON ci.id = e.channel_instance_id
+	   LEFT JOIN channel_contacts cc ON cc.tenant_id = e.tenant_id
+	                                AND cc.channel_type = ci.channel_type
+	                                AND cc.sender_id = SUBSTRING(e.thread_key FROM 'direct:(.+)')
 	       WHERE ` + strings.Join(conds, " AND ") + `
-	    ORDER BY captured_at DESC ` + limitClause + " " + offsetClause
+	    ORDER BY e.captured_at DESC ` + limitClause + " " + offsetClause
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list team_reply_evals: %w", err)
@@ -156,7 +171,7 @@ func (s *PGTeamReplyEvalStore) List(ctx context.Context, tenantID string, f stor
 	defer rows.Close()
 	var out []store.TeamReplyEvaluation
 	for rows.Next() {
-		e, err := scanTeamReplyEval(rows)
+		e, err := scanTeamReplyEvalWithName(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -271,6 +286,59 @@ func (s *PGTeamReplyEvalStore) DeleteByChannel(ctx context.Context, channelInsta
 		return 0, fmt.Errorf("delete by channel: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// scanTeamReplyEvalWithName scans the List() column shape, which includes
+// COALESCE(cc.display_name, '') AS customer_name as the trailing column.
+func scanTeamReplyEvalWithName(s scanner) (*store.TeamReplyEvaluation, error) {
+	var (
+		e                store.TeamReplyEvaluation
+		hypo             sql.NullString
+		score            sql.NullFloat64
+		reasoning        sql.NullString
+		agentKey         sql.NullString
+		model            sql.NullString
+		provider         sql.NullString
+		latencyMs        sql.NullInt64
+		judgeErr         sql.NullString
+		judgeCompletedAt sql.NullTime
+	)
+	if err := s.Scan(&e.ID, &e.ChannelInstanceID, &e.TenantID, &e.ThreadKey, &e.SessionKey, &e.TeamMsgID,
+		&e.CapturedAt, &e.CustomerMessage, &e.TeamReply, &hypo,
+		&score, &reasoning, &agentKey, &model, &provider,
+		&latencyMs, &judgeErr, &judgeCompletedAt, &e.CreatedAt, &e.UpdatedAt,
+		&e.CustomerName); err != nil {
+		return nil, err
+	}
+	if hypo.Valid {
+		e.HypothesizedBotReply = &hypo.String
+	}
+	if score.Valid {
+		e.DiffScore = &score.Float64
+	}
+	if reasoning.Valid {
+		e.DiffReasoning = &reasoning.String
+	}
+	if agentKey.Valid {
+		e.JudgeAgentKey = &agentKey.String
+	}
+	if model.Valid {
+		e.JudgeModel = &model.String
+	}
+	if provider.Valid {
+		e.JudgeProvider = &provider.String
+	}
+	if latencyMs.Valid {
+		v := int(latencyMs.Int64)
+		e.JudgeLatencyMs = &v
+	}
+	if judgeErr.Valid {
+		e.JudgeError = &judgeErr.String
+	}
+	if judgeCompletedAt.Valid {
+		e.JudgeCompletedAt = &judgeCompletedAt.Time
+	}
+	return &e, nil
 }
 
 func scanTeamReplyEval(s scanner) (*store.TeamReplyEvaluation, error) {

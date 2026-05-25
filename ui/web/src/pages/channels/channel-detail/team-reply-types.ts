@@ -7,6 +7,7 @@ export interface TeamReplyEvaluation {
   captured_at: string;
   updated_at: string;
   customer_message: string;
+  customer_name?: string;
   team_reply: string;
   hypothesized_bot_reply?: string;
   diff_score?: number;

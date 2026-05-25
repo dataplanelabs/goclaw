@@ -4,6 +4,25 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ## Unreleased
 
+### Added
+
+- **Team Analytics — customer name on thread rows + customer-bubble
+  timestamps** — operators reviewing captures previously saw only the
+  opaque `direct:77448…562035` thread key; they had to infer the customer
+  identity from message content. The `display_name` column on
+  `channel_contacts` was already populated by every Zalo OA inbound (from
+  the webhook payload's `sender.display_name`), but the analytics surface
+  didn't expose it. PG + SQLite `team_reply_evaluations.List` now LEFT JOIN
+  `channel_contacts` via `(tenant_id, channel_type, sender_id)` (sender_id
+  parsed from `direct:` prefix) and return `customer_name` on each row.
+  Thread accordion headers show the resolved name as the primary label
+  with the truncated thread_key as monospace secondary; rows without a
+  resolved name keep the existing thread_key display (graceful fallback).
+  Customer bubbles in the accordion content also gained a `captured_at`
+  timestamp (parity with team-reply bubbles). `buildFilterClause` refactored
+  to accept a table alias so the joined `e.*` columns disambiguate cleanly
+  in WHERE. New tests: 2 for `aggregateThreads.customer_name` resolution.
+
 ### Fixed
 
 - **Team Analytics — Zalo CDN thumbnails were invisible (blocked by hot-link

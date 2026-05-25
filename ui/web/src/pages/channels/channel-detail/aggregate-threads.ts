@@ -2,6 +2,7 @@ import type { TeamReplyEvaluation } from "./team-reply-types";
 
 export interface ThreadGroup {
   thread_key: string;
+  customer_name: string; // empty when contact has no display_name; UI falls back to truncated thread_key
   capture_count: number;
   avg_diff_score: number | null;
   last_activity: string;
@@ -33,8 +34,10 @@ export function aggregateThreads(rows: TeamReplyEvaluation[]): ThreadGroup[] {
         n++;
       }
     }
+    const name = caps.find((c) => c.customer_name && c.customer_name.trim() !== "")?.customer_name ?? "";
     groups.push({
       thread_key,
+      customer_name: name,
       capture_count: caps.length,
       avg_diff_score: n > 0 ? sum / n : null,
       last_activity: caps[caps.length - 1]?.captured_at ?? "",
