@@ -44,8 +44,10 @@ func init() {
 		MsgInstanceNotFound:   "không tìm thấy phiên bản",
 
 		// Cron
-		MsgJobNotFound:     "không tìm thấy tác vụ",
-		MsgInvalidCronExpr: "biểu thức cron không hợp lệ: %s",
+		MsgJobNotFound:                "không tìm thấy tác vụ",
+		MsgInvalidCronExpr:            "biểu thức cron không hợp lệ: %s",
+		MsgCronDeliverChannelRequired: "cron job có deliver=true cần deliverChannel (tên kênh-instance, ví dụ 'zalo-annhien')",
+		MsgCronDeliverToRequired:      "cron job có deliver=true cần deliverTo (chat ID)",
 
 		// Config
 		MsgConfigHashMismatch: "cấu hình đã thay đổi (hash không khớp)",

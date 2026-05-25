@@ -213,6 +213,76 @@ func TestCronCreate_ValidParams_CreatesJob(t *testing.T) {
 	}
 }
 
+func TestCronCreate_DeliverTrue_MissingChannel_ReturnsInvalidRequest(t *testing.T) {
+	svc := newStubCronStore()
+	m := buildCronMethods(t, svc)
+	client := nullClient()
+	req := cronReqFrame(t, protocol.MethodCronCreate, map[string]any{
+		"name":      "my-job",
+		"message":   "hello",
+		"schedule":  map[string]any{"kind": "every", "everyMs": 60000},
+		"deliver":   true,
+		"deliverTo": "chat-123",
+		// deliverChannel intentionally omitted
+	})
+	m.handleCreate(context.Background(), client, req)
+	if svc.addedJob != nil {
+		t.Error("AddJob should NOT be called when deliver=true and deliverChannel empty")
+	}
+}
+
+func TestCronCreate_DeliverTrue_MissingDeliverTo_ReturnsInvalidRequest(t *testing.T) {
+	svc := newStubCronStore()
+	m := buildCronMethods(t, svc)
+	client := nullClient()
+	req := cronReqFrame(t, protocol.MethodCronCreate, map[string]any{
+		"name":           "my-job",
+		"message":        "hello",
+		"schedule":       map[string]any{"kind": "every", "everyMs": 60000},
+		"deliver":        true,
+		"deliverChannel": "zalo-annhien",
+		// deliverTo intentionally omitted
+	})
+	m.handleCreate(context.Background(), client, req)
+	if svc.addedJob != nil {
+		t.Error("AddJob should NOT be called when deliver=true and deliverTo empty")
+	}
+}
+
+func TestCronCreate_DeliverFalse_EmptyFields_Succeeds(t *testing.T) {
+	svc := newStubCronStore()
+	m := buildCronMethods(t, svc)
+	client := nullClient()
+	req := cronReqFrame(t, protocol.MethodCronCreate, map[string]any{
+		"name":     "internal-job",
+		"message":  "hello",
+		"schedule": map[string]any{"kind": "every", "everyMs": 60000},
+		"deliver":  false,
+	})
+	m.handleCreate(context.Background(), client, req)
+	if svc.addedJob == nil {
+		t.Error("AddJob should be called when deliver=false even with empty channel/to")
+	}
+}
+
+func TestCronCreate_DeliverTrue_BothPresent_Succeeds(t *testing.T) {
+	svc := newStubCronStore()
+	m := buildCronMethods(t, svc)
+	client := nullClient()
+	req := cronReqFrame(t, protocol.MethodCronCreate, map[string]any{
+		"name":           "delivery-job",
+		"message":        "hello",
+		"schedule":       map[string]any{"kind": "every", "everyMs": 60000},
+		"deliver":        true,
+		"deliverChannel": "zalo-annhien",
+		"deliverTo":      "chat-123",
+	})
+	m.handleCreate(context.Background(), client, req)
+	if svc.addedJob == nil {
+		t.Error("AddJob should be called when deliver=true and both fields present")
+	}
+}
+
 // ---- Tests: handleDelete ----
 
 func TestCronDelete_MissingJobID_ReturnsInvalidRequest(t *testing.T) {

@@ -17,6 +17,22 @@ import (
 
 var cronSlugRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
+// validateCronDelivery returns a localized error message when deliver=true is
+// set but the channel/target fields are empty. Returns "" when the spec is
+// internally consistent (deliver=false ignores empty fields).
+func validateCronDelivery(deliver bool, channel, to, locale string) string {
+	if !deliver {
+		return ""
+	}
+	if channel == "" {
+		return i18n.T(locale, i18n.MsgCronDeliverChannelRequired)
+	}
+	if to == "" {
+		return i18n.T(locale, i18n.MsgCronDeliverToRequired)
+	}
+	return ""
+}
+
 // CronMethods handles cron.list, cron.create, cron.update, cron.delete, cron.toggle.
 type CronMethods struct {
 	service  store.CronStore
@@ -89,6 +105,10 @@ func (m *CronMethods) handleCreate(ctx context.Context, client *gateway.Client, 
 	}
 	if params.Message == "" {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgMsgRequired)))
+		return
+	}
+	if msg := validateCronDelivery(params.Deliver, params.DeliverChannel, params.DeliverTo, locale); msg != "" {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, msg))
 		return
 	}
 
@@ -223,6 +243,27 @@ func (m *CronMethods) handleUpdate(ctx context.Context, client *gateway.Client, 
 		existing, ok := m.service.GetJob(ctx, jobID)
 		if !ok || existing.UserID != client.UserID() {
 			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrUnauthorized, i18n.T(locale, i18n.MsgPermissionDenied, "cron job")))
+			return
+		}
+	}
+
+	// Validate post-patch state: load existing, apply patch values where present, validate result.
+	existing, ok := m.service.GetJob(ctx, jobID)
+	if ok {
+		deliver := existing.Deliver
+		if params.Patch.Deliver != nil {
+			deliver = *params.Patch.Deliver
+		}
+		channel := existing.DeliverChannel
+		if params.Patch.DeliverChannel != nil {
+			channel = *params.Patch.DeliverChannel
+		}
+		to := existing.DeliverTo
+		if params.Patch.DeliverTo != nil {
+			to = *params.Patch.DeliverTo
+		}
+		if msg := validateCronDelivery(deliver, channel, to, locale); msg != "" {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, msg))
 			return
 		}
 	}

@@ -55,3 +55,43 @@ func TestSystemPromptCurrentReplyTargetOmittedWhenNoChat(t *testing.T) {
 		t.Error("prompt should NOT include <current_reply_target> when ChatID is empty")
 	}
 }
+
+// Reply-target channel renders the instance name (cfg.Channel), not the type.
+// Identity narrative line uses cfg.ChannelType for readability.
+func TestSystemPromptReplyTargetUsesInstanceName(t *testing.T) {
+	cfg := fullTestConfig()
+	cfg.Channel = "zalo-annhien"
+	cfg.ChannelType = "zalo_personal"
+	cfg.ChatID = "4075490771358232471"
+	cfg.PeerKind = "group"
+
+	prompt := BuildSystemPrompt(cfg)
+
+	if !strings.Contains(prompt, "channel: zalo-annhien") {
+		t.Error("prompt should render `channel: zalo-annhien` (instance name) in <current_reply_target>")
+	}
+	if strings.Contains(prompt, "channel: zalo_personal") {
+		t.Error("prompt should NOT render channel TYPE inside <current_reply_target>")
+	}
+	if !strings.Contains(prompt, "running in zalo_personal") {
+		t.Error("identity narrative should use channel TYPE for readability")
+	}
+	if !strings.Contains(prompt, "kind: group") {
+		t.Error("group chat must stamp kind: group")
+	}
+}
+
+// Fallback path: instance name absent → reply-target falls back to type.
+func TestSystemPromptReplyTargetFallbackToType(t *testing.T) {
+	cfg := fullTestConfig()
+	cfg.Channel = ""
+	cfg.ChannelType = "telegram"
+	cfg.ChatID = "999"
+	cfg.PeerKind = "direct"
+
+	prompt := BuildSystemPrompt(cfg)
+
+	if !strings.Contains(prompt, "channel: telegram") {
+		t.Error("prompt should fall back to ChannelType when Channel is empty")
+	}
+}
