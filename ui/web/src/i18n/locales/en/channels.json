@@ -653,6 +653,8 @@
     "noCaptures": "No captures yet. Enable capture above and wait for team replies.",
     "judgePending": "Pending",
     "judgeFailed": "Failed",
+    "captureEmpty": "(no text)",
+    "captureRenderFailed": "(failed to render)",
     "exportJsonl": "Export training data (JSONL)",
     "exporting": "Exporting…",
     "exportSuccess": "Downloaded {{count}} examples ({{bytes}} bytes)",

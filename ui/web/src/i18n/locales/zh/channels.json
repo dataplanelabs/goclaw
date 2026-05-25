@@ -539,6 +539,8 @@
     "noCaptures": "暂无数据。请先在上方开启采集，等待团队回复。",
     "judgePending": "处理中",
     "judgeFailed": "失败",
+    "captureEmpty": "（无内容）",
+    "captureRenderFailed": "（无法渲染）",
     "exportJsonl": "导出训练数据 (JSONL)",
     "exporting": "导出中…",
     "exportSuccess": "已下载 {{count}} 条（{{bytes}} 字节）",

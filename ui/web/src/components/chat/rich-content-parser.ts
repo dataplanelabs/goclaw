@@ -4,8 +4,17 @@
  * into structured RichBlock objects for rendering.
  */
 
-// <media:image>, <media:video>, <media:audio>, <media:voice>, <media:document>
-const MEDIA_TAG_RE = /<media:(image|video|audio|voice|document|animation)>/g;
+// <media:image>, <media:video>, etc. — optional attributes (e.g. `url="..."`) preserved via capture group 2
+const MEDIA_TAG_RE = /<media:(image|video|audio|voice|document|animation)([^>]*)>/g;
+
+function extractMediaUrl(attrs: string): string | undefined {
+  const m = attrs.match(/\burl="([^"]*)"/);
+  const raw = m?.[1];
+  if (!raw) return undefined;
+  // Only http(s) — reject javascript:, data:, file:, etc. (XSS safety)
+  if (!/^https?:\/\//i.test(raw)) return undefined;
+  return raw;
+}
 
 // <file name="..." mime="...">content</file>
 const FILE_BLOCK_RE = /<file\s+name="([^"]+)"\s+mime="([^"]*)">([\s\S]*?)<\/file>/g;
@@ -24,7 +33,7 @@ const LOCATION_RE = /Coordinates:\s*([-\d.]+),\s*([-\d.]+)/;
 
 export type RichBlock =
   | { type: "markdown"; content: string }
-  | { type: "media"; mediaType: string }
+  | { type: "media"; mediaType: string; url?: string }
   | { type: "video-notice"; content: string }
   | { type: "file"; name: string; mime: string; content: string }
   | { type: "forward"; from: string; date: string }
@@ -58,10 +67,11 @@ export function parseRichContent(content: string): RichBlock[] {
     return "";
   });
 
-  // Extract media tags
+  // Extract media tags (with optional `url="..."` attribute for inline rendering)
   const mediaBlocks: RichBlock[] = [];
-  text = text.replace(MEDIA_TAG_RE, (_match, mediaType: string) => {
-    mediaBlocks.push({ type: "media", mediaType });
+  text = text.replace(MEDIA_TAG_RE, (_match, mediaType: string, attrs: string) => {
+    const url = extractMediaUrl(attrs);
+    mediaBlocks.push(url ? { type: "media", mediaType, url } : { type: "media", mediaType });
     return "";
   });
 

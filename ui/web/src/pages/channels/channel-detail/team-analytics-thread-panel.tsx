@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 
 import { scoreBgClass } from "./aggregate-threads";
+import { CaptureContent } from "./capture-content";
 import type { TeamReplyEvaluation } from "./team-reply-types";
 
 const PAGE = 20;
@@ -54,16 +55,15 @@ function CaptureBubbles({
   failedLabel: string;
   pendingLabel: string;
 }) {
-  const customer = capture.customer_message?.trim();
-  const team = capture.team_reply?.trim();
+  const hasCustomer = capture.customer_message != null && capture.customer_message !== "";
   const score = capture.diff_score ?? null;
   const time = new Date(capture.captured_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return (
     <div className="flex flex-col gap-1">
-      {customer && (
+      {hasCustomer && (
         <div className="flex">
-          <div className="max-w-[80%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm whitespace-pre-wrap">
-            {customer}
+          <div className="max-w-[80%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm">
+            <CaptureContent content={capture.customer_message ?? ""} role="user" />
           </div>
         </div>
       )}
@@ -73,8 +73,8 @@ function CaptureBubbles({
         className="flex justify-end text-left hover:opacity-90 transition"
         title={viewLabel}
       >
-        <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-primary/10 px-3 py-2 text-sm whitespace-pre-wrap">
-          {team}
+        <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-primary/10 px-3 py-2 text-sm">
+          <CaptureContent content={capture.team_reply ?? ""} role="assistant" />
           <div className="mt-1 flex items-center gap-2 text-xs">
             {capture.judge_completed_at ? (
               <span className={`inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[10px] ${scoreBgClass(score)}`}>
