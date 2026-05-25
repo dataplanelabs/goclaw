@@ -52,6 +52,11 @@ type ResolverDeps struct {
 	CacheInvalidate   CacheInvalidateFunc
 	DefaultTimezone   string // system default timezone for bootstrap pre-fill
 
+	// ChannelInstances is used to resolve per-channel timezone overrides
+	// (channel_instances.config.timezone) at prompt-build time. Optional —
+	// nil falls back to DefaultTimezone only.
+	ChannelInstances store.ChannelInstanceStore
+
 	// Security
 	InjectionAction string // "log", "warn", "block", "off"
 	MaxMessageChars int
@@ -505,6 +510,7 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			BootstrapCleanup:       deps.BootstrapCleanup,
 			CacheInvalidate:        deps.CacheInvalidate,
 			DefaultTimezone:        deps.DefaultTimezone,
+			ChannelInstances:       deps.ChannelInstances,
 			OnEvent:                deps.OnEvent,
 			TraceCollector:         deps.TraceCollector,
 			InjectionAction:        deps.InjectionAction,

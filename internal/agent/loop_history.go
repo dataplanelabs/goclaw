@@ -204,6 +204,7 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		Workspace:              promptWorkspace,
 		Channel:                channel,
 		ChannelType:            channelType,
+		UserTimezone:           ResolveUserTimezone(l.resolveChannelTimezone(ctx, channel), l.defaultTimezone),
 		ChatID:                 chatID,
 		ChatTitle:              chatTitle,
 		PeerKind:               peerKind,
