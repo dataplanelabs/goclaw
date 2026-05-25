@@ -128,9 +128,10 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 		// If job wants delivery to a channel, send the agent response to the target chat.
 		if job.Deliver && job.DeliverChannel != "" && job.DeliverTo != "" {
 			outMsg := bus.OutboundMessage{
-				Channel: job.DeliverChannel,
-				ChatID:  job.DeliverTo,
-				Content: result.Content,
+				Channel:  job.DeliverChannel,
+				ChatID:   job.DeliverTo,
+				Content:  result.Content,
+				TenantID: job.TenantID,
 			}
 			if peerKind == "group" {
 				outMsg.Metadata = map[string]string{"group_id": job.DeliverTo}
