@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
@@ -168,9 +169,13 @@ func TestCreateImageTool_RoutesNativePath_WithPrompt(t *testing.T) {
 	if result.MediaPrompts == nil || result.MediaPrompts[0] != wantPrompt {
 		t.Errorf("result.MediaPrompts[0] = %q, want %q", result.MediaPrompts[0], wantPrompt)
 	}
-	// Media must have one entry.
-	if len(result.Media) != 1 {
-		t.Errorf("result.Media length = %d, want 1", len(result.Media))
+	// Result.Media stays empty — delivery is now LLM-driven via send_file, not
+	// auto-attached. The path is in ForLLM so the LLM can call send_file.
+	if len(result.Media) != 0 {
+		t.Errorf("result.Media length = %d, want 0 (LLM must call send_file)", len(result.Media))
+	}
+	if !strings.Contains(result.ForLLM, "send_file") {
+		t.Errorf("ForLLM must instruct the LLM to call send_file; got: %q", result.ForLLM)
 	}
 }
 

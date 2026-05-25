@@ -4,6 +4,26 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ## Unreleased
 
+### Changed (BREAKING for LLM behavior — see below)
+
+- **Media generation tools no longer auto-deliver** —
+  `create_image` / `create_audio` / `create_video` / `tts` previously
+  populated `Result.Media` and marked `DeliveredMedia`, so the consumer
+  dispatched the file automatically at end-of-run. That created (a) THREE
+  parallel delivery paths (auto-attach, `send_file`, `message(MEDIA:)`)
+  with conflicting guards, (b) zero trace observability of the actual
+  upload, and (c) confusing error loops when the LLM tried to forward an
+  already-queued file (trace `019e5fc3-…`). Now these tools return only
+  the path in `ForLLM`; the LLM MUST call `send_file(path)` to deliver,
+  same as for any other file. Single delivery path. Every send is a
+  tracked tool span. Operator can retry just the send span. Prompt
+  addendum (`ZALO_PERSONAL_ADDENDUM.md`) updated with explicit "MUST call
+  send_file" rule; `ForLLM` text now says "call send_file(path=…) — file
+  is NOT auto-delivered" with the path quoted twice (escape against
+  date-format hallucination). Affected test
+  `TestCreateImageTool_RoutesNativePath_WithPrompt` updated to assert the
+  new empty-Media + send_file-instruction contract.
+
 ### Changed
 
 - **Trace list row cleanup + responsive chat title** — the row used to show a

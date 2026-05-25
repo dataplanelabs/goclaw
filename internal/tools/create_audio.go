@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/audio"
-	"github.com/nextlevelbuilder/goclaw/internal/bus"
 )
 
 // CreateAudioTool generates music or sound effects using the audio.Manager.
@@ -139,12 +138,13 @@ func (t *CreateAudioTool) Execute(ctx context.Context, args map[string]any) *Res
 			"data_len", len(audioBytes), "model", model, "type", audioType)
 	}
 
-	result := &Result{ForLLM: fmt.Sprintf("MEDIA:%s\nUse the EXACT filename when referencing: %s", audioPath, filepath.Base(audioPath))}
-	result.Media = []bus.MediaFile{{Path: audioPath, MimeType: "audio/mpeg", Filename: filepath.Base(audioPath)}}
+	result := &Result{ForLLM: fmt.Sprintf(
+		"Generated audio saved to: %s\n"+
+			"To share it with the user, call `send_file(path=%q)` in this turn — "+
+			"the audio is NOT auto-delivered. Pass the path EXACTLY as shown.",
+		audioPath, audioPath,
+	)}
 	result.Deliverable = fmt.Sprintf("[Generated audio: %s]\nPrompt: %s", filepath.Base(audioPath), prompt)
-	if dm := DeliveredMediaFromCtx(ctx); dm != nil {
-		dm.Mark(audioPath)
-	}
 	if t.vaultIntc != nil {
 		go t.vaultIntc.AfterWriteMedia(context.WithoutCancel(ctx), audioPath, prompt, "audio/mpeg")
 	}

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	mediapkg "github.com/nextlevelbuilder/goclaw/internal/channels/media"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 )
@@ -194,12 +193,13 @@ func (t *CreateVideoTool) Execute(ctx context.Context, args map[string]any) *Res
 		slog.Info("create_video: file saved", "path", videoPath, "size", fi.Size(), "data_len", len(chainResult.Data))
 	}
 
-	result := &Result{ForLLM: fmt.Sprintf("MEDIA:%s\nUse the EXACT filename when referencing: %s", videoPath, filepath.Base(videoPath))}
-	result.Media = []bus.MediaFile{{Path: videoPath, MimeType: "video/mp4", Filename: filepath.Base(videoPath)}}
+	result := &Result{ForLLM: fmt.Sprintf(
+		"Generated video saved to: %s\n"+
+			"To share it with the user, call `send_file(path=%q)` in this turn — "+
+			"the video is NOT auto-delivered. Pass the path EXACTLY as shown.",
+		videoPath, videoPath,
+	)}
 	result.Deliverable = fmt.Sprintf("[Generated video: %s]\nPrompt: %s", filepath.Base(videoPath), prompt)
-	if dm := DeliveredMediaFromCtx(ctx); dm != nil {
-		dm.Mark(videoPath)
-	}
 	if t.vaultIntc != nil {
 		go t.vaultIntc.AfterWriteMedia(context.WithoutCancel(ctx), videoPath, prompt, "video/mp4")
 	}
@@ -234,4 +234,3 @@ func (t *CreateVideoTool) callProvider(ctx context.Context, cp credentialProvide
 		return t.callChatVideoGen(ctx, cp.APIKey(), cp.APIBase(), model, prompt, duration, aspectRatio, params)
 	}
 }
-

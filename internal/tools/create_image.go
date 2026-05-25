@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 )
 
@@ -188,7 +187,12 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 		slog.Info("create_image: file saved", "path", imagePath, "size", fi.Size(), "data_len", len(imageData))
 	}
 
-	forLLM := fmt.Sprintf("MEDIA:%s\nUse the EXACT filename when referencing: %s", imagePath, filepath.Base(imagePath))
+	forLLM := fmt.Sprintf(
+		"Generated image saved to: %s\n"+
+			"To share it with the user, call `send_file(path=%q)` in this turn — "+
+			"the image is NOT auto-delivered. Pass the path EXACTLY as shown.",
+		imagePath, imagePath,
+	)
 	if len(unresolvedRefIDs) > 0 {
 		forLLM += formatRefPartialResolveNote(unresolvedRefIDs, MediaImageRefsFromCtx(ctx))
 	}
@@ -196,15 +200,8 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 		forLLM += formatRefsDroppedNote(degradedReason, requestedRefIDs)
 	}
 	out := &Result{ForLLM: forLLM}
-	out.Media = []bus.MediaFile{{Path: imagePath, MimeType: "image/png", Filename: filepath.Base(imagePath)}}
 	out.MediaPrompts = map[int]string{0: prompt}
 	out.Deliverable = fmt.Sprintf("[Generated image: %s]\nPrompt: %s", filepath.Base(imagePath), prompt)
-
-	// Register with DeliveredMedia so a follow-up message(MEDIA:path) call sees
-	// the file as already-queued and refuses the duplicate send.
-	if dm := DeliveredMediaFromCtx(ctx); dm != nil {
-		dm.Mark(imagePath)
-	}
 	if t.vaultIntc != nil {
 		go t.vaultIntc.AfterWriteMedia(context.WithoutCancel(ctx), imagePath, prompt, "image/png")
 	}
@@ -761,8 +758,8 @@ const (
 	// Per-provider caps applied inside each call function. The tool-layer cap
 	// (maxRefImages) is the primary safeguard; these are belt-and-suspenders
 	// in case future code reaches the providers with more refs than expected.
-	geminiRefCap     = 4  // Gemini face-preservation limit (verified 2026-05).
-	openRouterRefCap = 4  // Matches Gemini face limit for OR-routed Gemini models.
+	geminiRefCap     = 4 // Gemini face-preservation limit (verified 2026-05).
+	openRouterRefCap = 4 // Matches Gemini face limit for OR-routed Gemini models.
 )
 
 // allowedRefMIMEs whitelists reference-image MIME types. GIF is omitted because
