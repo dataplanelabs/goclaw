@@ -241,10 +241,15 @@ export function TracesPage() {
                             <GitFork className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           )}
                           <span className="truncate">{agentName || trace.name || t("unnamed")}</span>
-                          {userLabel && (
+                          {(trace.chat_title || userLabel) && (
                             <>
                               <span className="shrink-0 text-muted-foreground">·</span>
-                              <span className="truncate text-xs text-muted-foreground max-w-[140px]">{userLabel}</span>
+                              <span
+                                className="truncate text-muted-foreground max-w-[180px] lg:max-w-[360px] xl:max-w-[560px] 2xl:max-w-[760px]"
+                                title={trace.chat_title || userLabel}
+                              >
+                                {trace.chat_title || userLabel}
+                              </span>
                             </>
                           )}
                         </div>
@@ -258,14 +263,6 @@ export function TracesPage() {
                             <Badge variant="secondary" className="shrink-0 text-2xs px-1.5 py-0">
                               {trace.channel}
                             </Badge>
-                          )}
-                          {trace.chat_title && (
-                            <span
-                              className="shrink-0 truncate text-xs text-muted-foreground max-w-[200px] lg:max-w-[400px] xl:max-w-[600px] 2xl:max-w-[800px]"
-                              title={trace.chat_title}
-                            >
-                              {trace.chat_title}
-                            </span>
                           )}
                           {trace.input_preview && (
                             <span className="truncate text-xs text-muted-foreground">
