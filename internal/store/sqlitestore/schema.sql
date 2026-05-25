@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS agents (
     status                VARCHAR(20) DEFAULT 'active',
     frontmatter           TEXT,
     budget_monthly_cents  INTEGER,
+    write_only_hash       TEXT NOT NULL DEFAULT '',
     tenant_id             TEXT NOT NULL REFERENCES tenants(id),
     created_at            TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at            TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

@@ -452,6 +452,22 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`DROP TABLE IF EXISTS team_reply_evaluations`)
 	}
 
+	if targetVersion < 45 {
+		// Migration 44→45 creates trace_replay_payloads + trace_retry_locks
+		// and adds traces.outbound_emitted.
+		db.Exec(`DROP INDEX IF EXISTS idx_replay_payloads_session`)
+		db.Exec(`DROP INDEX IF EXISTS idx_replay_payloads_tenant`)
+		db.Exec(`DROP TABLE IF EXISTS trace_replay_payloads`)
+		db.Exec(`DROP INDEX IF EXISTS idx_retry_locks_expiry`)
+		db.Exec(`DROP TABLE IF EXISTS trace_retry_locks`)
+		db.Exec(`ALTER TABLE traces DROP COLUMN outbound_emitted`)
+	}
+
+	if targetVersion < 46 {
+		// Migration 45→46 adds agents.write_only_hash.
+		db.Exec(`ALTER TABLE agents DROP COLUMN write_only_hash`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db

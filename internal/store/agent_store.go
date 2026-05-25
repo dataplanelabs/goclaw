@@ -84,6 +84,13 @@ type AgentData struct {
 	ModelFallback       json.RawMessage `json:"model_fallback,omitempty" db:"model_fallback"`
 	ShellDenyGroups     json.RawMessage `json:"shell_deny_groups,omitempty" db:"shell_deny_groups"`
 	KGDedupConfig       json.RawMessage `json:"kg_dedup_config,omitempty" db:"kg_dedup_config"`
+
+	// WriteOnlyHash is an opaque content hash supplied by external reconcilers
+	// (gcplane) on every create/update. goclaw stores and echoes it but never
+	// inspects or validates the value. It enables drift detection on fields
+	// the API does not return (contextFiles, toolsConfig, sandboxConfig, ...)
+	// without exposing them. Empty string = no hash recorded yet.
+	WriteOnlyHash string `json:"write_only_hash,omitempty" db:"write_only_hash"`
 }
 
 // ParseToolsConfig returns per-agent tool policy, or nil if not configured.

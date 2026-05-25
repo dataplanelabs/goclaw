@@ -1,0 +1,28 @@
+-- Migration: add write_only_hash column to agents.
+--
+-- Background: gcplane (the GitOps reconciler) treats Agent.contextFiles,
+-- toolsConfig, sandboxConfig, subagentsConfig, memoryConfig, compactionConfig,
+-- contextPruning, otherConfig, reasoningConfig, workspaceSharing,
+-- chatgptOauthRouting, shellDenyGroups, kgDedupConfig, and systemPrompt as
+-- "write-only" — those fields are sent on create/update but the goclaw agent
+-- list/get response does not include their full content (some are stripped as
+-- internalFields, others are large JSONB managed via UI at runtime). Without
+-- an opaque hash to compare, edits to IDENTITY.md / SOUL.md / toolsConfig in
+-- the GitOps manifest do NOT propagate to goclaw: the reconciler sees no
+-- observable drift, logs "resource no-op may hide drift in unobservable
+-- fields", and never re-pushes. The only workaround was to toggle another
+-- observable field (e.g. status) or delete + recreate the agent.
+--
+-- This mirrors migrations 000059 (cron_jobs) and 000060 (llm_providers).
+-- gcplane sends a SHA-256 hash of write-only fields on every create/update;
+-- goclaw stores it opaquely and echoes it on list/get so gcplane can detect
+-- drift on the content of IDENTITY.md and other JSONB configs without
+-- exposing the underlying values.
+--
+-- The column is opaque: goclaw never inspects or validates the value, it
+-- only stores and returns it. NOT NULL DEFAULT '' so existing rows are
+-- valid (empty string means "no hash recorded yet" — gcplane treats that
+-- as drift on the first reconcile post-migration, auto-healing existing
+-- rows with one update per agent).
+
+ALTER TABLE agents ADD COLUMN write_only_hash TEXT NOT NULL DEFAULT '';
