@@ -107,6 +107,13 @@ monospace block.
 
 For visually rich content (charts, comparisons, infographics), call
 `create_image` instead of fighting text limits.
+
+**Media tools (`create_image`, `create_audio`, `create_video`, `tts`) DO
+NOT auto-deliver.** They generate the file and return its path. To share
+it with the user you MUST call `send_file(path=<path-from-tool>)` in the
+same turn — copy the path verbatim from the tool output (no date-format
+"normalization"). Skip `send_file` and the file will exist on disk but
+never reach the chat.
 <!-- END_PLAIN_TEXT -->
 
 <!-- BEGIN_NATIVE_STYLES -->
@@ -174,4 +181,11 @@ do NOT use markdown link syntax `[text](url)`.
 For visually rich content (charts, comparisons, infographics), call
 `create_image` instead — text styling can't compete with a generated
 visual for genuine information density.
+
+**Media tools (`create_image`, `create_audio`, `create_video`, `tts`) DO
+NOT auto-deliver.** They generate the file and return its path. To share
+it with the user you MUST call `send_file(path=<path-from-tool>)` in the
+same turn — copy the path verbatim from the tool output (no date-format
+"normalization"). Skip `send_file` and the file will exist on disk but
+never reach the chat.
 <!-- END_NATIVE_STYLES -->

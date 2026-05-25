@@ -16,7 +16,6 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/audio"
 	"github.com/nextlevelbuilder/goclaw/internal/audio/gemini"
-	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tts"
@@ -88,11 +87,11 @@ type ttsOverride struct {
 // agentAudioConfig is the JSON shape read from AgentAudioSnapshot.OtherConfig
 // for per-agent TTS tuning. Keys match the agents.other_config column.
 type agentAudioConfig struct {
-	TTSVoiceID string         `json:"tts_voice_id,omitempty"`
-	TTSModelID string         `json:"tts_model_id,omitempty"`
+	TTSVoiceID string `json:"tts_voice_id,omitempty"`
+	TTSModelID string `json:"tts_model_id,omitempty"`
 	// TTSParams carries the per-agent generic TTS override keys (speed, emotion, style).
 	// Stored as generic keys; AdaptAgentParams converts to provider-specific keys per attempt.
-	TTSParams  map[string]any `json:"tts_params,omitempty"`
+	TTSParams map[string]any `json:"tts_params,omitempty"`
 }
 
 // resolveVoiceAndModel computes the effective voice + model IDs for the
@@ -297,23 +296,13 @@ func (t *TtsTool) Execute(ctx context.Context, args map[string]any) *Result {
 		voiceTag = "[[audio_as_voice]]\n"
 	}
 
-	forLLM := fmt.Sprintf("%sMEDIA:%s", voiceTag, audioPath)
-	// Set Result.Media explicitly (matching create_audio) so the agent loop's
-	// media collector uses the authoritative path even when the ForLLM
-	// MEDIA: prefix is reshaped by a provider bridge (e.g. claude_cli MCP).
-	// Prefer the provider-supplied MimeType ("audio/mpeg", "audio/ogg") over
-	// "audio/"+Extension — the latter yields the non-standard "audio/mp3".
-	mimeType := result.MimeType
-	if mimeType == "" {
-		mimeType = "audio/" + result.Extension
-	}
-	r := &Result{
-		ForLLM: forLLM,
-		Media: []bus.MediaFile{{
-			Path:     audioPath,
-			MimeType: mimeType,
-		}},
-	}
+	forLLM := fmt.Sprintf(
+		"%sGenerated audio saved to: %s\n"+
+			"To share it with the user, call `send_file(path=%q)` in this turn — "+
+			"the audio is NOT auto-delivered. Pass the path EXACTLY as shown.",
+		voiceTag, audioPath, audioPath,
+	)
+	r := &Result{ForLLM: forLLM}
 	r.Deliverable = fmt.Sprintf("[Generated audio: %s]\nText: %s", filepath.Base(audioPath), text)
 	if t.vaultIntc != nil {
 		mimeType := "audio/" + result.Extension
