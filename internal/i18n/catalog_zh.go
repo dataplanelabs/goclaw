@@ -44,8 +44,10 @@ func init() {
 		MsgInstanceNotFound:   "未找到实例",
 
 		// Cron
-		MsgJobNotFound:     "未找到任务",
-		MsgInvalidCronExpr: "无效的 cron 表达式：%s",
+		MsgJobNotFound:                "未找到任务",
+		MsgInvalidCronExpr:            "无效的 cron 表达式：%s",
+		MsgCronDeliverChannelRequired: "deliver=true 的定时任务需要 deliverChannel（频道实例名称，如 'zalo-annhien'）",
+		MsgCronDeliverToRequired:      "deliver=true 的定时任务需要 deliverTo（聊天 ID）",
 
 		// Config
 		MsgConfigHashMismatch: "配置已更改（hash 不匹配）",

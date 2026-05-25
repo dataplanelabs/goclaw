@@ -44,8 +44,10 @@ func init() {
 		MsgInstanceNotFound:   "instance not found",
 
 		// Cron
-		MsgJobNotFound:     "job not found",
-		MsgInvalidCronExpr: "invalid cron expression: %s",
+		MsgJobNotFound:                "job not found",
+		MsgInvalidCronExpr:            "invalid cron expression: %s",
+		MsgCronDeliverChannelRequired: "cron job with deliver=true requires deliverChannel (channel-instance name like 'zalo-annhien')",
+		MsgCronDeliverToRequired:      "cron job with deliver=true requires deliverTo (chat ID)",
 
 		// Config
 		MsgConfigHashMismatch: "config has changed (hash mismatch)",

@@ -45,8 +45,10 @@ const (
 	MsgInstanceNotFound   = "error.instance_not_found"   // "instance not found"
 
 	// --- Cron ---
-	MsgJobNotFound     = "error.job_not_found"     // "job not found"
-	MsgInvalidCronExpr = "error.invalid_cron_expr" // "invalid cron expression: %s"
+	MsgJobNotFound                = "error.job_not_found"                  // "job not found"
+	MsgInvalidCronExpr            = "error.invalid_cron_expr"              // "invalid cron expression: %s"
+	MsgCronDeliverChannelRequired = "error.cron_deliver_channel_required" // "cron job with deliver=true requires deliverChannel"
+	MsgCronDeliverToRequired      = "error.cron_deliver_to_required"      // "cron job with deliver=true requires deliverTo"
 
 	// --- Config ---
 	MsgConfigHashMismatch = "error.config_hash_mismatch" // "config has changed (hash mismatch)"
