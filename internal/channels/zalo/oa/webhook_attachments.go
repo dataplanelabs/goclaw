@@ -104,6 +104,7 @@ func (c *Channel) dispatchWebhookMedia(parent context.Context, e *oaInboundEvent
 		content = content + "\n" + tag
 	}
 
+	c.upsertSenderContact(e.Sender.ID, e.Sender.DisplayName)
 	metadata := common.InboundMeta{
 		MessageID:         e.messageID(),
 		Platform:          common.PlatformZaloOA,
@@ -142,6 +143,7 @@ func (c *Channel) dispatchWebhookLink(e *oaInboundEvent) {
 		b.WriteString(att.Payload.Description)
 	}
 
+	c.upsertSenderContact(e.Sender.ID, e.Sender.DisplayName)
 	metadata := common.InboundMeta{
 		MessageID:         e.messageID(),
 		Platform:          common.PlatformZaloOA,

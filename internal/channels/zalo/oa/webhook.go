@@ -112,6 +112,7 @@ func (c *Channel) dispatchWebhookText(e *oaInboundEvent) {
 	if e.Message.Text == "" || e.Sender.ID == "" {
 		return
 	}
+	c.upsertSenderContact(e.Sender.ID, e.Sender.DisplayName)
 	metadata := common.InboundMeta{
 		MessageID:         e.messageID(),
 		Platform:          common.PlatformZaloOA,
