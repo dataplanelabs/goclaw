@@ -99,6 +99,24 @@ func TestRenderStyles(t *testing.T) {
 			"Đề xuất:\n  • Tìm hiểu nguyên nhân\n\nAnh có file chi tiết không?",
 			[]Style{{0, 8, StyleBold}},
 		},
+		{
+			"bold_header_with_trailing_emoji",
+			"**Điểm mạnh** 💪\n\n- AOV ổn định\n- Sales star",
+			"Điểm mạnh 💪\n  • AOV ổn định\n  • Sales star",
+			[]Style{{0, 9, StyleBold}},
+		},
+		{
+			"bold_header_with_trailing_punct",
+			"**Cảnh báo**!\n\n- 98.7% chưa thanh toán",
+			"Cảnh báo!\n  • 98.7% chưa thanh toán",
+			[]Style{{0, 8, StyleBold}},
+		},
+		{
+			"bold_prefix_with_prose_is_not_header",
+			"**Note** this is important content here\n- not a list item under a header",
+			"Note this is important content here\n• not a list item under a header",
+			[]Style{{0, 4, StyleBold}},
+		},
 
 		// Filename / identifier underscores: glued on both sides → not italic.
 		{

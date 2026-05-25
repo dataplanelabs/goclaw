@@ -6,6 +6,14 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Zalo native renderer — bold header detection covers `**X** emoji`** —
+  Section headers with a trailing emoji (e.g. `**Điểm mạnh** 💪`,
+  `**Cảnh báo** 🚨`) were rejected by `isBoldOnlyLine`, so the blank line
+  between header and content stayed and the bullets weren't indented. Now
+  recognized as headers as long as the trailing chars after the closing
+  `**` contain no letters/digits (emoji / punctuation / whitespace only).
+  Rename `isBoldOnlyLine` → `isBoldHeaderLine` to match the new semantic.
+
 - **Zalo native renderer — filename/identifier underscores no longer
   italicized** — `_X_` patterns inside identifier-shaped text (e.g.
   `BaoCao_DonHang_20260520.xlsx`) were matched by the italic-underscore
