@@ -70,6 +70,7 @@ func TestJudgeWorker_NoResolverConfigured(t *testing.T) {
 		Payload: eventbus.TeamReplyObservedPayload{
 			EvaluationID: "eval-1",
 			TenantID:     tenantID,
+			TeamReply:    "non-empty so empty-check passes",
 		},
 	})
 	if err != nil {
@@ -107,6 +108,7 @@ func TestJudgeWorker_ResolverReturnsNoAgent(t *testing.T) {
 		Payload: eventbus.TeamReplyObservedPayload{
 			EvaluationID: "eval-2",
 			TenantID:     tenantID,
+			TeamReply:    "non-empty so empty-check passes",
 		},
 	})
 	deadline := time.Now().Add(time.Second)
@@ -123,6 +125,57 @@ func TestJudgeWorker_ResolverReturnsNoAgent(t *testing.T) {
 	defer ev.mu.Unlock()
 	if len(ev.errs) != 1 || ev.errs[0].msg != "no_judge_agent_configured" {
 		t.Fatalf("expected no-agent error, got %+v", ev.errs)
+	}
+}
+
+func TestJudgeWorker_SkipsEmptyTeamReply(t *testing.T) {
+	ev := &fakeEvalStore{}
+	w := NewJudgeWorker(JudgeDeps{Evals: ev})
+	tenantID := uuid.NewString()
+	_ = w.Handle(context.Background(), eventbus.DomainEvent{
+		Type: eventbus.EventTeamReplyObserved,
+		Payload: eventbus.TeamReplyObservedPayload{
+			EvaluationID: "eval-empty",
+			TenantID:     tenantID,
+			TeamReply:    "   ",
+		},
+	})
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		ev.mu.Lock()
+		done := len(ev.errs) == 1
+		ev.mu.Unlock()
+		if done {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	ev.mu.Lock()
+	defer ev.mu.Unlock()
+	if len(ev.errs) != 1 || ev.errs[0].msg != "empty_team_reply" {
+		t.Fatalf("expected empty_team_reply mark, got %+v", ev.errs)
+	}
+}
+
+func TestJudgeWorker_BatchGradeFiltersEmptyTeamReply(t *testing.T) {
+	ev := &fakeEvalStore{}
+	bus := &stubPublishBus{}
+	w := NewJudgeWorker(JudgeDeps{Evals: ev, Bus: bus})
+	rows := []store.TeamReplyEvaluation{
+		{ID: "r1", TenantID: uuid.NewString(), ChannelInstanceID: uuid.NewString(), TeamReply: ""},
+		{ID: "r2", TenantID: uuid.NewString(), ChannelInstanceID: uuid.NewString(), TeamReply: "   "},
+		{ID: "r3", TenantID: uuid.NewString(), ChannelInstanceID: uuid.NewString(), TeamReply: ""},
+	}
+	_ = w.BatchGrade(context.Background(), rows, "test-channel")
+	ev.mu.Lock()
+	defer ev.mu.Unlock()
+	if len(ev.errs) != 3 {
+		t.Fatalf("expected 3 empty_team_reply marks, got %d: %+v", len(ev.errs), ev.errs)
+	}
+	for _, e := range ev.errs {
+		if e.msg != "empty_team_reply" {
+			t.Fatalf("expected empty_team_reply for all, got %q", e.msg)
+		}
 	}
 }
 

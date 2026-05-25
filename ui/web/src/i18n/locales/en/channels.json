@@ -675,6 +675,18 @@
     "judgeScheduleHint": "5-field cron expression in Asia/Saigon. Default: hourly 8am-6pm Mon-Fri.",
     "gradePendingButton": "Grade {{count}} pending now",
     "judgeBatchSizeLabel": "Batch size",
-    "judgeBatchSizeHint": "Rows graded per LLM call (1-50). Larger = fewer tokens, slight quality risk."
+    "judgeBatchSizeHint": "Rows graded per LLM call (1-50). Larger = fewer tokens, slight quality risk.",
+    "threadCount": "{{count}} threads",
+    "threadCaptureCount": "{{count}} captures",
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
+    "loadOlderCaptures": "Load {{count}} older",
+    "viewDetails": "View judge details",
+    "noMatchingThreads": "No threads match the filter",
+    "detailTitle": "Judge evaluation",
+    "detailCustomerMessage": "Customer",
+    "detailTeamReply": "Team reply",
+    "detailBotWouldSay": "Bot would've said",
+    "detailDiffReasoning": "Why"
   }
 }
