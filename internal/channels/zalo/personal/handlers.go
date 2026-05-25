@@ -513,6 +513,10 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 	if !c.checkGroupPolicy(ctx, senderID, threadID) {
 		return
 	}
+	// Cache that this thread is a group. The pairing branch already marks it,
+	// but `open` policy doesn't — and tools (create_poll, reactions) rely on
+	// this cache to distinguish group vs DM threads.
+	c.MarkGroupApproved(threadID)
 
 	senderName := msg.Data.DName
 	if senderName == "" {

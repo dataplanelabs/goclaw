@@ -6,6 +6,16 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Zalo personal — `create_poll` (and other group-only tools) failed
+  on a freshly-restarted pod until the bot had replied once** —
+  `IsGroupApproved` was only populated by the pairing branch (when
+  `GroupPolicy=pairing`) or by the outbound send fallback. For
+  `GroupPolicy=open` (the default), the cache stayed empty until the bot
+  replied, so the FIRST tool call in a group (e.g. `zalo_personal_create_poll`)
+  failed with "polls only work in group chats". Now `handleGroupMessage`
+  marks the group approved right after the policy check passes — symmetric
+  with the existing `send.go` fallback. Regression test added.
+
 - **Zalo native renderer — bold header detection covers `**X** emoji`** —
   Section headers with a trailing emoji (e.g. `**Điểm mạnh** 💪`,
   `**Cảnh báo** 🚨`) were rejected by `isBoldOnlyLine`, so the blank line

@@ -10,6 +10,34 @@ import (
 	pkgproto "github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
+func TestHandleGroupMessage_MarksGroupApproved(t *testing.T) {
+	t.Parallel()
+	ch, _ := newHandlerTestChannel(t)
+	ch.SetRequireMention(false)
+
+	const gid = "group-mark-approved"
+	if ch.IsGroupApproved(gid) {
+		t.Fatalf("group must not be approved before inbound")
+	}
+
+	text := "hello"
+	ch.handleGroupMessage(protocol.NewGroupMessage("self-uid", protocol.TGroupMessage{
+		TMessage: protocol.TMessage{
+			MsgID:    "msg-mark-001",
+			CliMsgID: json.Number("1700000099001"),
+			UIDFrom:  "user-1",
+			IDTo:     gid,
+			DName:    "Alice",
+			TS:       "1700000099",
+			Content:  protocol.Content{String: &text},
+		},
+	}))
+
+	if !ch.IsGroupApproved(gid) {
+		t.Errorf("group %q must be approved after inbound — tools (create_poll etc.) need this", gid)
+	}
+}
+
 func TestHandleGroupMessage_StampsSenderUID(t *testing.T) {
 	t.Parallel()
 	ch, mb := newHandlerTestChannel(t)
