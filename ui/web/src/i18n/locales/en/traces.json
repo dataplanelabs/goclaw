@@ -34,6 +34,8 @@
     "status": "Status:",
     "duration": "Duration:",
     "channel": "Channel:",
+    "chatTitle": "Chat:",
+    "userId": "User ID:",
     "tokens": "Tokens:",
     "spans": "Spans:",
     "started": "Started:",

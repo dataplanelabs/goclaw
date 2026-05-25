@@ -34,6 +34,8 @@
     "status": "Trạng thái:",
     "duration": "Thời lượng:",
     "channel": "Channel:",
+    "chatTitle": "Chat:",
+    "userId": "User ID:",
     "tokens": "Token:",
     "spans": "Khoảng:",
     "started": "Bắt đầu:",

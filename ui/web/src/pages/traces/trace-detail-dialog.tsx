@@ -152,6 +152,18 @@ function TraceSummaryGrid({ trace, tz, onNavigateTrace }: { trace: TraceData; tz
       <div><span className="text-muted-foreground">{t("detail.status")}</span> <StatusBadge status={trace.status} /></div>
       <div><span className="text-muted-foreground">{t("detail.duration")}</span> {formatDuration(trace.duration_ms || computeDurationMs(trace.start_time, trace.end_time))}</div>
       <div><span className="text-muted-foreground">{t("detail.channel")}</span> {trace.channel || "—"}</div>
+      {trace.chat_title && (
+        <div className="col-span-2 sm:col-span-2" title={trace.chat_title}>
+          <span className="text-muted-foreground">{t("detail.chatTitle")}</span>{" "}
+          <span className="font-medium">{trace.chat_title}</span>
+        </div>
+      )}
+      {trace.user_id && (
+        <div className="col-span-2 sm:col-span-2" title={trace.user_id}>
+          <span className="text-muted-foreground">{t("detail.userId")}</span>{" "}
+          <span className="font-mono text-xs break-all">{trace.user_id}</span>
+        </div>
+      )}
       <div>
         <span className="text-muted-foreground">{t("detail.tokens")}</span>{" "}
         {formatTokens(trace.total_input_tokens)} in / {formatTokens(trace.total_output_tokens)} out
