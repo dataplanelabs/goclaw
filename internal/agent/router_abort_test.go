@@ -8,13 +8,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 // mockTraceCollector counts FinishTrace calls for test assertions.
 type mockTraceCollector struct {
-	mu    sync.Mutex
-	calls []finishTraceCall
+	mu          sync.Mutex
+	calls       []finishTraceCall
+	storeReturn store.TracingStore // nil by default — disables orphan-DB fallback
 }
+
+func (m *mockTraceCollector) Store() store.TracingStore { return m.storeReturn }
 
 type finishTraceCall struct {
 	TraceID       uuid.UUID
@@ -69,7 +74,7 @@ func TestAbortRun_Stopped(t *testing.T) {
 		r.UnregisterRun(runID)
 	}()
 
-	res := r.AbortRun(runID, sessionKey)
+	res := r.AbortRun(runID, sessionKey, uuid.Nil)
 	if !res.Stopped {
 		t.Fatalf("expected Stopped=true, got %+v", res)
 	}
@@ -94,7 +99,7 @@ func TestAbortRun_Forced(t *testing.T) {
 	// Goroutine deliberately never calls UnregisterRun.
 
 	start := time.Now()
-	res := r.AbortRun(runID, sessionKey)
+	res := r.AbortRun(runID, sessionKey, uuid.Nil)
 	elapsed := time.Since(start)
 
 	if !res.Forced {
@@ -140,7 +145,7 @@ func TestAbortRun_AlreadyAborting(t *testing.T) {
 	for i := range n {
 		go func() {
 			defer wg.Done()
-			results[i] = r.AbortRun(runID, sessionKey)
+			results[i] = r.AbortRun(runID, sessionKey, uuid.Nil)
 		}()
 	}
 	wg.Wait()
@@ -174,7 +179,7 @@ func TestAbortRun_Unauthorized(t *testing.T) {
 	r := NewRouter()
 	_, _ = registerRun(r, "run-1", "session-1")
 
-	res := r.AbortRun("run-1", "wrong-session")
+	res := r.AbortRun("run-1", "wrong-session", uuid.Nil)
 	if !res.Unauthorized {
 		t.Fatalf("expected Unauthorized=true, got %+v", res)
 	}
@@ -190,7 +195,7 @@ func TestAbortRun_Unauthorized(t *testing.T) {
 // TestAbortRun_NotFound verifies abort on never-registered runID returns NotFound.
 func TestAbortRun_NotFound(t *testing.T) {
 	r := NewRouter()
-	res := r.AbortRun("nonexistent", "")
+	res := r.AbortRun("nonexistent", "", uuid.Nil)
 	if !res.NotFound {
 		t.Fatalf("expected NotFound=true, got %+v", res)
 	}
@@ -203,7 +208,7 @@ func TestAbortRun_AfterUnregister(t *testing.T) {
 	_, _ = registerRun(r, "run-1", "session-1")
 	r.UnregisterRun("run-1")
 
-	res := r.AbortRun("run-1", "session-1")
+	res := r.AbortRun("run-1", "session-1", uuid.Nil)
 	if !res.NotFound {
 		t.Fatalf("expected NotFound=true after unregister, got %+v", res)
 	}
@@ -228,7 +233,7 @@ func TestAbortRun_Race_UnregisterConcurrent(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			r.AbortRun(runID, sessionKey)
+			r.AbortRun(runID, sessionKey, uuid.Nil)
 		}()
 
 		wg.Wait()
@@ -334,7 +339,7 @@ func TestAbortRun_StateAfterStop(t *testing.T) {
 		close(unregistered)
 	}()
 
-	res := r.AbortRun(runID, sessionKey)
+	res := r.AbortRun(runID, sessionKey, uuid.Nil)
 	if !res.Stopped {
 		t.Fatalf("expected Stopped=true, got %+v", res)
 	}
@@ -357,7 +362,7 @@ func TestAbortRun_NilTraceCollector_Forced(t *testing.T) {
 	_, _ = registerRun(r, runID, sessionKey)
 
 	// Goroutine never exits → Forced path will call forceMarkTraceAborted.
-	res := r.AbortRun(runID, sessionKey)
+	res := r.AbortRun(runID, sessionKey, uuid.Nil)
 	if !res.Forced {
 		t.Fatalf("expected Forced=true, got %+v", res)
 	}
@@ -392,7 +397,7 @@ func TestAbortRun_DoesNotLeakGoroutine(t *testing.T) {
 		lateUnregisterDone.Store(true)
 	}()
 
-	res := r.AbortRun(runID, sessionKey)
+	res := r.AbortRun(runID, sessionKey, uuid.Nil)
 	if !res.Forced {
 		t.Fatalf("expected Forced=true, got %+v", res)
 	}

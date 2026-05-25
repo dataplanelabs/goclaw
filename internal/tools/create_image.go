@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -83,7 +84,16 @@ func (t *CreateImageTool) Parameters() map[string]any {
 	}
 }
 
-func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Result {
+func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (result *Result) {
+	timeout := toolTimeoutFromEnv("CREATE_IMAGE")
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	defer func() {
+		if result != nil && result.IsError && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			result = ErrorResult(fmt.Sprintf("create_image timed out after %s (set CREATE_IMAGE_TIMEOUT_SEC to adjust). Provider may be slow or unreachable; retry or switch provider.", timeout))
+		}
+	}()
+
 	prompt, _ := args["prompt"].(string)
 	if prompt == "" {
 		return ErrorResult("prompt is required")
@@ -187,10 +197,10 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Res
 	if len(unresolvedRefIDs) > 0 {
 		forLLM += formatRefPartialResolveNote(unresolvedRefIDs, MediaImageRefsFromCtx(ctx))
 	}
-	result := &Result{ForLLM: forLLM}
-	result.Media = []bus.MediaFile{{Path: imagePath, MimeType: "image/png", Filename: filepath.Base(imagePath)}}
-	result.MediaPrompts = map[int]string{0: prompt}
-	result.Deliverable = fmt.Sprintf("[Generated image: %s]\nPrompt: %s", filepath.Base(imagePath), prompt)
+	out := &Result{ForLLM: forLLM}
+	out.Media = []bus.MediaFile{{Path: imagePath, MimeType: "image/png", Filename: filepath.Base(imagePath)}}
+	out.MediaPrompts = map[int]string{0: prompt}
+	out.Deliverable = fmt.Sprintf("[Generated image: %s]\nPrompt: %s", filepath.Base(imagePath), prompt)
 
 	// Register with DeliveredMedia so a follow-up message(MEDIA:path) call sees
 	// the file as already-queued and refuses the duplicate send.
@@ -200,12 +210,12 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Res
 	if t.vaultIntc != nil {
 		go t.vaultIntc.AfterWriteMedia(context.WithoutCancel(ctx), imagePath, prompt, "image/png")
 	}
-	result.Provider = chainResult.Provider
-	result.Model = chainResult.Model
+	out.Provider = chainResult.Provider
+	out.Model = chainResult.Model
 	if chainResult.Usage != nil {
-		result.Usage = chainResult.Usage
+		out.Usage = chainResult.Usage
 	}
-	return result
+	return out
 }
 
 // embedPromptIntoPNG wraps agent.EmbedPNGPrompt for the tools package.

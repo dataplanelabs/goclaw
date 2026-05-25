@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image/jpeg"
 	"log/slog"
@@ -114,7 +115,16 @@ func (t *ReadImageTool) Parameters() map[string]any {
 // maxImageFileBytes is the max size for loading workspace images (10MB).
 const maxImageFileBytes = 10 * 1024 * 1024
 
-func (t *ReadImageTool) Execute(ctx context.Context, args map[string]any) *Result {
+func (t *ReadImageTool) Execute(ctx context.Context, args map[string]any) (result *Result) {
+	timeout := toolTimeoutFromEnv("READ_IMAGE")
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	defer func() {
+		if result != nil && result.IsError && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			result = ErrorResult(fmt.Sprintf("read_image timed out after %s (set READ_IMAGE_TIMEOUT_SEC to adjust).", timeout))
+		}
+	}()
+
 	prompt, _ := args["prompt"].(string)
 	if prompt == "" {
 		prompt = "Describe this image in detail."
@@ -155,11 +165,11 @@ func (t *ReadImageTool) Execute(ctx context.Context, args map[string]any) *Resul
 		return ErrorResult(fmt.Sprintf("Image analysis failed — all vision providers returned errors: %v. The user may need to check their provider API keys or configuration.", err))
 	}
 
-	result := NewResult(string(chainResult.Data))
-	result.Usage = chainResult.Usage
-	result.Provider = chainResult.Provider
-	result.Model = chainResult.Model
-	return result
+	out := NewResult(string(chainResult.Data))
+	out.Usage = chainResult.Usage
+	out.Provider = chainResult.Provider
+	out.Model = chainResult.Model
+	return out
 }
 
 // callProvider dispatches the vision call using provider.Chat().

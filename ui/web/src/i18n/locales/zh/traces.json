@@ -68,6 +68,7 @@
     "failedLoad": "加载追踪失败",
     "abortStopped": "已停止运行",
     "abortForced": "已强制停止（后台仍在清理）",
+    "abortOrphan": "已停止运行（进程已消失——重启后被遗弃）",
     "abortAlreadyAborting": "停止操作进行中",
     "abortNotFound": "运行已结束",
     "abortUnauthorized": "无权停止此运行",

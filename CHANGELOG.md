@@ -6,6 +6,23 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Orphaned traces can now be Stopped and Retried** — when an agent process
+  died mid-run (panic, OOM, rolling update), the trace previously remained stuck
+  at `status='running'` forever; Stop returned "run already finished" (in-memory
+  `activeRuns` map was empty after restart), Retry rejected because status wasn't
+  error/cancelled. The abort handler now falls through to a tenant-scoped DB
+  lookup on map-miss and force-marks the trace as `cancelled` so the existing
+  Retry path works. New `AbortResult.Orphaned` field + `abortOrphan` FE toast
+  distinguish the case. Tenant filter prevents cross-tenant clobber. Single-pod
+  assumption documented in code; multi-pod safety needs ownership protocol
+  (Option 3 deferred).
+
+- **`create_image` and `read_image` tools respect a configurable timeout** —
+  env `CREATE_IMAGE_TIMEOUT_SEC` and `READ_IMAGE_TIMEOUT_SEC` (default 180s)
+  bound the tools' HTTP/IO calls so a hung provider fails loud within the
+  window instead of producing new zombies. Shared helper at
+  `internal/tools/timeouts.go`. Companion to the orphan-trace fix above.
+
 - **Agent answers no longer hard-code UTC for time/date questions** — system
   prompt's `Current date:` line was always emitting `(UTC)` regardless of any
   configured timezone, forcing the model to do error-prone TZ arithmetic on
