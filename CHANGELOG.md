@@ -6,6 +6,21 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Zalo native renderer — tables + bullet dot + hierarchical indent** —
+  three follow-ups after v3.23.20 dropped lst_* styles. (1) `RenderStyles`
+  now calls `renderMarkdownTables` like `StripMarkdown` already does, so
+  tables in `enable_native_styles=true` channels become bulleted labeled
+  blocks instead of raw pipes. (2) Line-prefix `- ` / `* ` / `+ ` rewritten
+  to `• ` (Unicode bullet, U+2022) — UTF-16-safe, emitted style positions
+  unchanged. (3) Sections under a bold-only header (e.g. `**Đánh giá:**`)
+  get hierarchical indent: 2 spaces for top-level items, 4 for bullets that
+  immediately follow a numbered item (sub-bullet inference). Companion
+  collapse: blank line between a bold-only header and its content is
+  dropped (LLMs inconsistently insert it); blank between two adjacent
+  headers is preserved as a section separator. Section ends on the next
+  bold-only header OR on a blank line followed by non-list non-header
+  prose (treated as closing remarks).
+
 - **Zalo native renderer — drop list styles + fix fragment-bold** — on
   `zalo_personal` with `enable_native_styles=true`, Zalo mobile dumps `lst_1`
   / `lst_2` spans as raw `<list>` / `<number index="N">…</number>` XML in the
