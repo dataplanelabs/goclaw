@@ -25,6 +25,16 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   `teamAnalytics.captureRenderFailed`. 15 new vitest cases cover the
   parser scheme-rejection + `categorizeCapture` branches.
 
+- **Agent — duplicate-media filter now runs in the v3 pipeline finalize too** —
+  v3.23.28 added a `PublishedMedia` ctx tracker and a filter in the legacy
+  `loop_finalize.go`, but runs actually flow through `runViaPipeline` →
+  `pipeline.FinalizeStage`, which had its own `processMedia` that only
+  deduped by string match — no PublishedMedia awareness. Result: mp3 still
+  sent twice on zalo-shtp (trace 019e5f1b-…). FinalizeStage.processMedia
+  now consults `tools.PublishedMediaFromCtx(ctx)` and drops marked paths
+  before the consumer dispatches RunResult.Media. Regression test
+  `TestFinalizeStage_DropsPublishedMedia` pins the behavior.
+
 - **Agent — files sent twice when LLM forwarded via `message(MEDIA:…)`** —
   Tools that produced a file (e.g. `tts`) added it to `Result.Media`, which
   the agent loop tracked in `rs.mediaResults` for consumer dispatch. When
