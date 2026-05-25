@@ -463,6 +463,7 @@ type GatewayConfig struct {
 	BackgroundProvider      string       `json:"background_provider,omitempty"`        // LLM provider for background workers (vault enrichment, consolidation)
 	BackgroundModel         string       `json:"background_model,omitempty"`           // LLM model for background workers
 	UIBaseURL               string       `json:"ui_base_url,omitempty"`                // public-facing web UI URL (B3-01: OAuth popup redirect target after callback)
+	ReplayRetentionDays     int          `json:"replay_retention_days,omitempty"`      // how long captured retry payloads survive in trace_replay_payloads (default 7; 0 keeps the legacy "sweep on every successful run" behavior)
 }
 
 // ToolsConfig controls tool availability, policy, and web search.

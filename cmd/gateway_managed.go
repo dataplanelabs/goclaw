@@ -253,6 +253,7 @@ func wireExtras(
 		ModelPricing:           appCfg.Telemetry.ModelPricing,
 		TracingStore:           stores.Tracing,
 		ReplayPayloadStore:     stores.ReplayPayloads,
+		ReplayRetention:        resolveReplayRetention(appCfg.Gateway.ReplayRetentionDays),
 		MemoryStore:            stores.Memory,
 		ContactStore:           stores.Contacts,
 		TenantStore:            stores.Tenants,
@@ -782,4 +783,15 @@ func buildKGExtractFunc(kgStore store.KnowledgeGraphStore, bts store.BuiltinTool
 			}
 		}
 	}
+}
+
+// resolveReplayRetention turns the configured day-count into a Duration.
+// Default seeded at config-load (config.DefaultReplayRetentionDays). Negative =
+// explicit opt-out — sweep falls back to legacy runStart-cutoff (only the latest
+// run per session stays retryable).
+func resolveReplayRetention(days int) time.Duration {
+	if days <= 0 {
+		return 0
+	}
+	return time.Duration(days) * 24 * time.Hour
 }

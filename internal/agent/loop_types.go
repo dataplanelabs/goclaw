@@ -243,6 +243,7 @@ type Loop struct {
 	budgetMonthlyCents int
 	tracingStore       store.TracingStore
 	replayStore        store.ReplayPayloadStore
+	replayRetention    time.Duration
 
 	// Memory store for extractive memory fallback (writes directly when LLM flush fails)
 	memStore store.MemoryStore
@@ -440,6 +441,7 @@ type LoopConfig struct {
 	BudgetMonthlyCents int
 	TracingStore       store.TracingStore
 	ReplayPayloadStore store.ReplayPayloadStore
+	ReplayRetention    time.Duration
 
 	// Memory store for extractive memory fallback (writes directly when LLM flush fails)
 	MemoryStore store.MemoryStore
@@ -584,6 +586,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		budgetMonthlyCents:     cfg.BudgetMonthlyCents,
 		tracingStore:           cfg.TracingStore,
 		replayStore:            cfg.ReplayPayloadStore,
+		replayRetention:        cfg.ReplayRetention,
 		memStore:               cfg.MemoryStore,
 		mcpStore:               cfg.MCPStore,
 		mcpPool:                cfg.MCPPool,

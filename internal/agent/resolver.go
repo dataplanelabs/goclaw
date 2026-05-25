@@ -106,6 +106,9 @@ type ResolverDeps struct {
 	TracingStore store.TracingStore
 
 	ReplayPayloadStore store.ReplayPayloadStore
+	// ReplayRetention controls how long captured retry payloads survive.
+	// 0 = legacy behavior (sweep on every successful run); >0 = absolute TTL.
+	ReplayRetention time.Duration
 
 	// Memory store for extractive memory fallback
 	MemoryStore store.MemoryStore
@@ -543,6 +546,7 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			BudgetMonthlyCents:     derefInt(ag.BudgetMonthlyCents),
 			TracingStore:           deps.TracingStore,
 			ReplayPayloadStore:     deps.ReplayPayloadStore,
+			ReplayRetention:        deps.ReplayRetention,
 			MemoryStore:            deps.MemoryStore,
 			MCPStore:               deps.MCPStore,
 			MCPPool:                deps.MCPPool,
