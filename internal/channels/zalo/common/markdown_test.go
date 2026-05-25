@@ -53,6 +53,43 @@ func TestStripMarkdown(t *testing.T) {
 
 		// Mixed
 		{"mixed markdown", "## Hello\n\nThis is **bold** and `code`.\n\n- item\n- [link](url)\n\n> quote", "Hello\n\nThis is bold and code.\n\n• item\n• link (url)\n\nquote"},
+
+		// Tables — converted to labeled bullet blocks (Zalo has no monospace / table render)
+		{
+			"table multi-col vietnamese",
+			"| Họ tên | Chức vụ | Lương |\n|---|---|---|\n| Person A | Owner | 1,000,000đ |\n| Person B | Accountant | 2,000,000đ |",
+			"• Person A\n  Chức vụ: Owner\n  Lương: 1,000,000đ\n• Person B\n  Chức vụ: Accountant\n  Lương: 2,000,000đ",
+		},
+		{
+			"table 2-col key value",
+			"| Key | Value |\n|---|---|\n| Total | 8,370,300đ |\n| Bank | BIDV |",
+			"• Total\n  Value: 8,370,300đ\n• Bank\n  Value: BIDV",
+		},
+		{
+			"table with alignment colons",
+			"| A | B |\n|:---|:---:|\n| 1 | 2 |",
+			"• 1\n  B: 2",
+		},
+		{
+			"table empty cells skipped",
+			"| H1 | H2 | H3 |\n|---|---|---|\n| a |  | c |",
+			"• a\n  H3: c",
+		},
+		{
+			"table with prose around",
+			"Before line.\n\n| Name | Age |\n|---|---|\n| Alice | 30 |\n\nAfter line.",
+			"Before line.\n\n• Alice\n  Age: 30\n\nAfter line.",
+		},
+		{
+			"non-table pipes preserved",
+			"use a|b syntax",
+			"use a|b syntax",
+		},
+		{
+			"separator-only no body rows produces empty",
+			"| H1 | H2 |\n|---|---|",
+			"",
+		},
 	}
 
 	for _, tt := range tests {
