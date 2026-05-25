@@ -696,6 +696,40 @@ func DeliveredMediaFromCtx(ctx context.Context) *DeliveredMedia {
 	return v
 }
 
+const ctxPublishedMedia toolContextKey = "tool_published_media"
+
+// PublishedMedia tracks paths tools have put on msgBus directly this run.
+// Finalize filters RunResult.Media by this so the consumer doesn't redeliver.
+type PublishedMedia struct {
+	mu    sync.Mutex
+	paths map[string]bool
+}
+
+func NewPublishedMedia() *PublishedMedia {
+	return &PublishedMedia{paths: make(map[string]bool)}
+}
+
+func (pm *PublishedMedia) Mark(path string) {
+	pm.mu.Lock()
+	pm.paths[path] = true
+	pm.mu.Unlock()
+}
+
+func (pm *PublishedMedia) IsPublished(path string) bool {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	return pm.paths[path]
+}
+
+func WithPublishedMedia(ctx context.Context, pm *PublishedMedia) context.Context {
+	return context.WithValue(ctx, ctxPublishedMedia, pm)
+}
+
+func PublishedMediaFromCtx(ctx context.Context) *PublishedMedia {
+	v, _ := ctx.Value(ctxPublishedMedia).(*PublishedMedia)
+	return v
+}
+
 // --- Run media file paths (for team workspace auto-collect) ---
 
 const ctxRunMediaPaths toolContextKey = "tool_run_media_paths"
