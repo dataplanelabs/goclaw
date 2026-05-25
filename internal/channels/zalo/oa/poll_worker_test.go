@@ -267,3 +267,25 @@ func contains(rows []store.TeamReplyEvaluation, msgID string) bool {
 	return false
 }
 
+
+func TestPollWorker_SessionKeyAgentScoped(t *testing.T) {
+	w := NewPollWorker(uuid.New(), "zalo-oa-test", uuid.NewString(), "zalo_oa", "self-1", 60*time.Second, PollWorkerDeps{
+		AgentKey: "support",
+	})
+	got := w.sessionKeyFor("user-123")
+	want := "agent:support:zalo-oa-test:direct:user-123"
+	if got != want {
+		t.Fatalf("sessionKeyFor with agentKey: got %q, want %q", got, want)
+	}
+}
+
+func TestPollWorker_SessionKeyLegacyFallback(t *testing.T) {
+	w := NewPollWorker(uuid.New(), "zalo-oa-test", uuid.NewString(), "zalo_oa", "self-1", 60*time.Second, PollWorkerDeps{
+		AgentKey: "",
+	})
+	got := w.sessionKeyFor("user-123")
+	want := "zalo_oa:user-123"
+	if got != want {
+		t.Fatalf("sessionKeyFor without agentKey: got %q, want %q", got, want)
+	}
+}
