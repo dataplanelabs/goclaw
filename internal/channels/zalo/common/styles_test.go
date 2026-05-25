@@ -100,6 +100,32 @@ func TestRenderStyles(t *testing.T) {
 			[]Style{{0, 8, StyleBold}},
 		},
 
+		// Filename / identifier underscores: glued on both sides → not italic.
+		{
+			"filename_xlsx_no_italic",
+			"file BaoCao_DonHang_20260520.xlsx",
+			"file BaoCao_DonHang_20260520.xlsx",
+			nil,
+		},
+		{
+			"identifier_three_segments_no_italic",
+			"use the_quick_brown_fox variable",
+			"use the_quick_brown_fox variable",
+			nil,
+		},
+		{
+			"italic_underscore_with_spaces_still_works",
+			"this is _italic_ text",
+			"this is italic text",
+			[]Style{{8, 6, StyleItalic}},
+		},
+		{
+			"italic_underscore_around_word_with_inner_underscore",
+			"this is _user_id_ field",
+			"this is user_id field",
+			[]Style{{8, 7, StyleItalic}},
+		},
+
 		// Tables convert to bulleted labeled blocks (same as StripMarkdown).
 		{
 			"table_two_col_native",

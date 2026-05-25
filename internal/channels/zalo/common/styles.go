@@ -47,6 +47,7 @@ func RenderStyles(text string) (string, []Style) {
 	text = reHorizontalRule.ReplaceAllString(text, "")
 
 	text = stripFragmentBoldStar(text)
+	text = neutralizeGluedUnderscores(text)
 	text = collapseBlankAfterBoldHeader(text)
 	text = indentUnderBoldHeader(text)
 
@@ -56,6 +57,7 @@ func RenderStyles(text string) (string, []Style) {
 	res := out.String()
 	res = restoreDunders(res, dunders)
 	res = restorePlaceholders(res, urls, inlineCodes, codeBlocks)
+	res = restoreGluedUnderscores(res)
 	res = reExcessiveNewlines.ReplaceAllString(res, "\n\n")
 	res = strings.TrimSpace(res)
 	res = reBullet.ReplaceAllString(res, "${1}• ")
@@ -353,6 +355,43 @@ func stripFragmentBoldStar(text string) string {
 	}
 	out.WriteString(text[cursor:])
 	return out.String()
+}
+
+// neutralizeGluedUnderscores swaps `_` for a sentinel rune (\x02) when the
+// underscore is glued to a letter/digit on BOTH sides — i.e. inside an
+// identifier or filename like `BaoCao_DonHang_20260520.xlsx`. Italic regex
+// then can't see these as markup. Restored 1:1 after scan. Sentinel is a
+// 1-UTF-16-unit ASCII control char, so emitted style positions stay valid.
+const gluedUnderscoreSentinel = '\x02'
+
+func neutralizeGluedUnderscores(text string) string {
+	if !strings.ContainsRune(text, '_') {
+		return text
+	}
+	runes := []rune(text)
+	for i, r := range runes {
+		if r != '_' {
+			continue
+		}
+		if i == 0 || i+1 >= len(runes) {
+			continue
+		}
+		if isWordRune(runes[i-1]) && isWordRune(runes[i+1]) {
+			runes[i] = gluedUnderscoreSentinel
+		}
+	}
+	return string(runes)
+}
+
+func restoreGluedUnderscores(text string) string {
+	if !strings.ContainsRune(text, gluedUnderscoreSentinel) {
+		return text
+	}
+	return strings.ReplaceAll(text, string(gluedUnderscoreSentinel), "_")
+}
+
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 func boundaryGluedToWord(text string, idx int, before bool) bool {
