@@ -82,7 +82,10 @@ function CaptureBubbles({
                 {score === null ? "—" : score.toFixed(2)}
               </span>
             ) : capture.judge_error ? (
-              <span className="inline-flex items-center rounded bg-destructive/15 px-1.5 py-0.5 font-mono text-[10px] text-destructive">
+              <span
+                className="inline-flex items-center rounded bg-destructive/15 px-1.5 py-0.5 font-mono text-[10px] text-destructive cursor-help"
+                title={capture.judge_error}
+              >
                 {failedLabel}
               </span>
             ) : (
@@ -92,6 +95,11 @@ function CaptureBubbles({
             )}
             <span className="text-muted-foreground">{time}</span>
           </div>
+          {capture.judge_error && (
+            <div className="mt-1 text-[10px] text-destructive/80 break-words" title={capture.judge_error}>
+              ⚠ {capture.judge_error.length > 120 ? capture.judge_error.slice(0, 120) + "…" : capture.judge_error}
+            </div>
+          )}
         </div>
       </button>
     </div>

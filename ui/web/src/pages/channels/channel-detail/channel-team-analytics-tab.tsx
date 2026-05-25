@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
+import { RefreshCw } from "lucide-react";
+import type { TFunction } from "i18next";
 
 import { Methods } from "@/api/protocol";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,13 @@ const CREATE_NEW_AGENT_SENTINEL = "__create_new__";
 import { TeamAnalyticsHistogram } from "./team-analytics-histogram";
 import { TeamAnalyticsThreadList } from "./team-analytics-thread-list";
 import { aggregateThreads } from "./aggregate-threads";
+
+export function formatAgo(ms: number, t: TFunction<"channels">): string {
+  if (ms < 5_000) return t("teamAnalytics.refreshJustNow");
+  if (ms < 60_000) return `${Math.floor(ms / 1000)}s`;
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m`;
+  return `${Math.floor(ms / 3_600_000)}h`;
+}
 import type { TeamReplyEvaluation } from "./team-reply-types";
 import { TeamAnalyticsExportButton } from "./team-analytics-export-button";
 import { tallyRejudgeOutcome } from "./tally-rejudge-outcome";
@@ -100,6 +109,7 @@ export function ChannelTeamAnalyticsTab({
     setJudgeBatchSize(initialConfig?.judge_batch_size ?? 1);
   }, [initialConfig?.capture_team_replies, initialConfig?.judge_evaluation, initialConfig?.judge_agent_key, dirty]);
 
+  const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -116,6 +126,7 @@ export function ChannelTeamAnalyticsTab({
       );
       setRows(res.evaluations ?? []);
       setLoadError(null);
+      setLastRefreshAt(Date.now());
     } catch (err) {
       setLoadError(errMsg(err));
     } finally {
@@ -132,6 +143,14 @@ export function ChannelTeamAnalyticsTab({
     }, 30_000);
     return () => clearInterval(id);
   }, [load, ws]);
+
+  // Tick a counter every 10s so the "Last refreshed Xs ago" label stays fresh
+  // between auto-refresh fires (30s interval is too coarse).
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => clearInterval(id);
+  }, []);
 
   const scores = useMemo(
     () =>
@@ -391,8 +410,14 @@ export function ChannelTeamAnalyticsTab({
                 </option>
               ))}
             </select>
-            <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-              ↻
+            <span className="text-xs text-muted-foreground whitespace-nowrap" title={lastRefreshAt ? new Date(lastRefreshAt).toLocaleString() : undefined}>
+              {lastRefreshAt
+                ? t("teamAnalytics.lastRefreshed", { ago: formatAgo(Date.now() - lastRefreshAt, t) })
+                : t("teamAnalytics.refreshNeverYet")}
+            </span>
+            <Button size="sm" variant="outline" onClick={load} disabled={loading} title={t("teamAnalytics.refreshNow")}>
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              <span className="ml-1.5 hidden sm:inline">{t("teamAnalytics.refreshButton")}</span>
             </Button>
           </div>
         </div>
