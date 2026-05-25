@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { scoreBgClass } from "./aggregate-threads";
+import { CaptureContent } from "./capture-content";
 import type { TeamReplyEvaluation } from "./team-reply-types";
 
 export interface TeamAnalyticsDetailDialogProps {
@@ -31,10 +32,10 @@ export function TeamAnalyticsDetailDialog({ capture, onClose }: TeamAnalyticsDet
         </DialogHeader>
         {capture && (
           <div className="flex flex-col gap-4 text-sm">
-            <Section label={t("teamAnalytics.detailCustomerMessage")} body={capture.customer_message} />
-            <Section label={t("teamAnalytics.detailTeamReply")} body={capture.team_reply} />
+            <Section label={t("teamAnalytics.detailCustomerMessage")} body={capture.customer_message} rich role="user" />
+            <Section label={t("teamAnalytics.detailTeamReply")} body={capture.team_reply} rich role="assistant" />
             {capture.hypothesized_bot_reply && (
-              <Section label={t("teamAnalytics.detailBotWouldSay")} body={capture.hypothesized_bot_reply} />
+              <Section label={t("teamAnalytics.detailBotWouldSay")} body={capture.hypothesized_bot_reply} rich role="assistant" />
             )}
             {capture.diff_reasoning && (
               <Section label={t("teamAnalytics.detailDiffReasoning")} body={capture.diff_reasoning} />
@@ -61,12 +62,26 @@ export function TeamAnalyticsDetailDialog({ capture, onClose }: TeamAnalyticsDet
   );
 }
 
-function Section({ label, body }: { label: string; body: string | undefined }) {
+function Section({
+  label,
+  body,
+  rich,
+  role,
+}: {
+  label: string;
+  body: string | undefined;
+  rich?: boolean;
+  role?: "user" | "assistant";
+}) {
   if (!body) return null;
   return (
     <div>
       <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{label}</div>
-      <div className="whitespace-pre-wrap break-words">{body}</div>
+      {rich ? (
+        <CaptureContent content={body} role={role ?? "user"} />
+      ) : (
+        <div className="whitespace-pre-wrap break-words">{body}</div>
+      )}
     </div>
   );
 }

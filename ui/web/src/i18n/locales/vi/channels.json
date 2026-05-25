@@ -539,6 +539,8 @@
     "noCaptures": "Chưa có dữ liệu. Bật thu thập ở trên và chờ team trả lời.",
     "judgePending": "Đang chờ",
     "judgeFailed": "Thất bại",
+    "captureEmpty": "(không có nội dung)",
+    "captureRenderFailed": "(không hiển thị được)",
     "exportJsonl": "Xuất dữ liệu huấn luyện (JSONL)",
     "exporting": "Đang xuất…",
     "exportSuccess": "Đã tải {{count}} mẫu ({{bytes}} bytes)",

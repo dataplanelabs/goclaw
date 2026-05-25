@@ -6,6 +6,25 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Team Analytics — raw `<media:image url="…">` XML now renders as
+  inline thumbnails** — operators reviewing captures on `zalo-oa-annhien`
+  saw the literal XML string of customer-attached images / stickers
+  instead of the image itself. Two-layer fix: (1) shared chat parser
+  (`rich-content-parser.ts`) gained attribute support — `MEDIA_TAG_RE`
+  extended from `/<media:(...)>/g` to `/<media:(...)([^>]*)>/g` so the
+  `url="..."` attribute is captured; `extractMediaUrl` validates `http(s)`
+  scheme only (rejects `javascript:` / `data:` / `file:` for XSS safety).
+  (2) `RichContent` gained an opt-in `inlineMediaUrls` prop: when set,
+  `MediaBadge` renders `<img>` / `<video>` / `<audio>` inline (click → open
+  in new tab); when unset, the existing "[Image attached]" text badge is
+  preserved. New `CaptureContent` wrapper (Team Analytics captures + detail
+  dialog) opts in; the WS chat-thread does NOT — it continues to use
+  `MediaGallery` + `mediaItems` separately, so no double-render. Wrapped in
+  the shared `ErrorBoundary` — malformed media tags can't crash the tab.
+  Three new i18n keys (en/vi/zh): `teamAnalytics.captureEmpty`,
+  `teamAnalytics.captureRenderFailed`. 15 new vitest cases cover the
+  parser scheme-rejection + `categorizeCapture` branches.
+
 - **Agent — files sent twice when LLM forwarded via `message(MEDIA:…)`** —
   Tools that produced a file (e.g. `tts`) added it to `Result.Media`, which
   the agent loop tracked in `rs.mediaResults` for consumer dispatch. When
