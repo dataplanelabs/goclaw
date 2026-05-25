@@ -134,6 +134,7 @@ func (m *TeamRepliesMethods) handleToggle(ctx context.Context, client *gateway.C
 		JudgeAgentKey           string `json:"judge_agent_key,omitempty"`
 		JudgeEvaluationMode     string `json:"judge_evaluation_mode,omitempty"`
 		JudgeEvaluationSchedule string `json:"judge_evaluation_schedule,omitempty"`
+		JudgeBatchSize          *int   `json:"judge_batch_size,omitempty"`
 	}
 	decode(req, &p)
 	if !m.requireAdmin(ctx, client, req) {
@@ -172,6 +173,16 @@ func (m *TeamRepliesMethods) handleToggle(ctx context.Context, client *gateway.C
 			return
 		}
 		partial["judge_evaluation_schedule"] = schedule
+	}
+	if p.JudgeBatchSize != nil {
+		n := *p.JudgeBatchSize
+		if n < 1 {
+			n = 1
+		}
+		if n > 50 {
+			n = 50
+		}
+		partial["judge_batch_size"] = n
 	}
 	if len(partial) == 0 {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,

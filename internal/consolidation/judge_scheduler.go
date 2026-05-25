@@ -18,6 +18,7 @@ const (
 	defaultJudgeSchedule  = "0 8-18 * * 1-5"
 	judgeSchedulerTick    = 60 * time.Second
 	judgeSchedulerMaxRows = 500
+	judgeBatchSizeMax     = 50
 )
 
 // JudgeScheduler ticks every minute, identifies channels in scheduled mode
@@ -28,6 +29,7 @@ type JudgeScheduler struct {
 	evals     store.TeamReplyEvalStore
 	instances store.ChannelInstanceStore
 	bus       eventbus.DomainEventBus
+	worker    *JudgeWorker
 
 	mu       sync.Mutex
 	gronx    *gronx.Gronx
@@ -39,6 +41,7 @@ type JudgeSchedulerDeps struct {
 	Evals     store.TeamReplyEvalStore
 	Instances store.ChannelInstanceStore
 	Bus       eventbus.DomainEventBus
+	Worker    *JudgeWorker
 }
 
 func NewJudgeScheduler(deps JudgeSchedulerDeps) *JudgeScheduler {
@@ -46,6 +49,7 @@ func NewJudgeScheduler(deps JudgeSchedulerDeps) *JudgeScheduler {
 		evals:     deps.Evals,
 		instances: deps.Instances,
 		bus:       deps.Bus,
+		worker:    deps.Worker,
 		gronx:     gronx.New(),
 		stopCh:    make(chan struct{}),
 	}
@@ -85,6 +89,7 @@ type scheduledCfg struct {
 	CaptureTeamReplies      *bool  `json:"capture_team_replies,omitempty"`
 	JudgeEvaluationMode     string `json:"judge_evaluation_mode,omitempty"`
 	JudgeEvaluationSchedule string `json:"judge_evaluation_schedule,omitempty"`
+	JudgeBatchSize          int    `json:"judge_batch_size,omitempty"`
 }
 
 func (s *JudgeScheduler) tick(ctx context.Context, now time.Time) {
@@ -120,10 +125,10 @@ func (s *JudgeScheduler) tickInstance(ctx context.Context, ci *store.ChannelInst
 	if err != nil || !due {
 		return
 	}
-	s.gradePending(ctx, ci)
+	s.gradePending(ctx, ci, cfg.JudgeBatchSize)
 }
 
-func (s *JudgeScheduler) gradePending(ctx context.Context, ci *store.ChannelInstanceData) {
+func (s *JudgeScheduler) gradePending(ctx context.Context, ci *store.ChannelInstanceData, batchSize int) {
 	rows, err := s.evals.ListPendingJudge(ctx, judgeSchedulerMaxRows)
 	if err != nil {
 		slog.Warn("judge_scheduler.list_pending_failed", "instance", ci.Name, "err", err)
@@ -132,15 +137,33 @@ func (s *JudgeScheduler) gradePending(ctx context.Context, ci *store.ChannelInst
 	if len(rows) == 0 {
 		return
 	}
-	cnt := 0
+	var ours []store.TeamReplyEvaluation
 	for _, r := range rows {
-		if r.ChannelInstanceID != ci.ID.String() {
-			continue
+		if r.ChannelInstanceID == ci.ID.String() {
+			ours = append(ours, r)
 		}
-		s.publish(ci, r)
-		cnt++
 	}
-	slog.Info("judge_scheduler.tick", "instance", ci.Name, "published", cnt)
+	if len(ours) == 0 {
+		return
+	}
+	if batchSize > 1 && s.worker != nil {
+		if batchSize > judgeBatchSizeMax {
+			batchSize = judgeBatchSizeMax
+		}
+		for i := 0; i < len(ours); i += batchSize {
+			end := i + batchSize
+			if end > len(ours) {
+				end = len(ours)
+			}
+			_ = s.worker.BatchGrade(ctx, ours[i:end], ci.Name)
+		}
+		slog.Info("judge_scheduler.tick_batched", "instance", ci.Name, "rows", len(ours), "batch_size", batchSize)
+		return
+	}
+	for _, r := range ours {
+		s.publish(ci, r)
+	}
+	slog.Info("judge_scheduler.tick", "instance", ci.Name, "published", len(ours))
 }
 
 func (s *JudgeScheduler) publish(ci *store.ChannelInstanceData, r store.TeamReplyEvaluation) {

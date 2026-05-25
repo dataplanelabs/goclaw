@@ -673,6 +673,8 @@
     "judgeModeScheduled": "Scheduled (batch)",
     "judgeScheduleLabel": "Schedule (cron)",
     "judgeScheduleHint": "5-field cron expression in Asia/Saigon. Default: hourly 8am-6pm Mon-Fri.",
-    "gradePendingButton": "Grade {{count}} pending now"
+    "gradePendingButton": "Grade {{count}} pending now",
+    "judgeBatchSizeLabel": "Batch size",
+    "judgeBatchSizeHint": "Rows graded per LLM call (1-50). Larger = fewer tokens, slight quality risk."
   }
 }

@@ -249,6 +249,128 @@ func (w *JudgeWorker) process(ctx context.Context, payload eventbus.TeamReplyObs
 		"latency_ms", latency)
 }
 
+// BatchGrade evaluates N rows in one LLM call. On any parse/shape failure
+// falls back to per-row grading via fallbackPerRow.
+func (w *JudgeWorker) BatchGrade(ctx context.Context, rows []store.TeamReplyEvaluation, channelName string) error {
+	if w == nil || len(rows) == 0 {
+		return nil
+	}
+	if len(rows) == 1 {
+		w.fallbackPerRow(ctx, rows, channelName)
+		return nil
+	}
+	tenantID := rows[0].TenantID
+	channelInstanceID := rows[0].ChannelInstanceID
+	ctx, cancel := context.WithTimeout(ctx, w.timeout)
+	defer cancel()
+
+	tenantUUID, err := uuid.Parse(tenantID)
+	if err != nil {
+		w.fallbackPerRow(ctx, rows, channelName)
+		return nil
+	}
+	if w.resolver == nil || w.router == nil {
+		w.fallbackPerRow(ctx, rows, channelName)
+		return nil
+	}
+	judgeID, agentKey, resolveErr := w.resolver(ctx, tenantID, channelInstanceID)
+	if resolveErr != nil || judgeID == uuid.Nil {
+		for _, r := range rows {
+			w.markErr(ctx, r.ID, "no_judge_agent_configured")
+		}
+		return nil
+	}
+
+	ctx2 := store.WithTenantID(ctx, tenantUUID)
+	ctx2 = store.WithAgentID(ctx2, judgeID)
+	ctx2 = store.WithUserID(ctx2, "system:judge-worker")
+
+	loop, err := w.router.Get(ctx2, judgeID.String())
+	if err != nil {
+		w.fallbackPerRow(ctx, rows, channelName)
+		return nil
+	}
+
+	inputs := make([]BatchJudgeInput, len(rows))
+	for i, r := range rows {
+		inputs[i] = BatchJudgeInput{EvaluationID: r.ID, CustomerMessage: r.CustomerMessage, TeamReply: r.TeamReply}
+	}
+	prompt := RenderBatchJudgePrompt(inputs)
+	start := w.nowFn()
+	result, runErr := loop.Run(ctx2, agent.RunRequest{
+		SessionKey:    "judge:batch:" + rows[0].ChannelInstanceID + ":" + start.Format("20060102T150405"),
+		Message:       prompt,
+		UserID:        "system:judge-worker",
+		ChannelType:   "system",
+		MaxIterations: 1,
+		RunKind:       "judge_batch",
+		HideInput:     true,
+		LightContext:  true,
+		ToolAllow:     []string{"__judge_no_tools__"},
+	})
+	latency := int(w.nowFn().Sub(start).Milliseconds())
+	if runErr != nil {
+		slog.Warn("judge.batch_rpc_error", "rows", len(rows), "err", runErr)
+		w.fallbackPerRow(ctx, rows, channelName)
+		return nil
+	}
+	verdicts, ok := ParseBatchJudgeResponse(result.Content, len(rows))
+	if !ok {
+		slog.Warn("judge.batch_parse_failed", "rows", len(rows), "preview", truncate(result.Content, 200))
+		w.fallbackPerRow(ctx, rows, channelName)
+		return nil
+	}
+	model := loop.Model()
+	provider := loop.ProviderName()
+	for i, r := range rows {
+		v := verdicts[i]
+		if err := w.evals.UpdateJudgeVerdict(ctx2, r.ID,
+			v.HypothesizedBotReply, v.DiffScore, v.DiffReasoning,
+			model, provider, agentKey, latency); err != nil {
+			slog.Warn("judge.batch_update_failed", "evaluation_id", r.ID, "err", err)
+		}
+	}
+	slog.Info("judge.batch_complete", "rows", len(rows), "channel", channelName, "latency_ms", latency)
+	return nil
+}
+
+func (w *JudgeWorker) fallbackPerRow(ctx context.Context, rows []store.TeamReplyEvaluation, channelName string) {
+	if w.bus == nil {
+		for _, r := range rows {
+			w.markErr(ctx, r.ID, "batch_fallback_no_bus")
+		}
+		return
+	}
+	for _, r := range rows {
+		w.bus.Publish(eventbus.DomainEvent{
+			ID:        uuid.NewString(),
+			Type:      eventbus.EventTeamReplyObserved,
+			SourceID:  eventbus.TeamReplyObservedSourceID(r.ChannelInstanceID, r.TeamMsgID) + "?batch_fallback=" + uuid.NewString()[:8],
+			TenantID:  r.TenantID,
+			Timestamp: time.Now().UTC(),
+			Payload: eventbus.TeamReplyObservedPayload{
+				EvaluationID:      r.ID,
+				TenantID:          r.TenantID,
+				ChannelInstanceID: r.ChannelInstanceID,
+				ChannelName:       channelName,
+				ThreadKey:         r.ThreadKey,
+				SessionKey:        r.SessionKey,
+				TeamMsgID:         r.TeamMsgID,
+				TeamReply:         r.TeamReply,
+				CustomerMessage:   r.CustomerMessage,
+				CapturedAt:        r.CapturedAt,
+			},
+		})
+	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
 func (w *JudgeWorker) markErr(ctx context.Context, evalID, msg string) {
 	if w.evals == nil {
 		return
