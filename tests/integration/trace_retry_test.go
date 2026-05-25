@@ -17,15 +17,20 @@ import (
 // seedFailedTrace creates a failed root trace + a captured replay payload row
 // scoped to the given tenant/agent. Returns the new trace ID.
 func seedFailedTrace(t *testing.T, db *sql.DB, tenantID, agentID uuid.UUID, sessionKey string, withPayload bool, outboundEmitted bool) uuid.UUID {
+	return seedTraceWithStatus(t, db, tenantID, agentID, sessionKey, "error", withPayload, outboundEmitted)
+}
+
+// seedTraceWithStatus creates a root trace with the given status + optional captured payload.
+func seedTraceWithStatus(t *testing.T, db *sql.DB, tenantID, agentID uuid.UUID, sessionKey, status string, withPayload bool, outboundEmitted bool) uuid.UUID {
 	t.Helper()
 
 	traceID := uuid.New()
 	_, err := db.Exec(
 		`INSERT INTO traces (id, tenant_id, agent_id, session_key, run_id, start_time, status, error, outbound_emitted, created_at)
-		 VALUES ($1, $2, $3, $4, $5, NOW(), 'error', 'seeded failure', $6, NOW())`,
-		traceID, tenantID, agentID, sessionKey, "run-"+traceID.String()[:8], outboundEmitted)
+		 VALUES ($1, $2, $3, $4, $5, NOW(), $6, 'seeded', $7, NOW())`,
+		traceID, tenantID, agentID, sessionKey, "run-"+traceID.String()[:8], status, outboundEmitted)
 	if err != nil {
-		t.Fatalf("seed failed trace: %v", err)
+		t.Fatalf("seed %s trace: %v", status, err)
 	}
 
 	if withPayload {
@@ -222,6 +227,24 @@ func TestTracesStore_SetOutboundEmittedIdempotent(t *testing.T) {
 	// Second call is a no-op (guard predicate). Must not error.
 	if err := traces.SetOutboundEmitted(ctx, traceID); err != nil {
 		t.Fatalf("second set: %v", err)
+	}
+}
+
+func TestReplayPayloadStore_CancelledTraceKeepsPayload(t *testing.T) {
+	db := testDB(t)
+	tenantID, agentID := seedTenantAgent(t, db)
+	ctx := tenantCtx(tenantID)
+	rps := pg.NewPGReplayPayloadStore(db)
+
+	// Stopped (cancelled) runs MUST keep their captured payload so admin can retry.
+	traceID := seedTraceWithStatus(t, db, tenantID, agentID, "stop-session", "cancelled", true, false)
+
+	got, err := rps.Get(ctx, traceID)
+	if err != nil || got == nil {
+		t.Fatalf("cancelled trace's payload must survive: err=%v row=%v", err, got)
+	}
+	if got.Oversize || len(got.Payload) == 0 {
+		t.Fatalf("expected non-oversize payload, got oversize=%v len=%d", got.Oversize, len(got.Payload))
 	}
 }
 
