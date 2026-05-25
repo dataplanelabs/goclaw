@@ -249,10 +249,11 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 				l.traceCollector.FinishTrace(ctx, traceID, store.TraceStatusCompleted, "", "")
 			}
 		}
-		// Success-path sweep: clears captured replay payloads for this session
-		// so retry isn't offered after recovery. Scoped by session_key+tenant.
+		// Cutoff = runStart so older failed captures clear while the CURRENT
+		// successful run's payload (captured after runStart) survives — admin
+		// can still retry a completed trace from the UI.
 		if !isChildTrace && l.replayStore != nil && req.SessionKey != "" {
-			if dropped, err := l.replayStore.DropForSession(ctx, req.SessionKey, time.Now().UTC()); err != nil {
+			if dropped, err := l.replayStore.DropForSession(ctx, req.SessionKey, runStart); err != nil {
 				slog.Warn("replay_payload: drop sweep failed", "err", err, "session_key", req.SessionKey)
 			} else if dropped > 0 {
 				slog.Debug("replay_payload: dropped stale captures", "count", dropped, "session_key", req.SessionKey)

@@ -230,6 +230,44 @@ func TestTracesStore_SetOutboundEmittedIdempotent(t *testing.T) {
 	}
 }
 
+func TestReplayPayloadStore_DropSweepPreservesCurrentRun(t *testing.T) {
+	db := testDB(t)
+	tenantID, agentID := seedTenantAgent(t, db)
+	ctx := tenantCtx(tenantID)
+	rps := pg.NewPGReplayPayloadStore(db)
+
+	sessionKey := "preserve-current-session"
+
+	// Seed an older failed capture.
+	oldTrace := seedFailedTrace(t, db, tenantID, agentID, sessionKey, true, false)
+
+	// runStart marker for the "current" successful run (simulates loop_run.go).
+	runStart := time.Now().UTC()
+	time.Sleep(15 * time.Millisecond)
+
+	// Current trace gets captured AFTER runStart.
+	currentTrace := seedTraceWithStatus(t, db, tenantID, agentID, sessionKey, "completed", true, true)
+
+	// Success-path sweep with cutoff = runStart (matches loop_run.go semantics).
+	dropped, err := rps.DropForSession(ctx, sessionKey, runStart)
+	if err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if dropped != 1 {
+		t.Fatalf("expected 1 dropped (older only), got %d", dropped)
+	}
+
+	// Old payload gone.
+	if _, err := rps.Get(ctx, oldTrace); err == nil {
+		t.Fatal("old payload should be swept")
+	}
+	// Current payload survives → completed trace is retryable.
+	row, err := rps.Get(ctx, currentTrace)
+	if err != nil || row == nil {
+		t.Fatalf("current run's payload must survive runStart cutoff: err=%v row=%v", err, row)
+	}
+}
+
 func TestReplayPayloadStore_CancelledTraceKeepsPayload(t *testing.T) {
 	db := testDB(t)
 	tenantID, agentID := seedTenantAgent(t, db)

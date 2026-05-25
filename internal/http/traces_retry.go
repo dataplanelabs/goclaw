@@ -55,7 +55,13 @@ func (h *TracesHandler) handleRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if trace.Status != store.TraceStatusError && trace.Status != store.TraceStatusCancelled {
+	// Allow retry on error / cancelled / completed. Running traces are blocked
+	// (still in flight). Completed retries are gated by the confirm dialog
+	// downstream since outbound_emitted is almost always true.
+	switch trace.Status {
+	case store.TraceStatusError, store.TraceStatusCancelled, store.TraceStatusCompleted:
+		// allowed
+	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.TraceRetryNotFailed)})
 		return
 	}
