@@ -528,7 +528,10 @@
     "description": "采集到的人工客服回复及与机器人建议的对比评估。",
     "captureToggle": "采集团队回复",
     "judgeToggle": "自动评估",
-    "judgeAgent": "评估 agent key",
+    "judgeAgent": "评分 Agent",
+    "selectJudgeAgent": "选择评分 Agent…",
+    "createNewJudgeAgent": "+ 创建新评分 Agent…",
+    "judgeMisconfiguredBanner": "自动评分已启用但配置的评分 Agent 在该租户中不存在。请在下方选择一个有效的 Agent。",
     "diffDistribution": "差异分数分布",
     "recentCaptures": "最近采集",
     "filterByThread": "按会话过滤",
@@ -547,6 +550,9 @@
     "rejudgeBanner": "{{count}} 条评估失败 — 重试？",
     "rejudgeButton": "重新评估",
     "rejudgeQueued": "已将 {{count}} 条评估加入队列",
-    "rejudgeBatchCapped": "每次最多 100 条；再次点击处理下一批"
+    "rejudgeBatchCapped": "每次最多 100 条；再次点击处理下一批",
+    "rejudgeProgress": "正在重评 {{total}} — {{graded}} 已评 · {{failed}} 失败 · {{retrying}} 重试中",
+    "rejudgeComplete": "已重评：{{graded}} 已评 · {{failed}} 失败 · {{retry_exhausted}} 已耗尽重试",
+    "rejudgePollFailed": "已派发重评但状态检查失败 — 请手动刷新表格"
   }
 }

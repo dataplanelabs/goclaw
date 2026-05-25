@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +18,14 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/agent"
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+)
+
+const (
+	throttleRetryMaxAttempts = 4
+	throttleRetryBaseDelay   = 5 * time.Second
+	throttleRetryMaxDelay    = 60 * time.Second
+	throttleRetryInFlightCap = 1000
+	throttleRetrySuffix      = "?throttle_retry="
 )
 
 // JudgeAgentResolver returns the agent UUID to use as the judge for the
@@ -27,7 +38,8 @@ type JudgeDeps struct {
 	Evals    store.TeamReplyEvalStore
 	Router   *agent.Router
 	Resolver JudgeAgentResolver
-	Timeout  time.Duration // per-evaluation deadline (default 60s)
+	Bus      eventbus.DomainEventBus
+	Timeout  time.Duration
 }
 
 // JudgeWorker subscribes to team.reply.observed events and invokes a
@@ -39,11 +51,16 @@ type JudgeWorker struct {
 	evals    store.TeamReplyEvalStore
 	router   *agent.Router
 	resolver JudgeAgentResolver
+	bus      eventbus.DomainEventBus
 	timeout  time.Duration
 
 	rateLimits sync.Map // tenantID → *rate.Limiter
 
-	// nowFn lets tests freeze time for latency assertions.
+	inFlightRetries atomic.Int64
+
+	rootCtx    context.Context
+	rootCancel context.CancelFunc
+
 	nowFn func() time.Time
 }
 
@@ -52,12 +69,23 @@ func NewJudgeWorker(deps JudgeDeps) *JudgeWorker {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
+	rootCtx, rootCancel := context.WithCancel(context.Background())
 	return &JudgeWorker{
-		evals:    deps.Evals,
-		router:   deps.Router,
-		resolver: deps.Resolver,
-		timeout:  timeout,
-		nowFn:    time.Now,
+		evals:      deps.Evals,
+		router:     deps.Router,
+		resolver:   deps.Resolver,
+		bus:        deps.Bus,
+		timeout:    timeout,
+		rootCtx:    rootCtx,
+		rootCancel: rootCancel,
+		nowFn:      time.Now,
+	}
+}
+
+// Stop cancels in-flight throttle-retry schedulers. AfterFunc bodies check rootCtx before publishing.
+func (w *JudgeWorker) Stop() {
+	if w != nil && w.rootCancel != nil {
+		w.rootCancel()
 	}
 }
 
@@ -74,12 +102,71 @@ func (w *JudgeWorker) Handle(ctx context.Context, e eventbus.DomainEvent) error 
 		return nil
 	}
 	if !w.limiter(payload.TenantID).Allow() {
+		attempt := parseThrottleAttempt(e.SourceID)
 		slog.Warn("judge.throttle",
-			"tenant", payload.TenantID, "evaluation_id", payload.EvaluationID)
+			"tenant", payload.TenantID, "evaluation_id", payload.EvaluationID, "attempt", attempt)
+		w.scheduleThrottleRetry(e, payload, attempt)
 		return nil
 	}
 	go w.process(ctx, payload)
 	return nil
+}
+
+func parseThrottleAttempt(sourceID string) int {
+	idx := strings.LastIndex(sourceID, throttleRetrySuffix)
+	if idx < 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(sourceID[idx+len(throttleRetrySuffix):])
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// scheduleThrottleRetry republishes the event after exponential backoff.
+// Capped at throttleRetryMaxAttempts retries; on overflow or final exhaustion
+// the row is marked judge_error so it stops being silently Pending.
+func (w *JudgeWorker) scheduleThrottleRetry(orig eventbus.DomainEvent, payload eventbus.TeamReplyObservedPayload, attempt int) {
+	if w.bus == nil {
+		w.markErr(context.Background(), payload.EvaluationID, "throttle_no_bus")
+		return
+	}
+	if attempt >= throttleRetryMaxAttempts {
+		w.markErr(context.Background(), payload.EvaluationID, "throttle_max_retries")
+		return
+	}
+	if w.inFlightRetries.Load() >= throttleRetryInFlightCap {
+		w.markErr(context.Background(), payload.EvaluationID, "throttle_overflow")
+		return
+	}
+
+	delay := time.Duration(1<<attempt) * throttleRetryBaseDelay
+	if delay > throttleRetryMaxDelay {
+		delay = throttleRetryMaxDelay
+	}
+
+	baseSourceID := orig.SourceID
+	if idx := strings.LastIndex(baseSourceID, throttleRetrySuffix); idx >= 0 {
+		baseSourceID = baseSourceID[:idx]
+	}
+	next := eventbus.DomainEvent{
+		ID:        uuid.NewString(),
+		Type:      orig.Type,
+		SourceID:  baseSourceID + throttleRetrySuffix + strconv.Itoa(attempt+1),
+		TenantID:  orig.TenantID,
+		Timestamp: time.Now().UTC(),
+		Payload:   payload,
+	}
+
+	w.inFlightRetries.Add(1)
+	time.AfterFunc(delay, func() {
+		defer w.inFlightRetries.Add(-1)
+		if w.rootCtx.Err() != nil {
+			return
+		}
+		w.bus.Publish(next)
+	})
 }
 
 func (w *JudgeWorker) process(ctx context.Context, payload eventbus.TeamReplyObservedPayload) {

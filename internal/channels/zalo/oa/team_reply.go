@@ -20,12 +20,14 @@ const teamReplyCustomerContextChars = 4000
 // SetTeamReplyDeps wires Phase 4 dependencies into the channel. Called by
 // FactoryWithDeps before Start(). Idempotent — last writer wins.
 func (c *Channel) SetTeamReplyDeps(bus eventbus.DomainEventBus, sessions store.SessionStore,
-	evals store.TeamReplyEvalStore, atomic store.AtomicTeamReplyWriter, tenantID string) {
+	evals store.TeamReplyEvalStore, atomic store.AtomicTeamReplyWriter, tenantID string,
+	judgeResolver JudgeAgentResolver) {
 	c.teamReplyBus = bus
 	c.teamReplySessions = sessions
 	c.teamReplyEvals = evals
 	c.teamReplyAtomic = atomic
 	c.teamReplyTenantID = tenantID
+	c.judgeResolver = judgeResolver
 }
 
 // startTeamReplyWorker is invoked from Start(). No-op when the channel
@@ -89,8 +91,19 @@ func (c *Channel) startTeamReplyWorker() {
 		creds.OAID, c.cfg.TeamReplyPollInterval(), deps)
 	c.teamReplyWorker = w
 	go w.Run(context.Background())
+	judgeEval := c.cfg.JudgeEvaluation != nil && *c.cfg.JudgeEvaluation
 	slog.Info("zalo_oa.team_reply.started",
 		"instance", c.Name(),
 		"interval_seconds", int(c.cfg.TeamReplyPollInterval().Seconds()),
-		"judge_evaluation", c.cfg.JudgeEvaluation != nil && *c.cfg.JudgeEvaluation)
+		"judge_evaluation", judgeEval)
+	if judgeEval && c.judgeResolver != nil {
+		judgeID, agentKey, resolveErr := c.judgeResolver(context.Background(), c.teamReplyTenantID, c.instanceID.String())
+		if judgeID == uuid.Nil {
+			slog.Warn("zalo_oa.team_reply.judge_misconfigured",
+				"instance", c.Name(),
+				"tenant", c.teamReplyTenantID,
+				"configured_key", agentKey,
+				"resolve_err", resolveErr)
+		}
+	}
 }

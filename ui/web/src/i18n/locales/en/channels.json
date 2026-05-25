@@ -642,7 +642,10 @@
     "description": "Captured human team replies and judge evaluations comparing them to bot suggestions.",
     "captureToggle": "Capture team replies",
     "judgeToggle": "Auto-judge captures",
-    "judgeAgent": "Judge agent key",
+    "judgeAgent": "Judge agent",
+    "selectJudgeAgent": "Select judge agent…",
+    "createNewJudgeAgent": "+ Create new judge agent…",
+    "judgeMisconfiguredBanner": "Auto-grade is enabled but the configured judge agent doesn't exist in this tenant. Pick a valid one below.",
     "diffDistribution": "Diff score distribution",
     "recentCaptures": "Recent captures",
     "filterByThread": "Filter by thread",
@@ -661,6 +664,9 @@
     "rejudgeBanner": "{{count}} evaluations failed — retry?",
     "rejudgeButton": "Re-judge",
     "rejudgeQueued": "Queued {{count}} evaluations for re-judging",
-    "rejudgeBatchCapped": "batch capped at 100; click again for next batch"
+    "rejudgeBatchCapped": "batch capped at 100; click again for next batch",
+    "rejudgeProgress": "Re-judging {{total}} — {{graded}} graded · {{failed}} failed · {{retrying}} retrying",
+    "rejudgeComplete": "Re-judged: {{graded}} graded · {{failed}} failed · {{retry_exhausted}} retry exhausted",
+    "rejudgePollFailed": "Re-judge dispatched but status check failed — refresh the table manually"
   }
 }

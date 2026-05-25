@@ -85,7 +85,11 @@ type Channel struct {
 	teamReplyAtomic   store.AtomicTeamReplyWriter
 	teamReplyWorker   *PollWorker
 	teamReplyTenantID string
+	judgeResolver JudgeAgentResolver
 }
+
+// JudgeAgentResolver mirrors consolidation.JudgeAgentResolver — re-declared to avoid import cycle.
+type JudgeAgentResolver func(ctx context.Context, tenantID, channelInstanceID string) (uuid.UUID, string, error)
 
 // creds returns a read-only snapshot. Refresh swaps the pointer atomically;
 // callers must not mutate the returned struct.
