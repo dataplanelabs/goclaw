@@ -144,18 +144,18 @@ export function TraceDetailDialog({ traceId, onClose, getTrace, retryTrace, onRe
 }
 
 /** Trace metadata summary grid */
-// parsePeerId splits trace.user_id into kind + bare ID. The raw form for
-// group sessions is `group:<channel>:<chatId>`; for DMs it's typically a
-// plain numeric or opaque token. We show just the ID — channel already has
-// its own row in the grid.
-function parsePeerId(raw: string): { kind: "group" | "user"; id: string } {
+// parsePeerId splits trace.user_id into kind + bare peer ID. The raw form
+// for group sessions is `group:<channel>:<chatId>`; for DMs it's typically
+// a plain numeric or opaque token. The channel segment is dropped — the
+// modal already has its own Channel row.
+function parsePeerId(raw: string): { kind: "group" | "user"; peerId: string } {
   if (raw.startsWith("group:")) {
     const parts = raw.split(":");
     if (parts.length >= 3) {
-      return { kind: "group", id: parts.slice(2).join(":") };
+      return { kind: "group", peerId: parts.slice(2).join(":") };
     }
   }
-  return { kind: "user", id: raw };
+  return { kind: "user", peerId: raw };
 }
 
 function TraceSummaryGrid({ trace, tz, onNavigateTrace }: { trace: TraceData; tz: string; onNavigateTrace?: (id: string) => void }) {
@@ -172,16 +172,6 @@ function TraceSummaryGrid({ trace, tz, onNavigateTrace }: { trace: TraceData; tz
           <span className="font-medium">{trace.chat_title}</span>
         </div>
       )}
-      {trace.user_id && (() => {
-        const parsed = parsePeerId(trace.user_id);
-        const label = parsed.kind === "group" ? t("detail.groupId") : t("detail.userId");
-        return (
-          <div className="col-span-2 sm:col-span-2" title={trace.user_id}>
-            <span className="text-muted-foreground">{label}</span>{" "}
-            <span className="font-mono text-xs break-all">{parsed.id}</span>
-          </div>
-        );
-      })()}
       <div>
         <span className="text-muted-foreground">{t("detail.tokens")}</span>{" "}
         {formatTokens(trace.total_input_tokens)} in / {formatTokens(trace.total_output_tokens)} out
@@ -200,6 +190,16 @@ function TraceSummaryGrid({ trace, tz, onNavigateTrace }: { trace: TraceData; tz
           </button>
         </div>
       )}
+      {trace.user_id && (() => {
+        const { kind, peerId } = parsePeerId(trace.user_id);
+        const label = kind === "group" ? t("detail.groupId") : t("detail.userId");
+        return (
+          <div className="col-span-2 sm:col-span-4" title={trace.user_id}>
+            <span className="text-muted-foreground">{label}</span>{" "}
+            <span className="font-mono text-xs break-all">{peerId}</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }
