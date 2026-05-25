@@ -328,6 +328,7 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 	// Inject delivered media tracker so write_file and message tool can coordinate:
 	// write_file(deliver=true) marks paths, message self-send guard checks before allowing.
 	ctx = tools.WithDeliveredMedia(ctx, tools.NewDeliveredMedia())
+	ctx = tools.WithPublishedMedia(ctx, tools.NewPublishedMedia())
 
 	// Security: truncate oversized user messages gracefully (feed truncation notice into LLM)
 	maxChars := l.maxMessageChars

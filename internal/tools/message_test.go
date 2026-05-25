@@ -555,6 +555,78 @@ func TestDeliveredMedia(t *testing.T) {
 	}
 }
 
+// Regression: `message(MEDIA:path)` publishes the file directly to msgBus and
+// must mark PublishedMedia so the agent's finalize step drops that path from
+// RunResult.Media — otherwise the consumer dispatches the same file again,
+// producing a duplicate send (trace 019e5efc-…).
+func TestMessageTool_PublishesMarksPublishedMedia(t *testing.T) {
+	workspace := t.TempDir()
+	wsCanonical, _ := filepath.EvalSymlinks(workspace)
+	audioPath := filepath.Join(wsCanonical, "tts-1.mp3")
+	if err := os.WriteFile(audioPath, []byte("mp3"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	tool := NewMessageTool(wsCanonical, true)
+	tool.SetMessageBus(bus.New())
+
+	pm := NewPublishedMedia()
+	dm := NewDeliveredMedia()
+	ctx := context.Background()
+	ctx = WithPublishedMedia(ctx, pm)
+	ctx = WithDeliveredMedia(ctx, dm)
+
+	res := tool.Execute(ctx, map[string]any{
+		"action":  "send",
+		"channel": "zalo-shtp",
+		"target":  "chat-1",
+		"message": "MEDIA:" + audioPath,
+	})
+	if res.IsError {
+		t.Fatalf("expected MEDIA send to succeed, got: %s", res.ForLLM)
+	}
+	if !pm.IsPublished(audioPath) {
+		t.Errorf("PublishedMedia must contain %q after sendMedia", audioPath)
+	}
+	if !dm.IsDelivered(audioPath) {
+		t.Errorf("DeliveredMedia must contain %q after sendMedia (cross-tool guard)", audioPath)
+	}
+}
+
+// Regression: embedded MEDIA:path within a multi-line message body also goes
+// straight to msgBus and must mark PublishedMedia for the same reason as
+// the explicit MEDIA: prefix path.
+func TestMessageTool_EmbeddedMediaMarksPublishedMedia(t *testing.T) {
+	workspace := t.TempDir()
+	wsCanonical, _ := filepath.EvalSymlinks(workspace)
+	filePath := filepath.Join(wsCanonical, "doc.pdf")
+	if err := os.WriteFile(filePath, []byte("pdf"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	tool := NewMessageTool(wsCanonical, true)
+	tool.SetMessageBus(bus.New())
+
+	pm := NewPublishedMedia()
+	dm := NewDeliveredMedia()
+	ctx := context.Background()
+	ctx = WithPublishedMedia(ctx, pm)
+	ctx = WithDeliveredMedia(ctx, dm)
+
+	res := tool.Execute(ctx, map[string]any{
+		"action":  "send",
+		"channel": "zalo-shtp",
+		"target":  "chat-1",
+		"message": "Đây là file:\nMEDIA:" + filePath,
+	})
+	if res.IsError {
+		t.Fatalf("expected embedded MEDIA send to succeed, got: %s", res.ForLLM)
+	}
+	if !pm.IsPublished(filePath) {
+		t.Errorf("PublishedMedia must contain %q after embedded-media send", filePath)
+	}
+}
+
 func TestMessageToolCrossTargetGuard(t *testing.T) {
 	type scenario struct {
 		name         string

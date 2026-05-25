@@ -6,6 +6,20 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Agent — files sent twice when LLM forwarded via `message(MEDIA:…)`** —
+  Tools that produced a file (e.g. `tts`) added it to `Result.Media`, which
+  the agent loop tracked in `rs.mediaResults` for consumer dispatch. When
+  the LLM then called `message(channel=…, target=…, MEDIA:<same path>)`,
+  the message tool published the file directly to the bus AND the consumer
+  still re-dispatched `RunResult.Media`. Channels saw two outbound messages
+  for the same file. New `PublishedMedia` ctx tracker marks paths a tool
+  has put on the bus directly; `loop_finalize` filters `rs.mediaResults`
+  by it so the consumer never sends what the tool already sent. Distinct
+  from `DeliveredMedia` (cross-tool dedup guard that lets `send_file`-
+  style tools whose Result.Media still needs consumer delivery to flow
+  through). Two regression tests cover MEDIA-prefix and embedded-MEDIA
+  publish paths.
+
 - **Zalo personal — `create_poll` (and other group-only tools) failed
   on a freshly-restarted pod until the bot had replied once** —
   `IsGroupApproved` was only populated by the pairing branch (when
