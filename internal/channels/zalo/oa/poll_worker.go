@@ -12,6 +12,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/sessions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -43,6 +44,7 @@ type PollWorker struct {
 	customerLast func(ctx context.Context, sessionKey string) string
 	selfUID      string
 	judgeMode    string
+	agentKey     string
 
 	stopOnce sync.Once
 	stopCh   chan struct{}
@@ -59,6 +61,7 @@ type PollWorkerDeps struct {
 	Bus          eventbus.DomainEventBus
 	CustomerLast func(ctx context.Context, sessionKey string) string
 	JudgeMode    string // "per_event" (default) or "scheduled" — when scheduled, publish is suppressed; JudgeScheduler grades pending rows on cron tick
+	AgentKey     string // canonical agent identifier; "" falls back to legacy zalo_oa:<uid> session key
 }
 
 func NewPollWorker(instanceID uuid.UUID, name, tenantID, channelType, selfUID string,
@@ -80,6 +83,7 @@ func NewPollWorker(instanceID uuid.UUID, name, tenantID, channelType, selfUID st
 		customerLast: deps.CustomerLast,
 		selfUID:      selfUID,
 		judgeMode:    deps.JudgeMode,
+		agentKey:     deps.AgentKey,
 		cursors:      make(map[string]int64),
 		stopCh:       make(chan struct{}),
 	}
@@ -336,5 +340,8 @@ func (w *PollWorker) SeedCursorsForTest(c map[string]int64) {
 }
 
 func (w *PollWorker) sessionKeyFor(uid string) string {
+	if w.agentKey != "" {
+		return sessions.BuildSessionKey(w.agentKey, w.instanceName, sessions.PeerDirect, uid)
+	}
 	return w.channelType + ":" + uid
 }
