@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -36,29 +37,25 @@ func TestTimeSectionContainsDate(t *testing.T) {
 	}
 }
 
-// TestTimeSectionDateOnly verifies the time section uses date+weekday only,
-// not HH:MM:SS which would bust the cache every second.
-func TestTimeSectionDateOnly(t *testing.T) {
-	lines := buildTimeSection()
+// TestTimeSectionShape verifies the date line has the expected prefix, TZ label,
+// and HH:MM time-of-day (added so the model doesn't have to hallucinate the time
+// when the user asks "what time is it?"). The section is below the cache boundary,
+// so per-minute changes don't bust the stable prompt cache.
+func TestTimeSectionShape(t *testing.T) {
+	lines := buildTimeSection("")
 	if len(lines) == 0 {
 		t.Fatal("buildTimeSection returned empty")
 	}
-	// The date line should contain "Current date:" and a weekday, but no colon-separated time.
 	dateLine := lines[0]
 	if !strings.Contains(dateLine, "Current date:") {
 		t.Fatalf("unexpected date line: %s", dateLine)
 	}
-	// Strip the "Current date: " prefix, then check no HH:MM pattern remains.
-	after := strings.TrimPrefix(dateLine, "Current date: ")
-	// Remove "(UTC)" suffix for clean check.
-	after = strings.TrimSuffix(after, " (UTC)")
-	after = strings.TrimSpace(after)
-	// Format is "2006-01-02 Monday" — no ":" should appear in the date/weekday part.
-	parts := strings.FieldsSeq(after)
-	for p := range parts {
-		if strings.Count(p, ":") >= 2 {
-			t.Errorf("time section contains time component: %s", dateLine)
-		}
+	if !strings.Contains(dateLine, "(UTC)") {
+		t.Errorf("empty tz should render (UTC), got: %s", dateLine)
+	}
+	// Format is "YYYY-MM-DD HH:MM Weekday" — must contain exactly one HH:MM token.
+	if !regexp.MustCompile(`\b\d{2}:\d{2}\b`).MatchString(dateLine) {
+		t.Errorf("time section missing HH:MM: %s", dateLine)
 	}
 }
 

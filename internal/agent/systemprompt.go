@@ -482,7 +482,7 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 
 	// 8. Time (below boundary — date changes don't bust the stable cache)
 	if !isNone {
-		lines = append(lines, buildTimeSection()...)
+		lines = append(lines, buildTimeSection(cfg.UserTimezone)...)
 	}
 
 	// 9.5. Channel formatting hints — full mode only
