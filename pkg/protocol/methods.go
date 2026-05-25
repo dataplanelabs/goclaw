@@ -136,6 +136,7 @@ const (
 	MethodChannelsTeamRepliesList        = "channels.team_replies_list"
 	MethodChannelsTeamRepliesGet         = "channels.team_replies_get"
 	MethodChannelsTeamRepliesExportJSONL = "channels.team_replies_export_jsonl"
+	MethodChannelsTeamRepliesRejudge     = "channels.team_replies_rejudge"
 	MethodChannelsTeamCaptureToggle      = "channels.team_capture_toggle"
 )
 

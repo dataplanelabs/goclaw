@@ -656,6 +656,11 @@
     "exportTruncated": "export truncated at 5MB — narrow the date range",
     "configSaved": "Settings saved",
     "restartRequired": "Channel restart required for these settings to take effect.",
-    "save": "Save"
+    "save": "Save",
+    "judgeKeyRequiredTooltip": "Judge agent key required when auto-judge is on",
+    "rejudgeBanner": "{{count}} evaluations failed — retry?",
+    "rejudgeButton": "Re-judge",
+    "rejudgeQueued": "Queued {{count}} evaluations for re-judging",
+    "rejudgeBatchCapped": "batch capped at 100; click again for next batch"
   }
 }

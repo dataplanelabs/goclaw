@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -218,6 +220,48 @@ func (s *PGTeamReplyEvalStore) ListPendingJudge(ctx context.Context, limit int) 
 		out = append(out, *e)
 	}
 	return out, rows.Err()
+}
+
+func (s *PGTeamReplyEvalStore) ListFailedJudge(ctx context.Context, channelInstanceID string, limit int) ([]store.TeamReplyEvaluation, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, channel_instance_id, tenant_id, thread_key, session_key, team_msg_id,
+		        captured_at, customer_message, team_reply, hypothesized_bot_reply,
+		        diff_score, diff_reasoning, judge_agent_key, judge_model, judge_provider,
+		        judge_latency_ms, judge_error, judge_completed_at, created_at, updated_at
+		   FROM team_reply_evaluations
+		  WHERE channel_instance_id = $1 AND judge_error IS NOT NULL
+		  ORDER BY captured_at DESC
+		  LIMIT $2`, channelInstanceID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list failed judge: %w", err)
+	}
+	defer rows.Close()
+	var out []store.TeamReplyEvaluation
+	for rows.Next() {
+		e, err := scanTeamReplyEval(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *e)
+	}
+	return out, rows.Err()
+}
+
+func (s *PGTeamReplyEvalStore) ClearJudgeError(ctx context.Context, ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE team_reply_evaluations
+		    SET judge_error = NULL, updated_at = NOW()
+		  WHERE id = ANY($1::uuid[])`, pq.Array(ids))
+	if err != nil {
+		return 0, fmt.Errorf("clear judge error: %w", err)
+	}
+	return res.RowsAffected()
 }
 
 func (s *PGTeamReplyEvalStore) DeleteByChannel(ctx context.Context, channelInstanceID string) (int64, error) {

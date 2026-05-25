@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -43,6 +45,12 @@ func (s *stubTeamEvalStore) GetByMessageID(_ context.Context, _ string, msgID st
 		}
 	}
 	return nil, nil
+}
+func (s *stubTeamEvalStore) ListFailedJudge(context.Context, string, int) ([]store.TeamReplyEvaluation, error) {
+	return nil, nil
+}
+func (s *stubTeamEvalStore) ClearJudgeError(context.Context, []string) (int64, error) {
+	return 0, nil
 }
 func (s *stubTeamEvalStore) ListPendingJudge(context.Context, int) ([]store.TeamReplyEvaluation, error) {
 	return nil, nil
@@ -125,7 +133,7 @@ func setupTeamRepliesHandlers(tenantID, instID uuid.UUID) (*TeamRepliesMethods, 
 	}}
 	evals := &stubTeamEvalStore{}
 	agents := &stubAgentStoreLite{byKey: map[string]*store.AgentData{}}
-	return NewTeamRepliesMethods(evals, insts, agents), evals, insts
+	return NewTeamRepliesMethods(evals, insts, agents, nil), evals, insts
 }
 
 func newTRReq(method, body string) *protocol.RequestFrame {
@@ -199,6 +207,74 @@ func TestTeamReplies_ToggleRejectsMissingJudgeKey(t *testing.T) {
 		t.Fatalf("config should not be updated when judge_key missing: %s", insts.insts[instID].Config)
 	}
 }
+
+type stubFailedEvalStore struct {
+	stubTeamEvalStore
+	failedRows []store.TeamReplyEvaluation
+	cleared    []string
+}
+
+func (s *stubFailedEvalStore) ListFailedJudge(_ context.Context, _ string, _ int) ([]store.TeamReplyEvaluation, error) {
+	return s.failedRows, nil
+}
+func (s *stubFailedEvalStore) ClearJudgeError(_ context.Context, ids []string) (int64, error) {
+	s.cleared = append(s.cleared, ids...)
+	return int64(len(ids)), nil
+}
+
+func TestTeamReplies_RejudgeNonAdminDenied(t *testing.T) {
+	tenantID := uuid.New()
+	instID := uuid.New()
+	m, ev, _ := setupTeamRepliesHandlers(tenantID, instID)
+	client := gateway.NewTestClient(permissions.RoleOperator, tenantID, "user-1")
+	body := `{"channel_instance_id":"` + instID.String() + `"}`
+	m.handleRejudge(wsCallCtx(client), client, newTRReq(protocol.MethodChannelsTeamRepliesRejudge, body))
+	if ev.listCalls != 0 {
+		t.Fatal("non-admin should not reach store")
+	}
+}
+
+func TestTeamReplies_RejudgeClearsErrorsAndPublishes(t *testing.T) {
+	tenantID := uuid.New()
+	instID := uuid.New()
+	insts := &stubInstStoreLite{insts: map[uuid.UUID]*store.ChannelInstanceData{
+		instID: {BaseModel: store.BaseModel{ID: instID}, TenantID: tenantID, Name: "zalo-oa-test"},
+	}}
+	failedEv := &stubFailedEvalStore{
+		failedRows: []store.TeamReplyEvaluation{
+			{ID: uuid.NewString(), ChannelInstanceID: instID.String(), TenantID: tenantID.String(), TeamMsgID: "f1"},
+			{ID: uuid.NewString(), ChannelInstanceID: instID.String(), TenantID: tenantID.String(), TeamMsgID: "f2"},
+		},
+	}
+	agents := &stubAgentStoreLite{byKey: map[string]*store.AgentData{}}
+	publishedCount := 0
+	bus := &fakeBusForRejudge{onPublish: func() { publishedCount++ }}
+	m := NewTeamRepliesMethods(failedEv, insts, agents, bus)
+	client := gateway.NewTestClient(permissions.RoleAdmin, tenantID, "user-1")
+	body := `{"channel_instance_id":"` + instID.String() + `"}`
+	m.handleRejudge(wsCallCtx(client), client, newTRReq(protocol.MethodChannelsTeamRepliesRejudge, body))
+	if len(failedEv.cleared) != 2 {
+		t.Fatalf("cleared = %v, want 2 ids", failedEv.cleared)
+	}
+	if publishedCount != 2 {
+		t.Fatalf("published = %d, want 2", publishedCount)
+	}
+}
+
+type fakeBusForRejudge struct {
+	onPublish func()
+}
+
+func (f *fakeBusForRejudge) Publish(_ eventbus.DomainEvent) {
+	if f.onPublish != nil {
+		f.onPublish()
+	}
+}
+func (f *fakeBusForRejudge) Subscribe(eventbus.EventType, eventbus.DomainEventHandler) func() {
+	return func() {}
+}
+func (f *fakeBusForRejudge) Start(context.Context)         {}
+func (f *fakeBusForRejudge) Drain(time.Duration) error     { return nil }
 
 func TestTeamReplies_ToggleRejectsUnknownJudgeAgent(t *testing.T) {
 	tenantID := uuid.New()

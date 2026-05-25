@@ -22,6 +22,7 @@ import (
 	zalopersonal "github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/zalomethods"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway/methods"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -149,7 +150,7 @@ func registerConfigChannels(cfg *config.Config, channelMgr *channels.Manager, ms
 }
 
 // wireChannelRPCMethods registers WS RPC methods for channels, instances, agent links, and teams.
-func wireChannelRPCMethods(server *gateway.Server, pgStores *store.Stores, channelMgr *channels.Manager, agentRouter *agent.Router, msgBus *bus.MessageBus, dataDir string, standbyRegistry *schedule.ScheduleRegistry) {
+func wireChannelRPCMethods(server *gateway.Server, pgStores *store.Stores, channelMgr *channels.Manager, agentRouter *agent.Router, msgBus *bus.MessageBus, dataDir string, standbyRegistry *schedule.ScheduleRegistry, domainBus eventbus.DomainEventBus) {
 	// Register channels RPC methods (after channelMgr is initialized with all channels)
 	methods.NewChannelsMethods(channelMgr).Register(server.Router())
 
@@ -174,7 +175,7 @@ func wireChannelRPCMethods(server *gateway.Server, pgStores *store.Stores, chann
 
 	// Team-reply evaluations RPC (Phase 6).
 	if pgStores.TeamReplyEvals != nil && pgStores.ChannelInstances != nil {
-		methods.NewTeamRepliesMethods(pgStores.TeamReplyEvals, pgStores.ChannelInstances, pgStores.Agents).Register(server.Router())
+		methods.NewTeamRepliesMethods(pgStores.TeamReplyEvals, pgStores.ChannelInstances, pgStores.Agents, domainBus).Register(server.Router())
 	}
 
 	// Register agent links WS RPC methods

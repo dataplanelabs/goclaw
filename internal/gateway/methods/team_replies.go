@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
@@ -22,16 +23,18 @@ type TeamRepliesMethods struct {
 	evals     store.TeamReplyEvalStore
 	instances store.ChannelInstanceStore
 	agents    store.AgentCRUDStore
+	bus       eventbus.DomainEventBus
 }
 
-func NewTeamRepliesMethods(evals store.TeamReplyEvalStore, instances store.ChannelInstanceStore, agents store.AgentCRUDStore) *TeamRepliesMethods {
-	return &TeamRepliesMethods{evals: evals, instances: instances, agents: agents}
+func NewTeamRepliesMethods(evals store.TeamReplyEvalStore, instances store.ChannelInstanceStore, agents store.AgentCRUDStore, bus eventbus.DomainEventBus) *TeamRepliesMethods {
+	return &TeamRepliesMethods{evals: evals, instances: instances, agents: agents, bus: bus}
 }
 
 func (m *TeamRepliesMethods) Register(router *gateway.MethodRouter) {
 	router.Register(protocol.MethodChannelsTeamRepliesList, m.handleList)
 	router.Register(protocol.MethodChannelsTeamRepliesGet, m.handleGet)
 	router.Register(protocol.MethodChannelsTeamRepliesExportJSONL, m.handleExportJSONL)
+	router.Register(protocol.MethodChannelsTeamRepliesRejudge, m.handleRejudge)
 	router.Register(protocol.MethodChannelsTeamCaptureToggle, m.handleToggle)
 }
 
@@ -237,4 +240,74 @@ func serializeEvals(rows []store.TeamReplyEvaluation) []map[string]any {
 		out[i] = serializeEval(r)
 	}
 	return out
+}
+
+const rejudgeBatchCap = 100
+
+func (m *TeamRepliesMethods) handleRejudge(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	var p struct {
+		ChannelInstanceID string `json:"channel_instance_id"`
+		Limit             int    `json:"limit,omitempty"`
+	}
+	decode(req, &p)
+	if !m.requireAdmin(ctx, client, req) {
+		return
+	}
+	inst := m.resolveInstance(ctx, client, req, p.ChannelInstanceID)
+	if inst == nil {
+		return
+	}
+	limit := p.Limit
+	if limit <= 0 || limit > rejudgeBatchCap {
+		limit = rejudgeBatchCap
+	}
+	failed, err := m.evals.ListFailedJudge(ctx, inst.ID.String(), limit)
+	if err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
+		return
+	}
+	if len(failed) == 0 {
+		client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
+			"rejudged":      0,
+			"batch_capped":  false,
+		}))
+		return
+	}
+	ids := make([]string, len(failed))
+	for i, e := range failed {
+		ids[i] = e.ID
+	}
+	if _, err := m.evals.ClearJudgeError(ctx, ids); err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
+		return
+	}
+	if m.bus != nil {
+		for _, e := range failed {
+			ev := eventbus.DomainEvent{
+				ID:        uuid.NewString(),
+				Type:      eventbus.EventTeamReplyObserved,
+				// Suffix prevents eventbus dedup from suppressing the retry.
+				SourceID:  eventbus.TeamReplyObservedSourceID(e.ChannelInstanceID, e.TeamMsgID) + "?rejudge=" + uuid.NewString()[:8],
+				TenantID:  e.TenantID,
+				Timestamp: time.Now().UTC(),
+				Payload: eventbus.TeamReplyObservedPayload{
+					EvaluationID:      e.ID,
+					TenantID:          e.TenantID,
+					ChannelInstanceID: e.ChannelInstanceID,
+					ChannelName:       inst.Name,
+					ThreadKey:         e.ThreadKey,
+					SessionKey:        e.SessionKey,
+					TeamMsgID:         e.TeamMsgID,
+					TeamReply:         e.TeamReply,
+					CustomerMessage:   e.CustomerMessage,
+					CapturedAt:        e.CapturedAt,
+				},
+			}
+			m.bus.Publish(ev)
+		}
+	}
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
+		"rejudged":     len(failed),
+		"batch_capped": len(failed) == rejudgeBatchCap,
+	}))
 }

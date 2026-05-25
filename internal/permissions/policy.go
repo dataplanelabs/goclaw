@@ -241,6 +241,7 @@ func isAdminMethod(method string) bool {
 
 		// Team-reply capture toggle is an admin-only config write.
 		protocol.MethodChannelsTeamCaptureToggle,
+		protocol.MethodChannelsTeamRepliesRejudge,
 
 		// Pairing management (approve/revoke/list/deny require admin).
 		protocol.MethodPairingApprove,

@@ -42,6 +42,12 @@ func (f *fakeEvalStore) Count(context.Context, string, store.TeamReplyEvalFilter
 func (f *fakeEvalStore) GetByMessageID(context.Context, string, string) (*store.TeamReplyEvaluation, error) {
 	return nil, nil
 }
+func (f *fakeEvalStore) ListFailedJudge(context.Context, string, int) ([]store.TeamReplyEvaluation, error) {
+	return nil, nil
+}
+func (f *fakeEvalStore) ClearJudgeError(context.Context, []string) (int64, error) {
+	return 0, nil
+}
 func (f *fakeEvalStore) ListPendingJudge(context.Context, int) ([]store.TeamReplyEvaluation, error) {
 	return nil, nil
 }

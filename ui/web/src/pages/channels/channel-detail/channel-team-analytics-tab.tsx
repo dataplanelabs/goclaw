@@ -111,6 +111,30 @@ export function ChannelTeamAnalyticsTab({
     return Array.from(set).sort();
   }, [rows]);
 
+  const failedCount = useMemo(
+    () => rows.filter((r) => Boolean(r.judge_error)).length,
+    [rows],
+  );
+
+  const saveDisabled = judge && judgeKey.trim() === "";
+
+  async function rejudgeFailed() {
+    setStatus(null);
+    try {
+      const resp = await ws.call<{ rejudged: number; batch_capped: boolean }>(
+        Methods.CHANNELS_TEAM_REPLIES_REJUDGE,
+        { channel_instance_id: channelInstanceId },
+      );
+      setStatus(
+        t("teamAnalytics.rejudgeQueued", { count: resp.rejudged }) +
+          (resp.batch_capped ? ` — ${t("teamAnalytics.rejudgeBatchCapped")}` : ""),
+      );
+      setTimeout(load, 5_000);
+    } catch (err) {
+      setStatus(errMsg(err));
+    }
+  }
+
   async function saveToggle() {
     setStatus(null);
     setRestartHint(null);
@@ -166,7 +190,13 @@ export function ChannelTeamAnalyticsTab({
           />
         </div>
         <div className="sm:col-span-2 flex justify-end">
-          <Button onClick={saveToggle}>{t("teamAnalytics.save")}</Button>
+          <Button
+            onClick={saveToggle}
+            disabled={saveDisabled}
+            title={saveDisabled ? t("teamAnalytics.judgeKeyRequiredTooltip") : undefined}
+          >
+            {t("teamAnalytics.save")}
+          </Button>
         </div>
       </div>
 
@@ -210,6 +240,14 @@ export function ChannelTeamAnalyticsTab({
         />
       </div>
 
+      {failedCount > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
+          <span>⚠️ {t("teamAnalytics.rejudgeBanner", { count: failedCount })}</span>
+          <Button size="sm" variant="outline" onClick={rejudgeFailed}>
+            {t("teamAnalytics.rejudgeButton")}
+          </Button>
+        </div>
+      )}
       {restartHint && (
         <div className="text-xs text-amber-600 dark:text-amber-400 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
           {restartHint}

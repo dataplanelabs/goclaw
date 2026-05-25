@@ -61,6 +61,8 @@ type TeamReplyEvalStore interface {
 	Count(ctx context.Context, tenantID string, f TeamReplyEvalFilter) (int64, error)
 	GetByMessageID(ctx context.Context, channelInstanceID, teamMsgID string) (*TeamReplyEvaluation, error)
 	ListPendingJudge(ctx context.Context, limit int) ([]TeamReplyEvaluation, error)
+	ListFailedJudge(ctx context.Context, channelInstanceID string, limit int) ([]TeamReplyEvaluation, error)
+	ClearJudgeError(ctx context.Context, ids []string) (int64, error)
 
 	DeleteByChannel(ctx context.Context, channelInstanceID string) (int64, error)
 }
