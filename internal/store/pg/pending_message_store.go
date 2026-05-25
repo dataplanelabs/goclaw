@@ -266,5 +266,65 @@ func (s *PGPendingMessageStore) ResolveGroupTitles(ctx context.Context, groups [
 			}
 		}
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Fallback to channel_contacts for groups missing chat_title in session metadata.
+	resolveFromContacts(ctx, s.db, groups, result)
+	return result, nil
+}
+
+func resolveFromContacts(ctx context.Context, db *sql.DB, groups []store.PendingMessageGroup, result map[string]string) {
+	if db == nil {
+		return
+	}
+	type pair struct{ channelType, senderID string }
+	var missing []pair
+	for _, g := range groups {
+		mapKey := g.ChannelName + ":" + g.HistoryKey
+		if _, ok := result[mapKey]; !ok {
+			missing = append(missing, pair{g.ChannelName, g.HistoryKey})
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	conds := make([]string, 0, len(missing))
+	args := make([]any, 0, len(missing)*2+1)
+	for i, p := range missing {
+		conds = append(conds, fmt.Sprintf("(channel_type = $%d AND sender_id = $%d)", i*2+1, i*2+2))
+		args = append(args, p.channelType, p.senderID)
+	}
+	tenantFilter := ""
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid == uuid.Nil {
+			tid = store.MasterTenantID
+		}
+		tenantFilter = fmt.Sprintf(" AND tenant_id = $%d", len(args)+1)
+		args = append(args, tid)
+	}
+	q := `SELECT channel_type, sender_id, display_name FROM channel_contacts
+	       WHERE contact_type = 'group' AND display_name IS NOT NULL AND display_name != ''
+	         AND (` + strings.Join(conds, " OR ") + `)` + tenantFilter
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ct, sid string
+		var name *string
+		if err := rows.Scan(&ct, &sid, &name); err != nil {
+			return
+		}
+		if name == nil || *name == "" {
+			continue
+		}
+		mapKey := ct + ":" + sid
+		if _, exists := result[mapKey]; !exists {
+			result[mapKey] = *name
+		}
+	}
 }

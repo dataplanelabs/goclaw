@@ -282,5 +282,65 @@ func (s *SQLitePendingMessageStore) ResolveGroupTitles(ctx context.Context, grou
 			}
 		}
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Fallback to channel_contacts for groups missing chat_title in session metadata.
+	resolveFromContactsSQLite(ctx, s.db, groups, result)
+	return result, nil
+}
+
+func resolveFromContactsSQLite(ctx context.Context, db *sql.DB, groups []store.PendingMessageGroup, result map[string]string) {
+	if db == nil {
+		return
+	}
+	type pair struct{ channelType, senderID string }
+	var missing []pair
+	for _, g := range groups {
+		mapKey := g.ChannelName + ":" + g.HistoryKey
+		if _, ok := result[mapKey]; !ok {
+			missing = append(missing, pair{g.ChannelName, g.HistoryKey})
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	conds := make([]string, 0, len(missing))
+	args := make([]any, 0, len(missing)*2+1)
+	for _, p := range missing {
+		conds = append(conds, "(channel_type = ? AND sender_id = ?)")
+		args = append(args, p.channelType, p.senderID)
+	}
+	tenantFilter := ""
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid == uuid.Nil {
+			tid = store.MasterTenantID
+		}
+		tenantFilter = " AND tenant_id = ?"
+		args = append(args, tid)
+	}
+	q := `SELECT channel_type, sender_id, display_name FROM channel_contacts
+	       WHERE contact_type = 'group' AND display_name IS NOT NULL AND display_name != ''
+	         AND (` + strings.Join(conds, " OR ") + `)` + tenantFilter
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ct, sid string
+		var name *string
+		if err := rows.Scan(&ct, &sid, &name); err != nil {
+			return
+		}
+		if name == nil || *name == "" {
+			continue
+		}
+		mapKey := ct + ":" + sid
+		if _, exists := result[mapKey]; !exists {
+			result[mapKey] = *name
+		}
+	}
 }

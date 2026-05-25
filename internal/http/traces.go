@@ -19,12 +19,19 @@ import (
 
 // TracesHandler handles LLM trace listing, detail, and retry endpoints.
 type TracesHandler struct {
-	tracing     store.TracingStore
-	agents      store.AgentStore
-	replay      store.ReplayPayloadStore
-	retryLocks  store.RetryLockStore
-	tenants     store.TenantStore
-	router      RetryAgentRunner
+	tracing    store.TracingStore
+	agents     store.AgentStore
+	replay     store.ReplayPayloadStore
+	retryLocks store.RetryLockStore
+	tenants    store.TenantStore
+	router     RetryAgentRunner
+	channels   store.ChannelInstanceStore
+	contacts   store.ContactStore
+}
+
+func (h *TracesHandler) SetEnrichmentDeps(channels store.ChannelInstanceStore, contacts store.ContactStore) {
+	h.channels = channels
+	h.contacts = contacts
 }
 
 // RetryAgentRunner is the subset of agent.Router needed to invoke a retry run.
@@ -120,6 +127,8 @@ func (h *TracesHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.enrichChatTitles(r.Context(), traces)
+
 	total, _ := h.tracing.CountTraces(r.Context(), opts)
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -128,6 +137,82 @@ func (h *TracesHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		"limit":  opts.Limit,
 		"offset": opts.Offset,
 	})
+}
+
+// enrichChatTitles fills TraceData.ChatTitle for the given page by joining
+// (trace.channel → channel_instance.channel_type) × (sender_id from session_key)
+// against channel_contacts.display_name. Best-effort: silent on any lookup miss.
+func (h *TracesHandler) enrichChatTitles(ctx context.Context, traces []store.TraceData) {
+	if len(traces) == 0 || h.channels == nil || h.contacts == nil {
+		return
+	}
+	channelTypes := make(map[string]string, 4)
+	senderIDs := make([]string, 0, len(traces))
+	keys := make([]string, len(traces))
+	for i := range traces {
+		t := &traces[i]
+		sid := chatIDFromSessionKey(t.SessionKey)
+		if sid == "" || t.Channel == "" {
+			continue
+		}
+		if _, ok := channelTypes[t.Channel]; !ok {
+			inst, err := h.channels.GetByName(ctx, t.Channel)
+			if err != nil || inst == nil {
+				channelTypes[t.Channel] = ""
+				continue
+			}
+			channelTypes[t.Channel] = inst.ChannelType
+		}
+		ct := channelTypes[t.Channel]
+		if ct == "" {
+			continue
+		}
+		keys[i] = ct + ":" + sid
+		senderIDs = append(senderIDs, sid)
+	}
+	if len(senderIDs) == 0 {
+		return
+	}
+	byID, err := h.contacts.GetContactsBySenderIDs(ctx, senderIDs)
+	if err != nil {
+		return
+	}
+	for i := range traces {
+		t := &traces[i]
+		sid := chatIDFromSessionKey(t.SessionKey)
+		if sid == "" {
+			continue
+		}
+		c, ok := byID[sid]
+		if !ok {
+			continue
+		}
+		if c.ChannelType != channelTypes[t.Channel] {
+			continue
+		}
+		if c.DisplayName != nil && *c.DisplayName != "" {
+			t.ChatTitle = *c.DisplayName
+		}
+	}
+}
+
+// chatIDFromSessionKey returns the last colon-separated segment, the typical
+// shape being "agent:<agent>:<channel>:<direct|group>:<chat_id>".
+func chatIDFromSessionKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	idx := -1
+	for i := len(key) - 1; i >= 0; i-- {
+		if key[i] == ':' {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return ""
+	}
+	return key[idx+1:]
 }
 
 func (h *TracesHandler) handleGet(w http.ResponseWriter, r *http.Request) {
