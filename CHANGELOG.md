@@ -6,6 +6,20 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Team Analytics — Zalo CDN thumbnails were invisible (blocked by hot-link
+  protection)** — v3.23.29 wired `<img src=zalo-cdn-url>` inline but Zalo's
+  `photo-stal-*.zdn.vn` CDN 403s requests with our origin as Referer, and the
+  old `onError` handler hid the `<img>` via `display: none` — operators saw
+  empty space with only the URL on browser status-bar hover. Two fixes in
+  `rich-content.tsx`: (1) added `referrerPolicy="no-referrer"` to inline
+  `<img>` so the browser strips the Referer header (matches how Telegram /
+  WhatsApp Web bypass the same protection); (2) replaced silent `display: none`
+  with stateful `MediaFallbackLink` — when the image / video / audio load
+  fails, render a visible clickable badge (`[icon] Image ↗` opens in new tab).
+  Now operators either see the actual thumbnail OR a visible link they can
+  click — never an invisible empty anchor. Same treatment for `<video>` /
+  `<audio>` with `crossOrigin="anonymous"`.
+
 - **Team Analytics — raw `<media:image url="…">` XML now renders as
   inline thumbnails** — operators reviewing captures on `zalo-oa-annhien`
   saw the literal XML string of customer-attached images / stickers
