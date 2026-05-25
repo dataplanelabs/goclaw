@@ -173,6 +173,11 @@ func (w *JudgeWorker) process(ctx context.Context, payload eventbus.TeamReplyObs
 	ctx, cancel := context.WithTimeout(ctx, w.timeout)
 	defer cancel()
 
+	if strings.TrimSpace(payload.TeamReply) == "" {
+		w.markErr(ctx, payload.EvaluationID, "empty_team_reply")
+		return
+	}
+
 	tenantUUID, err := uuid.Parse(payload.TenantID)
 	if err != nil {
 		w.markErr(ctx, payload.EvaluationID, "invalid_tenant_id: "+err.Error())
@@ -255,6 +260,18 @@ func (w *JudgeWorker) BatchGrade(ctx context.Context, rows []store.TeamReplyEval
 	if w == nil || len(rows) == 0 {
 		return nil
 	}
+	gradable := make([]store.TeamReplyEvaluation, 0, len(rows))
+	for _, r := range rows {
+		if strings.TrimSpace(r.TeamReply) == "" {
+			w.markErr(ctx, r.ID, "empty_team_reply")
+			continue
+		}
+		gradable = append(gradable, r)
+	}
+	if len(gradable) == 0 {
+		return nil
+	}
+	rows = gradable
 	if len(rows) == 1 {
 		w.fallbackPerRow(ctx, rows, channelName)
 		return nil
