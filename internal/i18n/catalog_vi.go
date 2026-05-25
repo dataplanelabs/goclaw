@@ -340,10 +340,12 @@ func init() {
 		StandbyRPCInvalidSchedule:   "lịch không hợp lệ: %s",
 		StandbyRPCNoPermission:      "cần quyền admin của tenant để sửa lịch channel",
 
-		TeamCaptureRPCNoPermission:  "cần quyền admin để bật/tắt thu thập trả lời của team",
-		TeamCaptureRPCInvalidConfig: "cấu hình capture không hợp lệ: %s",
-		TeamEvalNotFound:            "không tìm thấy đánh giá trả lời của team",
-		TeamEvalJudgeError:          "đánh giá thất bại: %s",
+		TeamCaptureRPCNoPermission:    "cần quyền admin để bật/tắt thu thập trả lời của team",
+		TeamCaptureRPCInvalidConfig:   "cấu hình capture không hợp lệ: %s",
+		TeamCaptureJudgeAgentNotFound: "không tìm thấy judge agent %q trong tenant — hãy tạo agent này hoặc chọn agent_key khác",
+		TeamCaptureJudgeKeyRequired:   "phải có judge_agent_key khi bật judge_evaluation",
+		TeamEvalNotFound:              "không tìm thấy đánh giá trả lời của team",
+		TeamEvalJudgeError:            "đánh giá thất bại: %s",
 
 		TraceRetryPayloadOversize: "Tải dữ liệu quá lớn để chạy lại (>2 MB).",
 		TraceRetryLocked:          "Đang chạy lại — vui lòng chờ.",

@@ -82,6 +82,7 @@ type Channel struct {
 	teamReplyBus      eventbus.DomainEventBus
 	teamReplySessions store.SessionStore
 	teamReplyEvals    store.TeamReplyEvalStore
+	teamReplyAtomic   store.AtomicTeamReplyWriter
 	teamReplyWorker   *PollWorker
 	teamReplyTenantID string
 }

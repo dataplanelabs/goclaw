@@ -19,6 +19,8 @@ func TestStandbyKeysCoverage(t *testing.T) {
 		StandbyRPCNoPermission,
 		TeamCaptureRPCNoPermission,
 		TeamCaptureRPCInvalidConfig,
+		TeamCaptureJudgeAgentNotFound,
+		TeamCaptureJudgeKeyRequired,
 		TeamEvalNotFound,
 		TeamEvalJudgeError,
 	}

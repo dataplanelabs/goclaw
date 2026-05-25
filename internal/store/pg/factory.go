@@ -70,6 +70,7 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		WorkstationPermissions: NewPGWorkstationPermissionStore(db),
 		WorkstationActivity:    NewPGWorkstationActivityStore(db),
 	}
+	pgStores.TeamReplyAtomicWriter = NewPGTeamReplyAtomicWriter(db, pgStores.Sessions.(*PGSessionStore))
 	// Wire permStore into WorkstationStore so Create seeds allowlist atomically (H5 fix).
 	// Must happen after both stores are constructed.
 	pgStores.Workstations.(*PGWorkstationStore).SetPermStore(pgStores.WorkstationPermissions)

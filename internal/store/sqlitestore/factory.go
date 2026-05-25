@@ -84,5 +84,6 @@ func NewSQLiteStores(cfg store.StoreConfig) (*store.Stores, error) {
 	}
 	// Wire permStore into WorkstationStore so Create seeds allowlist atomically (H5 fix).
 	sqliteStores.Workstations.(*SQLiteWorkstationStore).SetPermStore(sqliteStores.WorkstationPermissions)
+	sqliteStores.TeamReplyAtomicWriter = NewSQLiteTeamReplyAtomicWriter(db, sqliteStores.Sessions.(*SQLiteSessionStore))
 	return sqliteStores, nil
 }

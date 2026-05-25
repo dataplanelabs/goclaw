@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ type PollWorker struct {
 
 	sessions store.SessionCoreStore
 	evals    store.TeamReplyEvalStore
+	atomic   store.AtomicTeamReplyWriter
 	bus      eventbus.DomainEventBus
 
 	cursorMu sync.Mutex
@@ -52,6 +54,7 @@ type PollWorkerDeps struct {
 	OnBehalf     *OnBehalfClient
 	Sessions     store.SessionCoreStore
 	Evals        store.TeamReplyEvalStore
+	Atomic       store.AtomicTeamReplyWriter
 	Bus          eventbus.DomainEventBus
 	CustomerLast func(ctx context.Context, sessionKey string) string
 }
@@ -70,6 +73,7 @@ func NewPollWorker(instanceID uuid.UUID, name, tenantID, channelType, selfUID st
 		onBehalf:     deps.OnBehalf,
 		sessions:     deps.Sessions,
 		evals:        deps.Evals,
+		atomic:       deps.Atomic,
 		bus:          deps.Bus,
 		customerLast: deps.CustomerLast,
 		selfUID:      selfUID,
@@ -152,36 +156,59 @@ func (w *PollWorker) tick(ctx context.Context) {
 
 func (w *PollWorker) applyMessages(ctx context.Context, uid string, msgs []ConversationMessage) {
 	last := w.cursor(uid)
-	var newCursor int64 = last
 	ctx2 := ctx
 	if tid, err := uuid.Parse(w.tenantID); err == nil {
 		ctx2 = store.WithTenantID(ctx, tid)
 	}
 	sessionKey := w.sessionKeyFor(uid)
 	threadKey := "direct:" + uid
+	type outcome struct {
+		t     int64
+		retry bool
+	}
+	outcomes := make([]outcome, 0, len(msgs))
 	for _, m := range msgs {
-		if m.Time > newCursor {
-			newCursor = m.Time
-		}
 		if m.Time <= last || m.MsgID == "" {
+			outcomes = append(outcomes, outcome{t: m.Time, retry: false})
 			continue
 		}
 		if m.SrcID == uid {
-			// Customer-side; already captured via the existing user-msg pipeline.
+			outcomes = append(outcomes, outcome{t: m.Time, retry: false})
 			continue
 		}
 		if w.selfUID != "" && m.SrcID != w.selfUID {
-			// Drop messages from any non-self UID (defensive guard).
+			outcomes = append(outcomes, outcome{t: m.Time, retry: false})
 			continue
 		}
-		w.persistTeamReply(ctx2, uid, threadKey, sessionKey, m)
+		if err := w.persistTeamReply(ctx2, uid, threadKey, sessionKey, m); err != nil {
+			outcomes = append(outcomes, outcome{t: m.Time, retry: true})
+			continue
+		}
+		outcomes = append(outcomes, outcome{t: m.Time, retry: false})
 	}
-	if newCursor > last {
-		w.setCursor(uid, newCursor)
+	// Never advance cursor past a failed message — next tick must retry it.
+	var minRetry int64 = math.MaxInt64
+	var maxOK int64 = last
+	for _, o := range outcomes {
+		if o.retry && o.t > 0 && o.t < minRetry {
+			minRetry = o.t
+		}
+	}
+	for _, o := range outcomes {
+		if o.retry {
+			continue
+		}
+		if o.t > maxOK && o.t < minRetry {
+			maxOK = o.t
+		}
+	}
+	if maxOK > last {
+		w.setCursor(uid, maxOK)
 	}
 }
 
-func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessionKey string, m ConversationMessage) {
+// Returns err only when atomic write fails; bus.Publish dedupes via SourceID.
+func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessionKey string, m ConversationMessage) error {
 	captured := time.UnixMilli(m.Time).UTC()
 	if m.Time == 0 {
 		captured = time.Now().UTC()
@@ -200,27 +227,48 @@ func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessi
 		customer = w.customerLast(ctx, sessionKey)
 		evalRow.CustomerMessage = customer
 	}
-	evalID, err := w.evals.Insert(ctx, evalRow)
-	if err != nil {
-		slog.Warn("oa.poll_worker.eval_insert_fail",
-			"instance", w.instanceName, "msg_id", m.MsgID, "err", err)
-		return
-	}
-
 	msg := providers.Message{
 		Role:    "assistant",
 		Content: m.Text,
 		Metadata: map[string]any{
-			"source":       providers.MessageSourceTeam,
-			"team_msg_id":  m.MsgID,
-			"captured_at":  captured.Format(time.RFC3339Nano),
-			"poll_origin":  true,
+			"source":      providers.MessageSourceTeam,
+			"team_msg_id": m.MsgID,
+			"captured_at": captured.Format(time.RFC3339Nano),
+			"poll_origin": true,
 		},
 	}
-	w.sessions.AddMessage(ctx, sessionKey, msg)
-	if err := w.sessions.Save(ctx, sessionKey); err != nil {
-		slog.Warn("oa.poll_worker.session_save_fail",
-			"instance", w.instanceName, "session", sessionKey, "err", err)
+
+	var evalID string
+	var wasNew bool
+	if w.atomic != nil {
+		var err error
+		evalID, wasNew, err = w.atomic.WriteTeamReplyAtomic(ctx, evalRow, sessionKey, msg)
+		if err != nil {
+			slog.Warn("oa.poll_worker.atomic_write_fail",
+				"instance", w.instanceName, "msg_id", m.MsgID, "err", err)
+			return err
+		}
+	} else {
+		if existing, _ := w.evals.GetByMessageID(ctx, w.instanceID.String(), m.MsgID); existing != nil {
+			return nil
+		}
+		var err error
+		evalID, err = w.evals.Insert(ctx, evalRow)
+		if err != nil {
+			slog.Warn("oa.poll_worker.eval_insert_fail",
+				"instance", w.instanceName, "msg_id", m.MsgID, "err", err)
+			return err
+		}
+		w.sessions.AddMessage(ctx, sessionKey, msg)
+		if err := w.sessions.Save(ctx, sessionKey); err != nil {
+			slog.Warn("oa.poll_worker.session_save_fail",
+				"instance", w.instanceName, "session", sessionKey, "err", err)
+		}
+		wasNew = true
+	}
+
+	if !wasNew {
+		return nil
 	}
 
 	event := eventbus.DomainEvent{
@@ -245,6 +293,7 @@ func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessi
 	if w.bus != nil {
 		w.bus.Publish(event)
 	}
+	return nil
 }
 
 func (w *PollWorker) classifyErr(err error, op string) {

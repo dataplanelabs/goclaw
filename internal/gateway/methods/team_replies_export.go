@@ -26,6 +26,7 @@ func (m *TeamRepliesMethods) handleExportJSONL(ctx context.Context, client *gate
 		Until             string   `json:"until,omitempty"`
 		MaxDiffScore      *float64 `json:"max_diff_score,omitempty"`
 		IncludePending    bool     `json:"include_pending,omitempty"`
+		IncludeFailed     bool     `json:"include_failed,omitempty"`
 	}
 	decode(req, &p)
 	inst := m.resolveInstance(ctx, client, req, p.ChannelInstanceID)
@@ -36,6 +37,7 @@ func (m *TeamRepliesMethods) handleExportJSONL(ctx context.Context, client *gate
 		ChannelInstanceID: inst.ID.String(),
 		MaxDiffScore:      p.MaxDiffScore,
 		JudgeOnlyComplete: !p.IncludePending,
+		ExcludeFailed:     !p.IncludeFailed,
 		Limit:             jsonlExportMaxRows,
 	}
 	if p.Since != "" {

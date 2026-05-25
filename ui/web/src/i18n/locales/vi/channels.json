@@ -539,7 +539,14 @@
     "exportJsonl": "Xuất dữ liệu huấn luyện (JSONL)",
     "exporting": "Đang xuất…",
     "exportSuccess": "Đã tải {{count}} mẫu ({{bytes}} bytes)",
+    "exportTruncated": "đã cắt tại 5MB — hãy thu hẹp khoảng thời gian",
     "configSaved": "Đã lưu cấu hình",
-    "save": "Lưu"
+    "restartRequired": "Cần khởi động lại channel để cài đặt có hiệu lực.",
+    "save": "Lưu",
+    "judgeKeyRequiredTooltip": "Cần judge agent key khi bật auto-judge",
+    "rejudgeBanner": "{{count}} đánh giá thất bại — thử lại?",
+    "rejudgeButton": "Đánh giá lại",
+    "rejudgeQueued": "Đã xếp {{count}} đánh giá vào hàng chờ",
+    "rejudgeBatchCapped": "giới hạn 100 mỗi lần; nhấn lại cho đợt tiếp theo"
   }
 }

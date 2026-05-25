@@ -546,7 +546,7 @@ func runGateway() {
 		instanceLoader.RegisterFactory(channels.TypeDiscord, discord.FactoryWithStoresAndAudio(pgStores.Agents, pgStores.ConfigPermissions, pgStores.PendingMessages, audioMgr))
 		instanceLoader.RegisterFactory(channels.TypeFeishu, feishu.FactoryWithPendingStoreAndAudio(pgStores.PendingMessages, audioMgr))
 		instanceLoader.RegisterFactory(channels.TypeZaloBot, zalobot.Factory)
-		instanceLoader.RegisterFactory(channels.TypeZaloOA, zalooa.FactoryWithDeps(pgStores.ChannelInstances, domainBus, pgStores.Sessions, pgStores.TeamReplyEvals))
+		instanceLoader.RegisterFactory(channels.TypeZaloOA, zalooa.FactoryWithDeps(pgStores.ChannelInstances, domainBus, pgStores.Sessions, pgStores.TeamReplyEvals, pgStores.TeamReplyAtomicWriter))
 		instanceLoader.RegisterFactory(channels.TypeZaloPersonal, zalopersonal.FactoryWithPendingStore(pgStores.PendingMessages, pgStores.Episodic))
 		instanceLoader.RegisterFactory(channels.TypeWhatsApp, whatsapp.FactoryWithDBAudio(pgStores.DB, pgStores.PendingMessages, "pgx", audioMgr, pgStores.BuiltinTools))
 		instanceLoader.RegisterFactory(channels.TypeSlack, slackchannel.FactoryWithPendingStore(pgStores.PendingMessages))
@@ -561,7 +561,7 @@ func runGateway() {
 	registerConfigChannels(cfg, channelMgr, msgBus, pgStores, instanceLoader, audioMgr)
 
 	// Register channels/instances/links/teams RPC methods
-	wireChannelRPCMethods(server, pgStores, channelMgr, agentRouter, msgBus, workspace, standbyRegistry)
+	wireChannelRPCMethods(server, pgStores, channelMgr, agentRouter, msgBus, workspace, standbyRegistry, domainBus)
 
 	// Wire channel event subscribers (cache invalidation, pairing, cascade disable)
 	wireChannelEventSubscribers(msgBus, server, pgStores, channelMgr, instanceLoader, pairingMethods, cfg)

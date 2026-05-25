@@ -78,12 +78,12 @@ func (w *JudgeWorker) Handle(ctx context.Context, e eventbus.DomainEvent) error 
 			"tenant", payload.TenantID, "evaluation_id", payload.EvaluationID)
 		return nil
 	}
-	go w.process(payload)
+	go w.process(ctx, payload)
 	return nil
 }
 
-func (w *JudgeWorker) process(payload eventbus.TeamReplyObservedPayload) {
-	ctx, cancel := context.WithTimeout(context.Background(), w.timeout)
+func (w *JudgeWorker) process(ctx context.Context, payload eventbus.TeamReplyObservedPayload) {
+	ctx, cancel := context.WithTimeout(ctx, w.timeout)
 	defer cancel()
 
 	tenantUUID, err := uuid.Parse(payload.TenantID)
@@ -149,7 +149,7 @@ func (w *JudgeWorker) process(payload eventbus.TeamReplyObservedPayload) {
 		w.markErr(ctx, payload.EvaluationID, "judge_parse_error: "+err.Error())
 		return
 	}
-	if err := w.evals.UpdateJudgeVerdict(ctx, payload.EvaluationID,
+	if err := w.evals.UpdateJudgeVerdict(ctx2, payload.EvaluationID,
 		verdict.HypothesizedBotReply, verdict.DiffScore, verdict.DiffReasoning,
 		loop.Model(), loop.ProviderName(), agentKey, latency); err != nil {
 		slog.Warn("judge.update_failed",

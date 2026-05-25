@@ -47,10 +47,22 @@ export function ChannelTeamAnalyticsTab({
   const [threadFilter, setThreadFilter] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [capture, setCapture] = useState(initialConfig?.capture_team_replies ?? false);
   const [judge, setJudge] = useState(initialConfig?.judge_evaluation ?? false);
   const [judgeKey, setJudgeKey] = useState(initialConfig?.judge_agent_key ?? "");
+  const [restartHint, setRestartHint] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    // Skip re-sync if operator has unsaved edits — avoids clobbering form
+    // state when a cross-tab update refreshes initialConfig mid-typing.
+    if (dirty) return;
+    setCapture(initialConfig?.capture_team_replies ?? false);
+    setJudge(initialConfig?.judge_evaluation ?? false);
+    setJudgeKey(initialConfig?.judge_agent_key ?? "");
+  }, [initialConfig?.capture_team_replies, initialConfig?.judge_evaluation, initialConfig?.judge_agent_key, dirty]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,8 +79,9 @@ export function ChannelTeamAnalyticsTab({
         params,
       );
       setRows(res.evaluations ?? []);
+      setLoadError(null);
     } catch (err) {
-      setStatus(errMsg(err));
+      setLoadError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -76,7 +89,13 @@ export function ChannelTeamAnalyticsTab({
 
   useEffect(() => {
     load();
-  }, [load]);
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (!ws.isConnected) return;
+      load();
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [load, ws]);
 
   const scores = useMemo(
     () =>
@@ -92,16 +111,45 @@ export function ChannelTeamAnalyticsTab({
     return Array.from(set).sort();
   }, [rows]);
 
-  async function saveToggle() {
+  const failedCount = useMemo(
+    () => rows.filter((r) => Boolean(r.judge_error)).length,
+    [rows],
+  );
+
+  const saveDisabled = judge && judgeKey.trim() === "";
+
+  async function rejudgeFailed() {
     setStatus(null);
     try {
-      await ws.call(Methods.CHANNELS_TEAM_CAPTURE_TOGGLE, {
+      const resp = await ws.call<{ rejudged: number; batch_capped: boolean }>(
+        Methods.CHANNELS_TEAM_REPLIES_REJUDGE,
+        { channel_instance_id: channelInstanceId },
+      );
+      setStatus(
+        t("teamAnalytics.rejudgeQueued", { count: resp.rejudged }) +
+          (resp.batch_capped ? ` — ${t("teamAnalytics.rejudgeBatchCapped")}` : ""),
+      );
+      setTimeout(load, 5_000);
+    } catch (err) {
+      setStatus(errMsg(err));
+    }
+  }
+
+  async function saveToggle() {
+    setStatus(null);
+    setRestartHint(null);
+    try {
+      const resp = await ws.call<{ hint?: string }>(Methods.CHANNELS_TEAM_CAPTURE_TOGGLE, {
         channel_instance_id: channelInstanceId,
         capture_team_replies: capture,
         judge_evaluation: judge,
         judge_agent_key: judgeKey.trim(),
       });
       setStatus(t("teamAnalytics.configSaved"));
+      setDirty(false);
+      if (resp?.hint?.toLowerCase().includes("restart")) {
+        setRestartHint(t("teamAnalytics.restartRequired"));
+      }
     } catch (err) {
       setStatus(errMsg(err));
     }
@@ -119,7 +167,7 @@ export function ChannelTeamAnalyticsTab({
           <Switch
             id="capture-toggle"
             checked={capture}
-            onCheckedChange={(v) => setCapture(Boolean(v))}
+            onCheckedChange={(v) => { setCapture(Boolean(v)); setDirty(true); }}
           />
           <Label htmlFor="capture-toggle">{t("teamAnalytics.captureToggle")}</Label>
         </div>
@@ -127,7 +175,7 @@ export function ChannelTeamAnalyticsTab({
           <Switch
             id="judge-toggle"
             checked={judge}
-            onCheckedChange={(v) => setJudge(Boolean(v))}
+            onCheckedChange={(v) => { setJudge(Boolean(v)); setDirty(true); }}
           />
           <Label htmlFor="judge-toggle">{t("teamAnalytics.judgeToggle")}</Label>
         </div>
@@ -136,13 +184,19 @@ export function ChannelTeamAnalyticsTab({
           <Input
             id="judge-agent"
             value={judgeKey}
-            onChange={(e) => setJudgeKey(e.target.value)}
+            onChange={(e) => { setJudgeKey(e.target.value); setDirty(true); }}
             placeholder="team-reply-judge"
             className="text-base md:text-sm mt-1"
           />
         </div>
         <div className="sm:col-span-2 flex justify-end">
-          <Button onClick={saveToggle}>{t("teamAnalytics.save")}</Button>
+          <Button
+            onClick={saveToggle}
+            disabled={saveDisabled}
+            title={saveDisabled ? t("teamAnalytics.judgeKeyRequiredTooltip") : undefined}
+          >
+            {t("teamAnalytics.save")}
+          </Button>
         </div>
       </div>
 
@@ -186,8 +240,24 @@ export function ChannelTeamAnalyticsTab({
         />
       </div>
 
+      {failedCount > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
+          <span>⚠️ {t("teamAnalytics.rejudgeBanner", { count: failedCount })}</span>
+          <Button size="sm" variant="outline" onClick={rejudgeFailed}>
+            {t("teamAnalytics.rejudgeButton")}
+          </Button>
+        </div>
+      )}
+      {restartHint && (
+        <div className="text-xs text-amber-600 dark:text-amber-400 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+          {restartHint}
+        </div>
+      )}
       {status && (
         <div className="text-xs text-muted-foreground">{status}</div>
+      )}
+      {loadError && (
+        <div className="text-xs text-destructive">{loadError}</div>
       )}
     </div>
   );
