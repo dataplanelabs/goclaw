@@ -44,6 +44,7 @@ export interface ChannelTeamAnalyticsTabProps {
     judge_agent_key?: string;
     judge_evaluation_mode?: string;
     judge_evaluation_schedule?: string;
+    judge_batch_size?: number;
   };
 }
 
@@ -77,6 +78,7 @@ export function ChannelTeamAnalyticsTab({
   const [judgeKey, setJudgeKey] = useState(initialConfig?.judge_agent_key ?? "");
   const [judgeMode, setJudgeMode] = useState(initialConfig?.judge_evaluation_mode ?? "per_event");
   const [judgeSchedule, setJudgeSchedule] = useState(initialConfig?.judge_evaluation_schedule ?? DEFAULT_JUDGE_SCHEDULE);
+  const [judgeBatchSize, setJudgeBatchSize] = useState(initialConfig?.judge_batch_size ?? 1);
   const [restartHint, setRestartHint] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [agents, setAgents] = useState<AgentListItem[]>([]);
@@ -98,6 +100,7 @@ export function ChannelTeamAnalyticsTab({
     setJudgeKey(initialConfig?.judge_agent_key ?? "");
     setJudgeMode(initialConfig?.judge_evaluation_mode ?? "per_event");
     setJudgeSchedule(initialConfig?.judge_evaluation_schedule ?? DEFAULT_JUDGE_SCHEDULE);
+    setJudgeBatchSize(initialConfig?.judge_batch_size ?? 1);
   }, [initialConfig?.capture_team_replies, initialConfig?.judge_evaluation, initialConfig?.judge_agent_key, dirty]);
 
   const load = useCallback(async () => {
@@ -247,6 +250,7 @@ export function ChannelTeamAnalyticsTab({
         judge_agent_key: judgeKey.trim(),
         judge_evaluation_mode: judgeMode,
         judge_evaluation_schedule: judgeSchedule.trim(),
+        judge_batch_size: judgeBatchSize,
       });
       setStatus(t("teamAnalytics.configSaved"));
       setDirty(false);
@@ -321,17 +325,32 @@ export function ChannelTeamAnalyticsTab({
             </Select>
           </div>
           {judgeMode === "scheduled" && (
-            <div>
-              <Label htmlFor="judge-schedule">{t("teamAnalytics.judgeScheduleLabel")}</Label>
-              <input
-                id="judge-schedule"
-                value={judgeSchedule}
-                onChange={(e) => { setJudgeSchedule(e.target.value); setDirty(true); }}
-                placeholder={DEFAULT_JUDGE_SCHEDULE}
-                className="text-base md:text-sm mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 shadow-xs"
-                title={t("teamAnalytics.judgeScheduleHint")}
-              />
-            </div>
+            <>
+              <div>
+                <Label htmlFor="judge-schedule">{t("teamAnalytics.judgeScheduleLabel")}</Label>
+                <input
+                  id="judge-schedule"
+                  value={judgeSchedule}
+                  onChange={(e) => { setJudgeSchedule(e.target.value); setDirty(true); }}
+                  placeholder={DEFAULT_JUDGE_SCHEDULE}
+                  className="text-base md:text-sm mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 shadow-xs"
+                  title={t("teamAnalytics.judgeScheduleHint")}
+                />
+              </div>
+              <div>
+                <Label htmlFor="judge-batch-size">{t("teamAnalytics.judgeBatchSizeLabel")}</Label>
+                <input
+                  id="judge-batch-size"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={judgeBatchSize}
+                  onChange={(e) => { setJudgeBatchSize(Number(e.target.value) || 1); setDirty(true); }}
+                  className="text-base md:text-sm mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 shadow-xs"
+                  title={t("teamAnalytics.judgeBatchSizeHint")}
+                />
+              </div>
+            </>
           )}
         </div>
         <div className="sm:col-span-2 flex justify-end gap-2">

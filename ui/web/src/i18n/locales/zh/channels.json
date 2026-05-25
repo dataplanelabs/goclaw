@@ -559,6 +559,8 @@
     "judgeModeScheduled": "定时（批量）",
     "judgeScheduleLabel": "计划（cron）",
     "judgeScheduleHint": "5 字段 cron 表达式，时区 Asia/Saigon。默认：周一至周五每小时 8-18 点。",
-    "gradePendingButton": "立即评 {{count}} 条待处理"
+    "gradePendingButton": "立即评 {{count}} 条待处理",
+    "judgeBatchSizeLabel": "批量大小",
+    "judgeBatchSizeHint": "每次 LLM 调用评的行数（1-50）。越大越省 token，但略有质量风险。"
   }
 }

@@ -201,6 +201,7 @@ type ZaloOAConfig struct {
 	// per JudgeEvaluationSchedule cron expression and grades pending rows.
 	JudgeEvaluationMode     string `json:"judge_evaluation_mode,omitempty"`
 	JudgeEvaluationSchedule string `json:"judge_evaluation_schedule,omitempty"` // default "0 8-18 * * 1-5" Asia/Saigon
+	JudgeBatchSize int `json:"judge_batch_size,omitempty"`
 }
 
 // TeamReplyPollInterval returns the configured polling interval clamped

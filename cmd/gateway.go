@@ -307,10 +307,18 @@ func runGateway() {
 		defer cleanupJudge()
 		slog.Info("judge worker registered for team-reply evaluations")
 
+		judgeWorker := consolidation.NewJudgeWorker(consolidation.JudgeDeps{
+			Evals:    pgStores.TeamReplyEvals,
+			Router:   agentRouter,
+			Resolver: resolver,
+			Bus:      domainBus,
+			Timeout:  60 * time.Second,
+		})
 		judgeScheduler := consolidation.NewJudgeScheduler(consolidation.JudgeSchedulerDeps{
 			Evals:     pgStores.TeamReplyEvals,
 			Instances: pgStores.ChannelInstances,
 			Bus:       domainBus,
+			Worker:    judgeWorker,
 		})
 		judgeScheduler.Start(context.Background())
 		defer judgeScheduler.Stop()

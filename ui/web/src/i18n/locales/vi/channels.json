@@ -559,6 +559,8 @@
     "judgeModeScheduled": "Theo lịch (batch)",
     "judgeScheduleLabel": "Lịch (cron)",
     "judgeScheduleHint": "Biểu thức cron 5 trường, giờ Asia/Saigon. Mặc định: mỗi giờ 8h-18h T2-T6.",
-    "gradePendingButton": "Chấm {{count}} chờ ngay"
+    "gradePendingButton": "Chấm {{count}} chờ ngay",
+    "judgeBatchSizeLabel": "Kích thước batch",
+    "judgeBatchSizeHint": "Số dòng/lần gọi LLM (1-50). Càng lớn càng tiết kiệm token, nhưng có rủi ro chất lượng."
   }
 }
