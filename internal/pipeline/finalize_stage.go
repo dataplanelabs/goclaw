@@ -10,6 +10,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/hooks"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
 // FinalizeStage runs once after the iteration loop exits. Sanitizes content,
@@ -65,7 +66,7 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 	}
 
 	// 3. Deduplicate + populate media sizes
-	s.processMedia(state)
+	s.processMedia(ctx, state)
 
 	// 3b. Persist assistant-generated images (Codex image_generation_call) to disk
 	// BEFORE building the assistant message so MediaRefs are included in the session store.
@@ -178,11 +179,11 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 	return nil
 }
 
-// processMedia populates file sizes and deduplicates media results.
-func (s *FinalizeStage) processMedia(state *RunState) {
+// processMedia populates file sizes, deduplicates media results, and drops
+// any path a tool already published directly to msgBus during this run.
+func (s *FinalizeStage) processMedia(ctx context.Context, state *RunState) {
 	media := state.Tool.MediaResults
 
-	// Populate sizes for local files
 	for i := range media {
 		if media[i].Size == 0 && media[i].Path != "" {
 			if fi, err := os.Stat(media[i].Path); err == nil {
@@ -191,14 +192,18 @@ func (s *FinalizeStage) processMedia(state *RunState) {
 		}
 	}
 
-	// Deduplicate by path
+	pm := tools.PublishedMediaFromCtx(ctx)
 	seen := make(map[string]bool, len(media))
 	deduped := make([]MediaResult, 0, len(media))
 	for _, m := range media {
-		if !seen[m.Path] {
-			seen[m.Path] = true
-			deduped = append(deduped, m)
+		if seen[m.Path] {
+			continue
 		}
+		if pm != nil && pm.IsPublished(m.Path) {
+			continue
+		}
+		seen[m.Path] = true
+		deduped = append(deduped, m)
 	}
 	state.Tool.MediaResults = deduped
 }

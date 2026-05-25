@@ -15,6 +15,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
 	"github.com/nextlevelbuilder/goclaw/internal/workspace"
 )
 
@@ -1747,6 +1748,37 @@ func TestFinalizeStage_DeduplicatesMediaByPath(t *testing.T) {
 	}
 	if len(state.Tool.MediaResults) != 2 {
 		t.Errorf("MediaResults len = %d after dedup, want 2", len(state.Tool.MediaResults))
+	}
+}
+
+// Regression: trace 019e5f1b-… — a path the `message` tool already published
+// directly to msgBus must be dropped from MediaResults so the consumer
+// doesn't dispatch a second outbound for the same file (mp3 sent twice on
+// zalo-shtp). PublishedMedia tracker injected via ctx; FinalizeStage filters.
+func TestFinalizeStage_DropsPublishedMedia(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	const published = "/tmp/tts-1779712157829875910.mp3"
+	const fresh = "/tmp/chart.png"
+	state.Tool.MediaResults = []MediaResult{
+		{Path: published, ContentType: "audio/mpeg"},
+		{Path: fresh, ContentType: "image/png"},
+	}
+
+	pm := tools.NewPublishedMedia()
+	pm.Mark(published)
+	ctx := tools.WithPublishedMedia(context.Background(), pm)
+
+	if err := stage.Execute(ctx, state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if len(state.Tool.MediaResults) != 1 {
+		t.Fatalf("MediaResults len = %d, want 1 (published path filtered)", len(state.Tool.MediaResults))
+	}
+	if state.Tool.MediaResults[0].Path != fresh {
+		t.Errorf("survivor = %q, want %q", state.Tool.MediaResults[0].Path, fresh)
 	}
 }
 
