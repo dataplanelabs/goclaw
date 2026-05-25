@@ -90,10 +90,11 @@ func Default() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host:            "0.0.0.0",
-			Port:            18790,
-			MaxMessageChars: DefaultMaxMessageChars,
-			RateLimitRPM:    20,
+			Host:                "0.0.0.0",
+			Port:                18790,
+			MaxMessageChars:     DefaultMaxMessageChars,
+			RateLimitRPM:        20,
+			ReplayRetentionDays: DefaultReplayRetentionDays,
 		},
 		Tools: ToolsConfig{
 			Browser: BrowserToolConfig{

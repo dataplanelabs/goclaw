@@ -106,6 +106,7 @@ func seedConfigForContext(ctx context.Context, sc store.SystemConfigStore, cfg *
 	setBool("gateway.block_reply", cfg.Gateway.BlockReply)
 	setBool("gateway.tool_status", cfg.Gateway.ToolStatus)
 	setInt("gateway.task_recovery_interval_sec", cfg.Gateway.TaskRecoveryIntervalSec)
+	setInt("trace.replay_retention_days", cfg.Gateway.ReplayRetentionDays)
 
 	// Background workers
 	set("background.provider", cfg.Gateway.BackgroundProvider)

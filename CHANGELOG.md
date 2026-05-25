@@ -6,6 +6,19 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- **Configurable trace replay retention** — new `trace.replay_retention_days`
+  system_config (default 7 via `config.DefaultReplayRetentionDays`). Replaces
+  the prior hard-coded "sweep on every successful run" behavior that wiped
+  `trace_replay_payloads` rows whose `created_at < currentRunStart`, leaving
+  only the latest run per session retryable. Trace `019e5f22-…` was unretry-
+  able 42 minutes after creation because intermediate successful runs had
+  swept its capture. Sweep now uses `now - retention` cutoff when retention
+  > 0, so any completed/failed trace within the window can still be retried.
+  Set days to 0 / negative to keep the legacy runStart behavior. Plumbed
+  through `GatewayConfig` → `agent.Deps` → `LoopConfig` → `Loop.replayRetention`
+  → the sweep call in `loop_run.go`. Seeded into `system_configs` at startup
+  so operators see + edit the value in the UI.
+
 - **Team Analytics — customer name on thread rows + customer-bubble
   timestamps** — operators reviewing captures previously saw only the
   opaque `direct:77448…562035` thread key; they had to infer the customer

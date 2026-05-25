@@ -52,6 +52,7 @@ func (c *Config) ApplySystemConfigs(configs map[string]string) {
 	boolean("gateway.block_reply", &c.Gateway.BlockReply)
 	boolean("gateway.tool_status", &c.Gateway.ToolStatus)
 	integer("gateway.task_recovery_interval_sec", &c.Gateway.TaskRecoveryIntervalSec)
+	integer("trace.replay_retention_days", &c.Gateway.ReplayRetentionDays)
 
 	// Background workers (vault enrichment, consolidation)
 	str("background.provider", &c.Gateway.BackgroundProvider)
