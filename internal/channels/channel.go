@@ -622,6 +622,8 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 		return
 	}
 
+	c.upsertSenderContactFromMetadata(senderID, peerKind, metadata)
+
 	// Derive userID from senderID: strip "|username" suffix if present (legacy Slack compound format).
 	// All channels now pass plain senderID; kept for backward compat with stored compound IDs.
 	userID := senderID
@@ -651,6 +653,26 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 	}
 
 	c.bus.PublishInbound(msg)
+}
+
+// upsertSenderContactFromMetadata records the inbound sender's display name in
+// the contacts store. Reads display_name / sender_display_name from metadata
+// (channels disagree on the key; we tolerate both). 30-min in-memory dedup in
+// ContactCollector keeps this cheap. Skips group peerKind — group member upsert
+// is channel-specific (e.g. Personal's group_contacts.go).
+func (c *BaseChannel) upsertSenderContactFromMetadata(senderID, peerKind string, metadata map[string]string) {
+	if peerKind == "group" {
+		return
+	}
+	cc := c.ContactCollector()
+	if cc == nil || senderID == "" {
+		return
+	}
+	displayName := metadata["display_name"]
+	if displayName == "" {
+		displayName = metadata["sender_display_name"]
+	}
+	cc.EnsureContact(context.Background(), c.Type(), c.name, senderID, senderID, displayName, "", "direct", "user", "", "")
 }
 
 // GroupMember represents a member of a group chat.

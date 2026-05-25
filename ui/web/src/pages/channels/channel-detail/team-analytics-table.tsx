@@ -52,7 +52,7 @@ export function TeamAnalyticsTable({ rows }: TeamAnalyticsTableProps) {
           <tr className="border-b">
             <th className="text-left py-2 pr-3">captured_at</th>
             <th className="text-left py-2 pr-3">thread</th>
-            <th className="text-left py-2 pr-3">customer</th>
+            <th className="text-left py-2 pr-3">contact</th>
             <th className="text-left py-2 pr-3">team_reply</th>
             <th className="text-left py-2 pr-3">judge</th>
           </tr>

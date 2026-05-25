@@ -324,6 +324,31 @@ export function ChannelTeamAnalyticsTab({
             </Button>
           </div>
         </div>
+
+        {(failedCount > 0 || restartHint || status || loadError) && (
+          <div className="flex flex-col gap-2 mb-3">
+            {failedCount > 0 && (
+              <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
+                <span>⚠️ {t("teamAnalytics.rejudgeBanner", { count: failedCount })}</span>
+                <Button size="sm" variant="outline" onClick={rejudgeFailed} disabled={rejudgePolling}>
+                  {t("teamAnalytics.rejudgeButton")}
+                </Button>
+              </div>
+            )}
+            {restartHint && (
+              <div className="text-xs text-amber-600 dark:text-amber-400 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                {restartHint}
+              </div>
+            )}
+            {status && (
+              <div className="text-xs text-muted-foreground">{status}</div>
+            )}
+            {loadError && (
+              <div className="text-xs text-destructive">{loadError}</div>
+            )}
+          </div>
+        )}
+
         <TeamAnalyticsTable rows={rows} />
       </div>
 
@@ -333,26 +358,6 @@ export function ChannelTeamAnalyticsTab({
           channelName={channelName}
         />
       </div>
-
-      {failedCount > 0 && (
-        <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
-          <span>⚠️ {t("teamAnalytics.rejudgeBanner", { count: failedCount })}</span>
-          <Button size="sm" variant="outline" onClick={rejudgeFailed} disabled={rejudgePolling}>
-            {t("teamAnalytics.rejudgeButton")}
-          </Button>
-        </div>
-      )}
-      {restartHint && (
-        <div className="text-xs text-amber-600 dark:text-amber-400 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-          {restartHint}
-        </div>
-      )}
-      {status && (
-        <div className="text-xs text-muted-foreground">{status}</div>
-      )}
-      {loadError && (
-        <div className="text-xs text-destructive">{loadError}</div>
-      )}
     </div>
   );
 }
