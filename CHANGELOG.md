@@ -39,6 +39,21 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   `teamAnalytics.captureRenderFailed`. 15 new vitest cases cover the
   parser scheme-rejection + `categorizeCapture` branches.
 
+- **Traces — Retry button now actually delivers to the channel** — the
+  retry handler (`cmd/gateway_trace_retry.go`) called `ag.Run` but never
+  invoked the consumer's outbound dispatch, so the new RunResult evaporated
+  silently. Trace status flipped to `completed` but the chat received
+  nothing — operators saw "iterations=0, completed" with no `outbound.cached`
+  log line. PR #124's claim "re-invokes through the regular agent pipeline"
+  only covered the LLM half. New `dispatchRetryOutbound` mirrors the
+  consumer's outMsg shape (Channel, ChatID, Content, Media, TenantID from
+  ctx, AgentID, AgentOtherConfig, TraceID) and publishes via `msgBus`.
+  Silent / NO_REPLY content + missing Channel are still skipped to match
+  the consumer's behavior. Group inbounds get `group_id` metadata stamped
+  so `zalo_personal` channel.Send routes via the group API (parity with the
+  inbound-path fallback in `send.go`). 5 regression tests in
+  `gateway_trace_retry_test.go` pin dispatch + skip semantics.
+
 - **Agent — duplicate-media filter now runs in the v3 pipeline finalize too** —
   v3.23.28 added a `PublishedMedia` ctx tracker and a filter in the legacy
   `loop_finalize.go`, but runs actually flow through `runViaPipeline` →

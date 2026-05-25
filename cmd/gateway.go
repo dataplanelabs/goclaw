@@ -391,7 +391,7 @@ func runGateway() {
 	defer exportTokenStore.Stop()
 	agentsH, skillsH, tracesH, mcpH, channelInstancesH, providersH, builtinToolsH, pendingMessagesH, teamEventsH, secureCLIH, secureCLIGrantH, mcpUserCredsH := wireHTTP(pgStores, cfg.Agents.Defaults.Workspace, dataDir, bundledSkillsDir, msgBus, toolsReg, providerRegistry, modelReg, permPE.IsOwner, gatewayAddr, mcpToolLister)
 
-	wireTraceRetry(tracesH, pgStores, agentRouter)
+	wireTraceRetry(tracesH, pgStores, agentRouter, msgBus)
 
 	// Wire dependencies for system prompt preview parity.
 	if agentsH != nil {
