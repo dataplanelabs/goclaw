@@ -117,6 +117,7 @@ export const Methods = {
   CHANNELS_TEAM_REPLIES_GET: "channels.team_replies_get",
   CHANNELS_TEAM_REPLIES_EXPORT_JSONL: "channels.team_replies_export_jsonl",
   CHANNELS_TEAM_REPLIES_REJUDGE: "channels.team_replies_rejudge",
+  CHANNELS_TEAM_REPLIES_GRADE_PENDING: "channels.team_replies_grade_pending",
   CHANNELS_TEAM_CAPTURE_TOGGLE: "channels.team_capture_toggle",
 
   PAIRING_REQUEST: "device.pair.request",

@@ -42,8 +42,12 @@ export interface ChannelTeamAnalyticsTabProps {
     capture_team_replies?: boolean;
     judge_evaluation?: boolean;
     judge_agent_key?: string;
+    judge_evaluation_mode?: string;
+    judge_evaluation_schedule?: string;
   };
 }
+
+const DEFAULT_JUDGE_SCHEDULE = "0 8-18 * * 1-5";
 
 interface ListResponse {
   evaluations: TeamReplyEvaluation[];
@@ -71,6 +75,8 @@ export function ChannelTeamAnalyticsTab({
   const [capture, setCapture] = useState(initialConfig?.capture_team_replies ?? false);
   const [judge, setJudge] = useState(initialConfig?.judge_evaluation ?? false);
   const [judgeKey, setJudgeKey] = useState(initialConfig?.judge_agent_key ?? "");
+  const [judgeMode, setJudgeMode] = useState(initialConfig?.judge_evaluation_mode ?? "per_event");
+  const [judgeSchedule, setJudgeSchedule] = useState(initialConfig?.judge_evaluation_schedule ?? DEFAULT_JUDGE_SCHEDULE);
   const [restartHint, setRestartHint] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [agents, setAgents] = useState<AgentListItem[]>([]);
@@ -90,6 +96,8 @@ export function ChannelTeamAnalyticsTab({
     setCapture(initialConfig?.capture_team_replies ?? false);
     setJudge(initialConfig?.judge_evaluation ?? false);
     setJudgeKey(initialConfig?.judge_agent_key ?? "");
+    setJudgeMode(initialConfig?.judge_evaluation_mode ?? "per_event");
+    setJudgeSchedule(initialConfig?.judge_evaluation_schedule ?? DEFAULT_JUDGE_SCHEDULE);
   }, [initialConfig?.capture_team_replies, initialConfig?.judge_evaluation, initialConfig?.judge_agent_key, dirty]);
 
   const load = useCallback(async () => {
@@ -144,6 +152,11 @@ export function ChannelTeamAnalyticsTab({
     [rows],
   );
 
+  const pendingCount = useMemo(
+    () => rows.filter((r) => !r.judge_completed_at && !r.judge_error).length,
+    [rows],
+  );
+
   const saveDisabled =
     judge && (judgeKey.trim() === "" || judgeKey === CREATE_NEW_AGENT_SENTINEL);
 
@@ -161,12 +174,21 @@ export function ChannelTeamAnalyticsTab({
     setDirty(true);
   }
 
+  async function gradePending() {
+    if (rejudgePolling) return;
+    await runJudgeBatch(Methods.CHANNELS_TEAM_REPLIES_GRADE_PENDING);
+  }
+
   async function rejudgeFailed() {
     if (rejudgePolling) return;
+    await runJudgeBatch(Methods.CHANNELS_TEAM_REPLIES_REJUDGE);
+  }
+
+  async function runJudgeBatch(method: string) {
     setStatus(null);
     let resp: { rejudged: number; rejudged_ids?: string[]; since_ts?: string; batch_capped: boolean };
     try {
-      resp = await ws.call(Methods.CHANNELS_TEAM_REPLIES_REJUDGE, {
+      resp = await ws.call(method, {
         channel_instance_id: channelInstanceId,
       });
     } catch (err) {
@@ -223,6 +245,8 @@ export function ChannelTeamAnalyticsTab({
         capture_team_replies: capture,
         judge_evaluation: judge,
         judge_agent_key: judgeKey.trim(),
+        judge_evaluation_mode: judgeMode,
+        judge_evaluation_schedule: judgeSchedule.trim(),
       });
       setStatus(t("teamAnalytics.configSaved"));
       setDirty(false);
@@ -283,7 +307,39 @@ export function ChannelTeamAnalyticsTab({
             </SelectContent>
           </Select>
         </div>
-        <div className="sm:col-span-2 flex justify-end">
+        <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="judge-mode">{t("teamAnalytics.judgeModeLabel")}</Label>
+            <Select value={judgeMode} onValueChange={(v) => { setJudgeMode(v); setDirty(true); }}>
+              <SelectTrigger id="judge-mode" className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="per_event">{t("teamAnalytics.judgeModePerEvent")}</SelectItem>
+                <SelectItem value="scheduled">{t("teamAnalytics.judgeModeScheduled")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {judgeMode === "scheduled" && (
+            <div>
+              <Label htmlFor="judge-schedule">{t("teamAnalytics.judgeScheduleLabel")}</Label>
+              <input
+                id="judge-schedule"
+                value={judgeSchedule}
+                onChange={(e) => { setJudgeSchedule(e.target.value); setDirty(true); }}
+                placeholder={DEFAULT_JUDGE_SCHEDULE}
+                className="text-base md:text-sm mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 shadow-xs"
+                title={t("teamAnalytics.judgeScheduleHint")}
+              />
+            </div>
+          )}
+        </div>
+        <div className="sm:col-span-2 flex justify-end gap-2">
+          {judgeMode === "scheduled" && pendingCount > 0 && (
+            <Button variant="outline" onClick={gradePending} disabled={rejudgePolling}>
+              {t("teamAnalytics.gradePendingButton", { count: pendingCount })}
+            </Button>
+          )}
           <Button
             onClick={saveToggle}
             disabled={saveDisabled || rejudgePolling}

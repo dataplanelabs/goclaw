@@ -42,6 +42,7 @@ type PollWorker struct {
 
 	customerLast func(ctx context.Context, sessionKey string) string
 	selfUID      string
+	judgeMode    string
 
 	stopOnce sync.Once
 	stopCh   chan struct{}
@@ -57,6 +58,7 @@ type PollWorkerDeps struct {
 	Atomic       store.AtomicTeamReplyWriter
 	Bus          eventbus.DomainEventBus
 	CustomerLast func(ctx context.Context, sessionKey string) string
+	JudgeMode    string // "per_event" (default) or "scheduled" — when scheduled, publish is suppressed; JudgeScheduler grades pending rows on cron tick
 }
 
 func NewPollWorker(instanceID uuid.UUID, name, tenantID, channelType, selfUID string,
@@ -77,6 +79,7 @@ func NewPollWorker(instanceID uuid.UUID, name, tenantID, channelType, selfUID st
 		bus:          deps.Bus,
 		customerLast: deps.CustomerLast,
 		selfUID:      selfUID,
+		judgeMode:    deps.JudgeMode,
 		cursors:      make(map[string]int64),
 		stopCh:       make(chan struct{}),
 	}
@@ -290,7 +293,7 @@ func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessi
 			CapturedAt:        captured,
 		},
 	}
-	if w.bus != nil {
+	if w.bus != nil && w.judgeMode != "scheduled" {
 		w.bus.Publish(event)
 	}
 	return nil

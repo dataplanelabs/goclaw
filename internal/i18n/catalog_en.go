@@ -344,6 +344,7 @@ func init() {
 		TeamCaptureRPCInvalidConfig:   "invalid capture config: %s",
 		TeamCaptureJudgeAgentNotFound: "judge agent %q not found in this tenant — create it first or pick an existing agent_key",
 		TeamCaptureJudgeKeyRequired:   "judge_agent_key is required when judge_evaluation is enabled",
+		TeamCaptureScheduleInvalid:    "invalid judge schedule %q — use a 5-field cron expression",
 		TeamEvalNotFound:              "team reply evaluation not found",
 		TeamEvalJudgeError:            "judge evaluation failed: %s",
 

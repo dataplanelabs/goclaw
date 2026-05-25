@@ -667,6 +667,12 @@
     "rejudgeBatchCapped": "batch capped at 100; click again for next batch",
     "rejudgeProgress": "Re-judging {{total}} — {{graded}} graded · {{failed}} failed · {{retrying}} retrying",
     "rejudgeComplete": "Re-judged: {{graded}} graded · {{failed}} failed · {{retry_exhausted}} retry exhausted",
-    "rejudgePollFailed": "Re-judge dispatched but status check failed — refresh the table manually"
+    "rejudgePollFailed": "Re-judge dispatched but status check failed — refresh the table manually",
+    "judgeModeLabel": "Judge mode",
+    "judgeModePerEvent": "Per message (real-time)",
+    "judgeModeScheduled": "Scheduled (batch)",
+    "judgeScheduleLabel": "Schedule (cron)",
+    "judgeScheduleHint": "5-field cron expression in Asia/Saigon. Default: hourly 8am-6pm Mon-Fri.",
+    "gradePendingButton": "Grade {{count}} pending now"
   }
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adhocore/gronx"
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
@@ -35,6 +36,7 @@ func (m *TeamRepliesMethods) Register(router *gateway.MethodRouter) {
 	router.Register(protocol.MethodChannelsTeamRepliesGet, m.handleGet)
 	router.Register(protocol.MethodChannelsTeamRepliesExportJSONL, m.handleExportJSONL)
 	router.Register(protocol.MethodChannelsTeamRepliesRejudge, m.handleRejudge)
+	router.Register(protocol.MethodChannelsTeamRepliesGradePending, m.handleGradePending)
 	router.Register(protocol.MethodChannelsTeamCaptureToggle, m.handleToggle)
 }
 
@@ -126,10 +128,12 @@ func (m *TeamRepliesMethods) handleGet(ctx context.Context, client *gateway.Clie
 
 func (m *TeamRepliesMethods) handleToggle(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	var p struct {
-		ChannelInstanceID  string `json:"channel_instance_id"`
-		CaptureTeamReplies *bool  `json:"capture_team_replies,omitempty"`
-		JudgeEvaluation    *bool  `json:"judge_evaluation,omitempty"`
-		JudgeAgentKey      string `json:"judge_agent_key,omitempty"`
+		ChannelInstanceID       string `json:"channel_instance_id"`
+		CaptureTeamReplies      *bool  `json:"capture_team_replies,omitempty"`
+		JudgeEvaluation         *bool  `json:"judge_evaluation,omitempty"`
+		JudgeAgentKey           string `json:"judge_agent_key,omitempty"`
+		JudgeEvaluationMode     string `json:"judge_evaluation_mode,omitempty"`
+		JudgeEvaluationSchedule string `json:"judge_evaluation_schedule,omitempty"`
 	}
 	decode(req, &p)
 	if !m.requireAdmin(ctx, client, req) {
@@ -150,6 +154,24 @@ func (m *TeamRepliesMethods) handleToggle(ctx context.Context, client *gateway.C
 	judgeKey := strings.TrimSpace(p.JudgeAgentKey)
 	if judgeKey != "" {
 		partial["judge_agent_key"] = judgeKey
+	}
+	mode := strings.TrimSpace(p.JudgeEvaluationMode)
+	if mode != "" {
+		if mode != "per_event" && mode != "scheduled" {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.TeamCaptureScheduleInvalid, "judge_evaluation_mode must be per_event or scheduled")))
+			return
+		}
+		partial["judge_evaluation_mode"] = mode
+	}
+	schedule := strings.TrimSpace(p.JudgeEvaluationSchedule)
+	if schedule != "" {
+		if !gronx.New().IsValid(schedule) {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.TeamCaptureScheduleInvalid, schedule)))
+			return
+		}
+		partial["judge_evaluation_schedule"] = schedule
 	}
 	if len(partial) == 0 {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
@@ -314,5 +336,74 @@ func (m *TeamRepliesMethods) handleRejudge(ctx context.Context, client *gateway.
 		"rejudged_ids": ids,
 		"since_ts":     sinceTs,
 		"batch_capped": len(failed) == rejudgeBatchCap,
+	}))
+}
+
+func (m *TeamRepliesMethods) handleGradePending(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	var p struct {
+		ChannelInstanceID string `json:"channel_instance_id"`
+		Limit             int    `json:"limit,omitempty"`
+	}
+	decode(req, &p)
+	if !m.requireAdmin(ctx, client, req) {
+		return
+	}
+	inst := m.resolveInstance(ctx, client, req, p.ChannelInstanceID)
+	if inst == nil {
+		return
+	}
+	limit := p.Limit
+	if limit <= 0 || limit > rejudgeBatchCap {
+		limit = rejudgeBatchCap
+	}
+	all, err := m.evals.ListPendingJudge(ctx, limit*4)
+	if err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
+		return
+	}
+	pending := make([]store.TeamReplyEvaluation, 0, limit)
+	for _, r := range all {
+		if r.ChannelInstanceID != inst.ID.String() {
+			continue
+		}
+		pending = append(pending, r)
+		if len(pending) >= limit {
+			break
+		}
+	}
+	sinceTs := time.Now().UTC().Format(time.RFC3339Nano)
+	ids := make([]string, len(pending))
+	for i, e := range pending {
+		ids[i] = e.ID
+	}
+	if m.bus != nil {
+		for _, e := range pending {
+			ev := eventbus.DomainEvent{
+				ID:        uuid.NewString(),
+				Type:      eventbus.EventTeamReplyObserved,
+				SourceID:  eventbus.TeamReplyObservedSourceID(e.ChannelInstanceID, e.TeamMsgID) + "?ondemand=" + uuid.NewString()[:8],
+				TenantID:  e.TenantID,
+				Timestamp: time.Now().UTC(),
+				Payload: eventbus.TeamReplyObservedPayload{
+					EvaluationID:      e.ID,
+					TenantID:          e.TenantID,
+					ChannelInstanceID: e.ChannelInstanceID,
+					ChannelName:       inst.Name,
+					ThreadKey:         e.ThreadKey,
+					SessionKey:        e.SessionKey,
+					TeamMsgID:         e.TeamMsgID,
+					TeamReply:         e.TeamReply,
+					CustomerMessage:   e.CustomerMessage,
+					CapturedAt:        e.CapturedAt,
+				},
+			}
+			m.bus.Publish(ev)
+		}
+	}
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
+		"rejudged":     len(pending),
+		"rejudged_ids": ids,
+		"since_ts":     sinceTs,
+		"batch_capped": len(pending) == limit,
 	}))
 }

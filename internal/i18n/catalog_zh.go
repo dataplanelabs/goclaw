@@ -344,6 +344,7 @@ func init() {
 		TeamCaptureRPCInvalidConfig:   "采集配置无效：%s",
 		TeamCaptureJudgeAgentNotFound: "租户中找不到 judge agent %q — 请先创建该 agent 或选择已有 agent_key",
 		TeamCaptureJudgeKeyRequired:   "启用 judge_evaluation 时必须提供 judge_agent_key",
+		TeamCaptureScheduleInvalid:    "无效的 judge 计划 %q — 请使用 5 字段 cron 表达式",
 		TeamEvalNotFound:              "未找到团队回复评估",
 		TeamEvalJudgeError:            "评估失败：%s",
 
