@@ -240,18 +240,19 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 
 	var lines []string
 
-	// 1. Identity — channel-aware context (use ChannelType for clarity, fallback to Channel)
-	channelLabel := cfg.ChannelType
-	if channelLabel == "" {
-		channelLabel = cfg.Channel
+	identityLabel := cfg.ChannelType
+	if identityLabel == "" {
+		identityLabel = cfg.Channel
 	}
-	if channelLabel != "" {
+	replyTargetChannel := cfg.Channel
+	if replyTargetChannel == "" {
+		replyTargetChannel = cfg.ChannelType
+	}
+	if identityLabel != "" {
 		chatType := "a direct chat"
 		if cfg.PeerKind == "group" {
 			chatType = "a group chat"
 			if cfg.ChatTitle != "" {
-				// Sanitize: strip quotes/newlines, truncate to prevent prompt injection
-				// (group admins control the title).
 				title := strings.NewReplacer("\"", "", "\n", " ", "\r", "").Replace(cfg.ChatTitle)
 				if len([]rune(title)) > 100 {
 					title = string([]rune(title)[:100])
@@ -259,12 +260,9 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 				chatType = fmt.Sprintf("group chat \"%s\"", title)
 			}
 		}
-		lines = append(lines, fmt.Sprintf("You are a personal assistant running in %s (%s).", channelLabel, chatType))
+		lines = append(lines, fmt.Sprintf("You are a personal assistant running in %s (%s).", identityLabel, chatType))
 		lines = append(lines, "")
 
-		// Inject explicit reply-target block so the LLM has a copy-paste-ready
-		// value to compare against when deciding to forward. Pairs with the
-		// MessageTool cross-target guard.
 		if cfg.ChatID != "" {
 			kind := "direct"
 			if cfg.PeerKind == "group" {
@@ -272,7 +270,7 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 			}
 			lines = append(lines,
 				"<current_reply_target>",
-				fmt.Sprintf("  channel: %s", channelLabel),
+				fmt.Sprintf("  channel: %s", replyTargetChannel),
 				fmt.Sprintf("  chat_id: %s", cfg.ChatID),
 				fmt.Sprintf("  kind: %s", kind),
 				"</current_reply_target>",
