@@ -269,7 +269,8 @@ type AbortResult struct {
 	Stopped         bool // graceful stop within abortGraceTimeout
 	Forced          bool // timeout exceeded; trace force-marked cancelled
 	AlreadyAborting bool // 2nd click while phase 2 still in flight
-	NotFound        bool // run never existed or already finished
+	NotFound        bool // no activeRuns entry AND (no DB row OR row already terminal)
+	Orphaned        bool // no activeRuns entry AND DB row status='running' — force-marked cancelled
 	Unauthorized    bool // sessionKey mismatch
 }
 
