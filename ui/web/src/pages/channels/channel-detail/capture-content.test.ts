@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { categorizeCapture } from "./capture-content";
+import { categorizeCapture, preserveLineBreaks } from "./capture-content";
 
 describe("categorizeCapture", () => {
   it("empty string → empty", () => {
@@ -26,5 +26,22 @@ describe("categorizeCapture", () => {
   });
   it("file block → rich", () => {
     expect(categorizeCapture('<file name="a.txt" mime="text/plain">body</file>')).toBe("rich");
+  });
+});
+
+describe("preserveLineBreaks", () => {
+  it("single \\n → two-space + \\n (markdown hard break)", () => {
+    expect(preserveLineBreaks("a\nb")).toBe("a  \nb");
+  });
+  it("multi-line chat → all newlines become hard breaks", () => {
+    expect(preserveLineBreaks("chao shop\nhi shop\nhello\nhi shop")).toBe(
+      "chao shop  \nhi shop  \nhello  \nhi shop"
+    );
+  });
+  it("no newlines → unchanged", () => {
+    expect(preserveLineBreaks("single line")).toBe("single line");
+  });
+  it("empty → empty", () => {
+    expect(preserveLineBreaks("")).toBe("");
   });
 });
