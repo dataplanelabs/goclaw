@@ -43,6 +43,52 @@ func TestRenderStyles(t *testing.T) {
 		{"url_escapes_italic", "see https://a.com/foo_bar_baz for x", "see https://a.com/foo_bar_baz for x", nil},
 		{"email_escapes_italic", "ping alice_doe@example.com", "ping alice_doe@example.com", nil},
 		{"inline_code_kept_plain", "use `foo()` here", "use foo() here", nil},
+
+		// Fragment-bold: ** glued to a word char on either side renders as
+		// broken partial-word bold on Zalo. Strip markers, emit no style.
+		{"fragment_bold_both_sides_ascii", "Bo**ld**er", "Bolder", nil},
+		{"fragment_bold_left_glued", "pre**bold**", "prebold", nil},
+		{"fragment_bold_right_glued", "**bold**post", "boldpost", nil},
+		{
+			"fragment_bold_vietnamese",
+			"Dễ ove**rtrain nếu khôn**g kiểm soát",
+			"Dễ overtrain nếu không kiểm soát",
+			nil,
+		},
+		{
+			"clean_bold_with_punct_preserved",
+			"this is **bold**, ok?",
+			"this is bold, ok?",
+			[]Style{{8, 4, StyleBold}},
+		},
+		{"triple_bold_glued_left_unchanged", "pre***x***", "prex", []Style{{3, 1, StyleBold}, {3, 1, StyleItalic}}},
+
+		// List spacing: blank lines bridging list ↔ non-list collapse so
+		// Zalo's lst_1/lst_2 native padding isn't doubled by an explicit gap.
+		{
+			"list_blank_before_collapsed",
+			"intro:\n\n- a\n- b",
+			"intro:\na\nb",
+			[]Style{{7, 3, StyleListUnordered}},
+		},
+		{
+			"list_blank_after_collapsed",
+			"- a\n- b\n\nnext",
+			"a\nb\nnext",
+			[]Style{{0, 3, StyleListUnordered}},
+		},
+		{
+			"list_blank_both_sides_collapsed",
+			"intro:\n\n- a\n- b\n\nnext",
+			"intro:\na\nb\nnext",
+			[]Style{{7, 3, StyleListUnordered}},
+		},
+		{
+			"list_blank_between_same_kind_preserved",
+			"- a\n- b\n\n- c\n- d",
+			"a\nb\n\nc\nd",
+			[]Style{{0, 3, StyleListUnordered}, {5, 3, StyleListUnordered}},
+		},
 	}
 	for _, c := range cases {
 		c := c

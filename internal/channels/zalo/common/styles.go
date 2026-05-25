@@ -3,6 +3,8 @@ package common
 import (
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	pkgproto "github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
@@ -48,6 +50,10 @@ func RenderStyles(text string) (string, []Style) {
 	text = reHeader.ReplaceAllString(text, "$1")
 	text = reBlockquote.ReplaceAllString(text, "$1")
 	text = reHorizontalRule.ReplaceAllString(text, "")
+
+	// Drop `**…**` markers glued mid-word (e.g. `ove**rtrain**g`) — emitting
+	// a Style over the fragment renders as broken partial bold on Zalo.
+	text = stripFragmentBoldStar(text)
 
 	// Walk inline emphasis patterns in PRIORITY order — outer-first.
 	out, styles := strings.Builder{}, []Style{}
@@ -185,15 +191,30 @@ func emitListStyles(text string) (string, []Style) {
 		body     string
 		original string
 	}
-	classified := make([]classifiedLine, len(lines))
+	raw := make([]classifiedLine, len(lines))
 	for i, line := range lines {
 		if m := reListUnordered.FindStringSubmatchIndex(line); m != nil {
-			classified[i] = classifiedLine{kindUnordered, line[m[2]:m[3]], line[m[4]:m[5]], line}
+			raw[i] = classifiedLine{kindUnordered, line[m[2]:m[3]], line[m[4]:m[5]], line}
 		} else if m := reListOrdered.FindStringSubmatchIndex(line); m != nil {
-			classified[i] = classifiedLine{kindOrdered, line[m[2]:m[3]], line[m[4]:m[5]], line}
+			raw[i] = classifiedLine{kindOrdered, line[m[2]:m[3]], line[m[4]:m[5]], line}
 		} else {
-			classified[i] = classifiedLine{kind: kindOther, original: line}
+			raw[i] = classifiedLine{kind: kindOther, original: line}
 		}
+	}
+
+	// Drop blank lines that bridge list ↔ non-list (Zalo's lst_1/lst_2 style
+	// already adds visual padding; explicit blank lines stack into a double
+	// gap). Keep blanks between two list runs — they're intentional run breaks.
+	classified := make([]classifiedLine, 0, len(raw))
+	for i, c := range raw {
+		if c.kind == kindOther && strings.TrimSpace(c.original) == "" {
+			prevIsList := i > 0 && raw[i-1].kind != kindOther
+			nextIsList := i+1 < len(raw) && raw[i+1].kind != kindOther
+			if prevIsList != nextIsList {
+				continue
+			}
+		}
+		classified = append(classified, c)
 	}
 
 	var out strings.Builder
@@ -335,4 +356,55 @@ func restorePlaceholders(text string, urls, inlineCodes, codeBlocks []string) st
 		text = strings.Replace(text, placeholder("CB", i), codeBlocks[i], 1)
 	}
 	return text
+}
+
+// stripFragmentBoldStar removes `**…**` whose markers are glued to a
+// letter/digit on either side (e.g. `ove**rtrain**g`). Such spans render as
+// broken partial-word bold on Zalo. Triple-star `***x***` is left intact so
+// the scan pass can still emit bold+italic for it.
+func stripFragmentBoldStar(text string) string {
+	matches := reBoldStar.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
+	var out strings.Builder
+	cursor := 0
+	for _, m := range matches {
+		matchStart, matchEnd := m[0], m[1]
+		innerStart, innerEnd := m[2], m[3]
+		// Skip triple-emphasis (***...***): outer rune is another `*`.
+		if matchStart > 0 && text[matchStart-1] == '*' {
+			continue
+		}
+		if matchEnd < len(text) && text[matchEnd] == '*' {
+			continue
+		}
+		if !boundaryGluedToWord(text, matchStart, true) && !boundaryGluedToWord(text, matchEnd, false) {
+			continue
+		}
+		out.WriteString(text[cursor:matchStart])
+		out.WriteString(text[innerStart:innerEnd])
+		cursor = matchEnd
+	}
+	if cursor == 0 {
+		return text
+	}
+	out.WriteString(text[cursor:])
+	return out.String()
+}
+
+func boundaryGluedToWord(text string, idx int, before bool) bool {
+	var r rune
+	if before {
+		if idx <= 0 {
+			return false
+		}
+		r, _ = utf8.DecodeLastRuneInString(text[:idx])
+	} else {
+		if idx >= len(text) {
+			return false
+		}
+		r, _ = utf8.DecodeRuneInString(text[idx:])
+	}
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }
