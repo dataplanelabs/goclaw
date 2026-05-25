@@ -4,6 +4,28 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ## Unreleased
 
+### Fixed
+
+- **Agent answers no longer hard-code UTC for time/date questions** — system
+  prompt's `Current date:` line was always emitting `(UTC)` regardless of any
+  configured timezone, forcing the model to do error-prone TZ arithmetic on
+  the user's side and producing wrong day-of-week answers (e.g. saying "Sunday"
+  for a Monday request). Adds channel-instance-level timezone
+  (`channel_instances.config.timezone` JSONB key) with fallback chain:
+  channel config → workspace `cron.default_timezone` → UTC. Resolved once per
+  turn via `RunContext.UserTimezone` so the per-iteration `buildMessages`
+  path stays DB-free. Bootstrap USER.md pre-fill (`internal/bootstrap/seed_store.go`)
+  shares the same resolution source. Time format also gains `HH:MM` so the
+  model no longer needs to guess the time of day. Verified against trace
+  `019e5d02-aa7c-748f-8d3a-b0c9c8b35f8f` on the cluster.
+  No schema migration — channel_instances.config is already JSONB. Backfill
+  per-channel via:
+  ```sql
+  UPDATE channel_instances
+  SET config = config || '{"timezone":"Asia/Ho_Chi_Minh"}'::jsonb
+  WHERE name = '<channel-name>';
+  ```
+
 ### Added
 
 - **Skill ownership attribution + force_imperative overwrite gate** — `POST /v1/skills/upload`
