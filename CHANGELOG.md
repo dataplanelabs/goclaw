@@ -68,6 +68,23 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   to accept a table alias so the joined `e.*` columns disambiguate cleanly
   in WHERE. New tests: 2 for `aggregateThreads.customer_name` resolution.
 
+### Added
+
+- **Team Analytics — judge-error visibility + visible refresh status** —
+  P0 UX fixes from live operator feedback on `zalo-oa-annhien`. (1) Failed
+  judge evaluations now show the actual error message: hover tooltip on
+  the "Failed" badge + inline truncated error (120 char cap) below the
+  team-reply bubble. Operators stop guessing why "3 evaluations failed"
+  and see e.g. `judge_error="embedding API error 429"`. (2) Refresh UX —
+  the cryptic `↻` icon next to the thread filter is now a labelled
+  `↻ Refresh` button with a spinner when fetch is in flight, plus a new
+  `Refreshed Xs ago` indicator alongside it. Auto-refresh (30s interval)
+  was already in place but invisible to operators; this surfaces the
+  cadence so they know fresh data is arriving without having to click.
+  Tick state updates every 10s for stable display. 5 new i18n keys
+  (en/vi/zh): lastRefreshed, refreshNeverYet, refreshNow, refreshButton,
+  refreshJustNow.
+
 ### Fixed
 
 - **Team Analytics — customer multi-message turns + file attachments now
