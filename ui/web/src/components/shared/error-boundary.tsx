@@ -14,6 +14,21 @@ interface State {
   retryKey: number;
 }
 
+// Stale-chunk patterns raised by browsers when Vite-hashed assets from a prior
+// deploy are referenced by a still-mounted page after the deploy rotated them.
+const chunkErrorPatterns = [
+  /Failed to fetch dynamically imported module/i,
+  /Loading chunk \d+ failed/i,
+  /ChunkLoadError/i,
+  /Importing a module script failed/i,
+];
+const reloadGuardKey = "errorBoundary:chunkReloadTried";
+
+function isStaleChunkError(error: Error): boolean {
+  const msg = `${error?.name ?? ""} ${error?.message ?? ""}`;
+  return chunkErrorPatterns.some((re) => re.test(msg));
+}
+
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, retryKey: 0 };
 
@@ -23,9 +38,21 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[ErrorBoundary]", error, info.componentStack);
-    // Surface the error name + first line of message via toast so users see a
-    // visual indicator instead of just the fallback card. Full stack stays in
-    // console for devs; toast keeps it short to avoid wall-of-text.
+
+    // Stale-chunk recovery: one-shot reload via sessionStorage flag so a
+    // genuinely-broken chunk (404 on both old and new deploy) can't loop.
+    if (isStaleChunkError(error)) {
+      try {
+        if (sessionStorage.getItem(reloadGuardKey) !== "1") {
+          sessionStorage.setItem(reloadGuardKey, "1");
+          window.location.reload();
+          return;
+        }
+      } catch {
+        // sessionStorage unavailable (private mode, etc.) — fall through.
+      }
+    }
+
     const msg = (error.message || "Unknown error").split("\n")[0]?.slice(0, 200);
     toast.error(error.name || "Render error", msg);
   }
