@@ -64,6 +64,7 @@ function CaptureBubbles({
         <div className="flex">
           <div className="max-w-[80%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm">
             <CaptureContent content={capture.customer_message ?? ""} role="user" />
+            <div className="mt-1 text-[10px] text-muted-foreground">{time}</div>
           </div>
         </div>
       )}

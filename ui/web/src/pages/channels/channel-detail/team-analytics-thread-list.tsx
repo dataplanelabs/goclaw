@@ -56,9 +56,18 @@ export function TeamAnalyticsThreadList({ threads, threadFilter }: TeamAnalytics
               <Accordion.Trigger className="group flex w-full items-center justify-between gap-3 px-2 py-3 text-left hover:bg-muted/50 transition">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-                  <div className="font-mono text-xs text-muted-foreground truncate">
-                    {truncateThreadKey(g.thread_key)}
-                  </div>
+                  {g.customer_name ? (
+                    <>
+                      <div className="text-sm font-medium truncate">{g.customer_name}</div>
+                      <div className="font-mono text-2xs text-muted-foreground/70 truncate hidden sm:block" title={g.thread_key}>
+                        {truncateThreadKey(g.thread_key)}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="font-mono text-xs text-muted-foreground truncate">
+                      {truncateThreadKey(g.thread_key)}
+                    </div>
+                  )}
                   <div className="text-xs text-muted-foreground whitespace-nowrap">
                     {t("teamAnalytics.threadCaptureCount", { count: g.capture_count })}
                   </div>

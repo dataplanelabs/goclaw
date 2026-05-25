@@ -81,6 +81,20 @@ describe("aggregateThreads", () => {
   it("empty input → empty groups", () => {
     expect(aggregateThreads([])).toEqual([]);
   });
+
+  it("customer_name picks first non-empty across captures of a thread", () => {
+    const rows = [
+      row({ id: "a", thread_key: "t1", customer_name: "" }),
+      row({ id: "b", thread_key: "t1", customer_name: "Bình" }),
+      row({ id: "c", thread_key: "t1", customer_name: "Bình stale" }),
+    ];
+    expect(aggregateThreads(rows)[0]?.customer_name).toBe("Bình");
+  });
+
+  it("customer_name is empty when no capture has one", () => {
+    const rows = [row({ id: "a", thread_key: "t1" })];
+    expect(aggregateThreads(rows)[0]?.customer_name).toBe("");
+  });
 });
 
 describe("scoreColorClass", () => {

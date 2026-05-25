@@ -236,6 +236,7 @@ func serializeEval(e store.TeamReplyEvaluation) map[string]any {
 		"captured_at":         e.CapturedAt.UTC().Format(time.RFC3339),
 		"updated_at":          e.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		"customer_message":    e.CustomerMessage,
+		"customer_name":       e.CustomerName,
 		"team_reply":          e.TeamReply,
 	}
 	if e.HypothesizedBotReply != nil {
