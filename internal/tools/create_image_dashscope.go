@@ -88,6 +88,13 @@ func callDashScopeImageGen(ctx context.Context, apiKey, apiBase, model, prompt s
 
 	// wan2.x multimodal-generation requires content as []part — string form
 	// returns 400 "Input should be a valid list: input.messages.0.content".
+	//
+	// enable_interleave: Wan 2.x defaults this to false, which puts the model
+	// in image-edit mode and requires 1-4 images in the last message. For
+	// text-only generation we must set it to true; otherwise the API rejects
+	// with "When 'enable_interleave' is False, the last message must contain
+	// 1 to 4 images. Got 0 images." Refs path (Phase 04) will set false +
+	// pass image content parts; for now we always send text-only here.
 	body := map[string]any{
 		"model": model,
 		"input": map[string]any{
@@ -96,9 +103,10 @@ func callDashScopeImageGen(ctx context.Context, apiKey, apiBase, model, prompt s
 			},
 		},
 		"parameters": map[string]any{
-			"n":             1,
-			"size":          size,
-			"prompt_extend": promptExtend,
+			"n":                 1,
+			"size":              size,
+			"prompt_extend":     promptExtend,
+			"enable_interleave": true,
 		},
 	}
 
