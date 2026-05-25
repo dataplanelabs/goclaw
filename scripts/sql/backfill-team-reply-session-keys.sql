@@ -30,7 +30,7 @@ WITH legacy AS (
            a.agent_key,
            'agent:' || a.agent_key || ':' || ci.name || ':' || e.thread_key AS new_key
     FROM   team_reply_evaluations e
-    JOIN   channel_instances ci ON ci.id::text = e.channel_instance_id
+    JOIN   channel_instances ci ON ci.id = e.channel_instance_id
     JOIN   agents            a  ON a.id       = ci.agent_id
     WHERE  e.session_key LIKE 'zalo_oa:%'
 ),
