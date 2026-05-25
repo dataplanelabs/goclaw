@@ -118,6 +118,30 @@ func (s *seedStubStore) PropagateContextFile(_ context.Context, _ uuid.UUID, _ s
 }
 // ---- Tests ----
 
+func TestShouldSkipBootstrap(t *testing.T) {
+	cases := []struct {
+		name string
+		meta *ChannelMeta
+		want bool
+	}{
+		{"nil meta", nil, false},
+		{"empty display name", &ChannelMeta{ChannelType: "zalo_personal"}, false},
+		{"pancake with name", &ChannelMeta{ChannelType: "pancake", DisplayName: "Alice"}, true},
+		{"zalo_personal with name", &ChannelMeta{ChannelType: "zalo_personal", DisplayName: "Van Duc"}, true},
+		{"telegram with name", &ChannelMeta{ChannelType: "telegram", DisplayName: "Bob"}, true},
+		{"whatsapp with name", &ChannelMeta{ChannelType: "whatsapp", DisplayName: "Carol"}, true},
+		{"feishu with name", &ChannelMeta{ChannelType: "feishu", DisplayName: "Dave"}, true},
+		{"unknown channel with name", &ChannelMeta{ChannelType: "novel-channel", DisplayName: "Eve"}, true},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldSkipBootstrap(tt.meta); got != tt.want {
+				t.Errorf("shouldSkipBootstrap(%+v) = %v, want %v", tt.meta, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildPrefilledUser_TimezonePriority(t *testing.T) {
 	cases := []struct {
 		name      string

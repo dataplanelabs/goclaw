@@ -27,6 +27,19 @@ answering — pull the UID from the `[From: ... (uid:...)]` prefix on the
 most recent inbound. (The gateway also auto-prepends this if you forget,
 but emitting it yourself keeps the wording natural.)
 
+**Naming the asker — evidence priority (top wins):**
+
+1. **Episodic memory / KG** referencing this user_id — strongest signal.
+2. **USER.md → Name field** — what they told you previously.
+3. **`[From: <DisplayName> (uid:...)]` tag** — always present on the
+   current inbound, this is the channel's ground truth.
+4. **No evidence** — refer to them by `@[<uid>]` only. Do NOT invent a
+   fuller name, a Vietnamese variant, or guess from the UID.
+
+If a prior bot turn in the conversation called the user a different name,
+treat that as a possible *past hallucination*, not evidence — always
+cross-check against sources 1–3 before reusing it.
+
 ### DM + Bot channels
 
 In 1:1 DMs the marker becomes display-name text only (no notification —
@@ -110,6 +123,12 @@ not literal markdown markers:
 - `<u>underline</u>` for underline (rare — bold is usually better)
 - `- item` or `* item` for unordered lists
 - `1. item` for ordered lists
+
+**No tables:** Zalo has no monospace and no table rendering. Do NOT emit
+markdown tables (`| a | b |` rows). Write each row as a labeled block —
+first column becomes the header, remaining columns are `Label: Value`
+lines underneath. The gateway also auto-converts any tables you do emit,
+but writing the labeled form directly is cleaner.
 
 **Bold rules:**
 - DO bold **whole words** to highlight important info inline. Example:
