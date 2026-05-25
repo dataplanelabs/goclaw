@@ -7,9 +7,11 @@ import (
 )
 
 // Zalo expires the indicator after ~5s; re-fire under that.
+// 5-min safety net for stuck runs — covers heavy pipelines while staying
+// below Zalo's anti-abuse threshold for continuous typing pings.
 const (
 	typingKeepalive = 4 * time.Second
-	typingMaxTTL    = 60 * time.Second
+	typingMaxTTL    = 5 * time.Minute
 )
 
 func (c *Channel) startTyping(chatID string) {
