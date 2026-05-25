@@ -645,6 +645,7 @@
     "judgeAgent": "Judge agent",
     "selectJudgeAgent": "Select judge agent…",
     "createNewJudgeAgent": "+ Create new judge agent…",
+    "judgeMisconfiguredBanner": "Auto-grade is enabled but the configured judge agent doesn't exist in this tenant. Pick a valid one below.",
     "diffDistribution": "Diff score distribution",
     "recentCaptures": "Recent captures",
     "filterByThread": "Filter by thread",

@@ -531,6 +531,7 @@
     "judgeAgent": "评分 Agent",
     "selectJudgeAgent": "选择评分 Agent…",
     "createNewJudgeAgent": "+ 创建新评分 Agent…",
+    "judgeMisconfiguredBanner": "自动评分已启用但配置的评分 Agent 在该租户中不存在。请在下方选择一个有效的 Agent。",
     "diffDistribution": "差异分数分布",
     "recentCaptures": "最近采集",
     "filterByThread": "按会话过滤",

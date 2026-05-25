@@ -531,6 +531,7 @@
     "judgeAgent": "Agent chấm điểm",
     "selectJudgeAgent": "Chọn agent chấm điểm…",
     "createNewJudgeAgent": "+ Tạo agent chấm điểm mới…",
+    "judgeMisconfiguredBanner": "Tự đánh giá đang bật nhưng agent chấm điểm đã chọn không tồn tại trong tenant này. Hãy chọn một agent hợp lệ ở dưới.",
     "diffDistribution": "Phân phối điểm khác biệt",
     "recentCaptures": "Phản hồi gần đây",
     "filterByThread": "Lọc theo cuộc trò chuyện",

@@ -145,6 +145,11 @@ export function ChannelTeamAnalyticsTab({
   const saveDisabled =
     judge && (judgeKey.trim() === "" || judgeKey === CREATE_NEW_AGENT_SENTINEL);
 
+  const judgeMisconfigured = useMemo(
+    () => judge && Boolean(judgeKey) && agents.length > 0 && !agents.some((a) => a.id === judgeKey),
+    [judge, judgeKey, agents],
+  );
+
   function handleJudgeKeySelect(v: string) {
     if (v === CREATE_NEW_AGENT_SENTINEL) {
       navigate("/agents/new?context=team-reply-judge");
@@ -197,6 +202,12 @@ export function ChannelTeamAnalyticsTab({
         <h3 className="text-base font-semibold mb-1">{t("teamAnalytics.title")}</h3>
         <p className="text-sm text-muted-foreground">{t("teamAnalytics.description")}</p>
       </div>
+
+      {judgeMisconfigured && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          ⚠️ {t("teamAnalytics.judgeMisconfiguredBanner")}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-md border p-4">
         <div className="flex items-center gap-3">
