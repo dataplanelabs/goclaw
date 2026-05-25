@@ -4,7 +4,9 @@ import (
 	"context"
 	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 // ResolveUserTimezone picks the most specific valid IANA timezone available.
@@ -34,4 +36,24 @@ func (l *Loop) resolveChannelTimezone(ctx context.Context, channelName string) s
 		return ""
 	}
 	return channels.TimezoneFromConfig(inst.Config)
+}
+
+// userTimezone picks the IANA timezone for the current turn. Called once in
+// injectContext and stashed on RunContext so the per-iteration buildMessages
+// path stays DB-free.
+func userTimezone(meta *bootstrap.ChannelMeta, workspaceDefault string) string {
+	if meta == nil {
+		return ResolveUserTimezone("", workspaceDefault)
+	}
+	return ResolveUserTimezone(meta.ChannelTimezone, workspaceDefault)
+}
+
+// userTimezoneFromCtx reads the per-turn resolved timezone off RunContext.
+// Returns "" if RunContext is absent (subagent paths, tests) — buildTimeSection
+// then falls back to UTC.
+func userTimezoneFromCtx(ctx context.Context) string {
+	if rc := store.RunContextFromCtx(ctx); rc != nil {
+		return rc.UserTimezone
+	}
+	return ""
 }

@@ -388,6 +388,7 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 		LeaderAgentID:       tools.LeaderAgentIDFromCtx(ctx),
 		AgentToolKey:        l.id,
 		TenantAllowedPaths:  l.tenantAllowedPaths,
+		UserTimezone:        userTimezone(channelMeta, l.defaultTimezone),
 	}
 	ctx = store.WithRunContext(ctx, rc)
 
