@@ -616,7 +616,10 @@ func (c *Channel) startTyping(threadID string, threadType protocol.ThreadType) {
 		return
 	}
 	ctrl := typing.New(typing.Options{
-		MaxDuration:       60 * time.Second,
+		// 5-min safety net — covers heavy pipelines (web search, tool chains)
+		// while staying below Zalo's anti-abuse threshold on continuous typing
+		// pings. Normal cleanup fires via Send() → ctrl.Stop().
+		MaxDuration:       5 * time.Minute,
 		KeepaliveInterval: 4 * time.Second,
 		StartFn: func() error {
 			return protocol.SendTypingEvent(context.Background(), sess, threadID, threadType)
