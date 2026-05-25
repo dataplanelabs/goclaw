@@ -232,6 +232,7 @@ func wireExtras(
 		BootstrapCleanup:       buildBootstrapCleanup(stores.Agents),
 		CacheInvalidate:        buildCacheInvalidate(contextFileInterceptor),
 		DefaultTimezone:        appCfg.Cron.DefaultTimezone,
+		ChannelInstances:       stores.ChannelInstances,
 		InjectionAction:        injectionAction,
 		MaxMessageChars:        appCfg.Gateway.MaxMessageChars,
 		CompactionCfg:          appCfg.Agents.Defaults.Compaction,

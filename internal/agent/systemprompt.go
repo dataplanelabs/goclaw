@@ -99,6 +99,8 @@ type SystemPromptConfig struct {
 	Workspace     string
 	Channel       string                  // runtime channel instance name (e.g. "my-telegram-bot")
 	ChannelType   string                  // platform type (e.g. "zalo_personal", "telegram")
+	UserTimezone  string                  // resolved IANA tz for "Current date" rendering; "" → UTC
+
 	ChatID        string                  // current reply target chat id (drives <current_reply_target>)
 	ChatTitle     string                  // group chat display name (shown in identity line)
 	PeerKind      string                  // "direct" or "group"
@@ -480,7 +482,7 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 
 	// 8. Time (below boundary — date changes don't bust the stable cache)
 	if !isNone {
-		lines = append(lines, buildTimeSection()...)
+		lines = append(lines, buildTimeSection(cfg.UserTimezone)...)
 	}
 
 	// 9.5. Channel formatting hints — full mode only

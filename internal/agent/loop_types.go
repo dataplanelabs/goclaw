@@ -89,6 +89,7 @@ type Loop struct {
 	agentOtherConfig json.RawMessage
 	agentType        string    // "open" or "predefined"
 	defaultTimezone  string    // system default timezone for bootstrap pre-fill
+	channelInstances store.ChannelInstanceStore // per-channel TZ lookup at prompt-build time
 	provider         providers.Provider
 	model            string
 	modelRegistry    providers.ModelRegistry // resolves per-model context window at run time (nil = use static contextWindow)
@@ -371,6 +372,7 @@ type LoopConfig struct {
 	BootstrapCleanup  BootstrapCleanupFunc
 	CacheInvalidate   CacheInvalidateFunc // invalidate context file cache after seeding
 	DefaultTimezone   string              // system default timezone for bootstrap pre-fill
+	ChannelInstances  store.ChannelInstanceStore // per-channel timezone resolution (optional)
 
 	// Tracing collector (nil = no tracing)
 	TraceCollector *tracing.Collector
@@ -542,6 +544,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		hasMemory:              cfg.HasMemory,
 		contextFiles:           cfg.ContextFiles,
 		defaultTimezone:        cfg.DefaultTimezone,
+		channelInstances:       cfg.ChannelInstances,
 		ensureUserProfile:      cfg.EnsureUserProfile,
 		seedUserFiles:          cfg.SeedUserFiles,
 		ensureUserFiles:        cfg.EnsureUserFiles,

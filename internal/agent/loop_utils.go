@@ -72,13 +72,14 @@ func (l *Loop) shouldShareSessions() bool {
 
 // buildChannelMeta extracts channel metadata from RunRequest for bootstrap decisions.
 // Returns nil when channel type is unknown (preserves normal bootstrap flow).
-func (l *Loop) buildChannelMeta(req *RunRequest) *bootstrap.ChannelMeta {
+func (l *Loop) buildChannelMeta(ctx context.Context, req *RunRequest) *bootstrap.ChannelMeta {
 	if req == nil || req.ChannelType == "" {
 		return nil
 	}
 	return &bootstrap.ChannelMeta{
 		ChannelType:     req.ChannelType,
 		DisplayName:     req.SenderName,
+		ChannelTimezone: l.resolveChannelTimezone(ctx, req.Channel),
 		DefaultTimezone: l.defaultTimezone,
 	}
 }

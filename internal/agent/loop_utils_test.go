@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -210,7 +211,7 @@ func TestExpandWorkspace_RelativePathBecomesAbsolute(t *testing.T) {
 
 func TestBuildChannelMeta_NilRequest(t *testing.T) {
 	l := &Loop{}
-	if got := l.buildChannelMeta(nil); got != nil {
+	if got := l.buildChannelMeta(context.Background(), nil); got != nil {
 		t.Errorf("nil request should return nil, got %+v", got)
 	}
 }
@@ -218,7 +219,7 @@ func TestBuildChannelMeta_NilRequest(t *testing.T) {
 func TestBuildChannelMeta_EmptyChannelType(t *testing.T) {
 	l := &Loop{}
 	req := &RunRequest{ChannelType: ""}
-	if got := l.buildChannelMeta(req); got != nil {
+	if got := l.buildChannelMeta(context.Background(), req); got != nil {
 		t.Errorf("empty ChannelType should return nil, got %+v", got)
 	}
 }
@@ -229,7 +230,7 @@ func TestBuildChannelMeta_WithChannelType(t *testing.T) {
 		ChannelType: "telegram",
 		SenderName:  "Alice",
 	}
-	meta := l.buildChannelMeta(req)
+	meta := l.buildChannelMeta(context.Background(), req)
 	if meta == nil {
 		t.Fatal("expected non-nil meta")
 	}
