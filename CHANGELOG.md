@@ -6,6 +6,16 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Zalo native renderer — filename/identifier underscores no longer
+  italicized** — `_X_` patterns inside identifier-shaped text (e.g.
+  `BaoCao_DonHang_20260520.xlsx`) were matched by the italic-underscore
+  regex, producing broken `*DonHang*`-style emphasis on filenames. Glued
+  underscores (letter/digit on BOTH sides) are now swapped for a 1-UTF-16
+  sentinel before scan, then restored 1:1 after — so the italic regex
+  can't see them as markup but emitted style positions stay valid.
+  Legitimate `_italic_` (space/punct on at least one outer side) still
+  works, including `_user_id_` where the inner `_` is part of the word.
+
 - **Zalo native renderer — tables + bullet dot + hierarchical indent** —
   three follow-ups after v3.23.20 dropped lst_* styles. (1) `RenderStyles`
   now calls `renderMarkdownTables` like `StripMarkdown` already does, so
