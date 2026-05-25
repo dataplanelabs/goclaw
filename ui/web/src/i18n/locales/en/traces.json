@@ -36,6 +36,7 @@
     "channel": "Channel:",
     "chatTitle": "Chat:",
     "userId": "User ID:",
+    "groupId": "Group ID:",
     "tokens": "Tokens:",
     "spans": "Spans:",
     "started": "Started:",

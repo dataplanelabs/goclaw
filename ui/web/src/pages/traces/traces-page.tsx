@@ -31,10 +31,21 @@ import { Methods, Events } from "@/api/protocol";
 import { queryKeys } from "@/lib/query-keys";
 import { toast } from "@/stores/use-toast-store";
 
-/** Strip media placeholder tags like <media:image> from preview text */
-function cleanPreview(text: string): string {
+/**
+ * Clean preview text shown on the row line 2: strip the leading chat_title
+ * prefix (group name or DM sender name often prepended on inbound), drop the
+ * `[From: <Name> (uid:...)]` annotation (sender/UID live in the detail modal),
+ * and replace `<media:*>` tags with a `[media]` placeholder.
+ */
+function cleanPreview(text: string, chatTitle?: string): string {
   if (!text) return text;
-  return text.replace(/<media:\w+>/g, "[media]");
+  let out = text;
+  if (chatTitle && out.startsWith(chatTitle)) {
+    out = out.slice(chatTitle.length).trimStart();
+  }
+  out = out.replace(/^\[From:[^\]]*\]\s*/, "");
+  out = out.replace(/<media:\w+>/g, "[media]");
+  return out.trim();
 }
 
 /** Parse session_key to extract source type: Direct, Group, Cron, Team, WS */
@@ -269,7 +280,7 @@ export function TracesPage() {
                           )}
                           {trace.input_preview && (
                             <span className="truncate text-xs text-muted-foreground">
-                              {cleanPreview(trace.input_preview)}
+                              {cleanPreview(trace.input_preview, trace.chat_title)}
                             </span>
                           )}
                         </div>

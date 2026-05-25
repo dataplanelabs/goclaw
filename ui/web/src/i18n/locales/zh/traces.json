@@ -13,6 +13,7 @@
     "channel": "Channel：",
     "chatTitle": "聊天：",
     "userId": "用户 ID：",
+    "groupId": "群组 ID：",
     "copy": "复制",
     "copyTraceId": "复制追踪 ID",
     "createdAt": "创建时间：",
