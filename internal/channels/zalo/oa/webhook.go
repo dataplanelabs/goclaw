@@ -94,8 +94,11 @@ func (c *Channel) HandleWebhookEvent(ctx context.Context, raw json.RawMessage) e
 	case "user_send_link":
 		c.dispatchWebhookLink(&e)
 		return nil
-	case "user_follow", "user_unfollow":
-		slog.Info("zalo_oa.webhook.follow_event", "event", e.EventName, "user_id", e.Sender.ID)
+	case "user_follow":
+		c.handleUserFollow(&e)
+		return nil
+	case "user_unfollow":
+		c.handleUserUnfollow(&e)
 		return nil
 	case "oa_send_text", "oa_send_image", "oa_send_gif", "oa_send_sticker",
 		"oa_send_file", "oa_send_link", "oa_send_list", "oa_send_request_user_info":
