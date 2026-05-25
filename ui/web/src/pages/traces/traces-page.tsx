@@ -221,7 +221,11 @@ export function TracesPage() {
               <tbody>
                 {traces.map((trace: TraceData) => {
                   const source = parseSourceType(trace.session_key);
-                  const userLabel = formatUserLabel(trace.user_id, resolve);
+                  const rawUserLabel = formatUserLabel(trace.user_id, resolve);
+                  // Suppress the redundant `Channel chatId` chip when the user_id is
+                  // a group key — channel badge + chat_title below already carry it,
+                  // and the full chat_id lives in the trace detail modal.
+                  const userLabel = trace.user_id?.startsWith("group:") ? "" : rawUserLabel;
                   const agentName = trace.agent_id ? agentMap.get(trace.agent_id) : undefined;
                   const SourceIcon = SOURCE_ICONS[source.type] || Bot;
 
@@ -231,7 +235,7 @@ export function TracesPage() {
                       className="cursor-pointer border-b last:border-0 hover:bg-muted/30"
                       onClick={() => setSelectedTraceId(trace.id)}
                     >
-                      <td className="px-4 py-2.5 max-w-[300px] lg:max-w-[400px]">
+                      <td className="px-4 py-2.5 max-w-[300px] lg:max-w-[500px] xl:max-w-[800px] 2xl:max-w-none">
                         <div className="flex items-center gap-1.5 text-sm font-medium min-w-0">
                           {trace.parent_trace_id && (
                             <GitFork className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -256,7 +260,10 @@ export function TracesPage() {
                             </Badge>
                           )}
                           {trace.chat_title && (
-                            <span className="shrink-0 truncate text-xs text-muted-foreground max-w-[200px]" title={trace.chat_title}>
+                            <span
+                              className="shrink-0 truncate text-xs text-muted-foreground max-w-[200px] lg:max-w-[400px] xl:max-w-[600px] 2xl:max-w-[800px]"
+                              title={trace.chat_title}
+                            >
                               {trace.chat_title}
                             </span>
                           )}

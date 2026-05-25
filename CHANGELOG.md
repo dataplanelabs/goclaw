@@ -4,6 +4,18 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ## Unreleased
 
+### Changed
+
+- **Trace list row cleanup + responsive chat title** — the row used to show a
+  redundant `Zalo-shtp 845485536…` chip on the agent line (channel-prefixed
+  decoded `user_id`) AND a truncated `SHTP _ SUPPORT, HẬU CẦN, PA…` group title
+  underneath. The first chip is now hidden for `group:` user_ids since the
+  channel badge + group title already convey the routing. The group title
+  itself gets responsive `max-w` (`200px / lg:400 / xl:600 / 2xl:800`), and
+  the name column matches (`300px / lg:500 / xl:800 / 2xl:none`), so big
+  screens display the full name. Trace Detail dialog gains `Chat` + `User ID`
+  rows so the chat context isn't lost; 3 new i18n keys (en/vi/zh).
+
 ### Added
 
 - **Configurable trace replay retention** — new `trace.replay_retention_days`
