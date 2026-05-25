@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/agent"
+	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	httpapi "github.com/nextlevelbuilder/goclaw/internal/http"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
@@ -34,7 +35,7 @@ func (r *retryAgentRouter) GetAgent(ctx context.Context, agentID string) (httpap
 
 // wireTraceRetry registers the retry deps + replay-payload runner if all stores
 // + the agent router are available. No-op otherwise — endpoint stays unregistered.
-func wireTraceRetry(tracesH *httpapi.TracesHandler, stores *store.Stores, router *agent.Router) {
+func wireTraceRetry(tracesH *httpapi.TracesHandler, stores *store.Stores, router *agent.Router, msgBus *bus.MessageBus) {
 	if tracesH == nil || stores == nil || router == nil {
 		return
 	}
@@ -66,9 +67,53 @@ func wireTraceRetry(tracesH *httpapi.TracesHandler, stores *store.Stores, router
 				"original_trace_id", originalTraceID,
 				"new_trace_id", result.TraceID,
 				"iterations", result.Iterations)
+			dispatchRetryOutbound(ctx, msgBus, req, result, ag, originalTraceID)
 		}
 		return nil
 	})
+}
+
+// dispatchRetryOutbound publishes the retry's RunResult back to the channel —
+// matching the regular consumer's dispatch shape so the Retry button's
+// "re-invoke through the regular agent pipeline" contract actually completes
+// end-to-end. Skips when:
+//   - msgBus is nil (test wiring)
+//   - request lacks Channel/ChatID (internal task; no channel target)
+//   - content is empty or NO_REPLY-style (no user-visible reply to send)
+func dispatchRetryOutbound(ctx context.Context, msgBus *bus.MessageBus, req *agent.RunRequest, result *agent.RunResult, ag agent.Agent, originalTraceID uuid.UUID) {
+	if msgBus == nil || req == nil || result == nil {
+		return
+	}
+	if req.Channel == "" || req.ChatID == "" {
+		return
+	}
+	if result.Content == "" || agent.IsSilentReply(result.Content) {
+		slog.Info("trace.retry.dispatch_skipped_silent",
+			"original_trace_id", originalTraceID,
+			"new_trace_id", result.TraceID)
+		return
+	}
+	outMsg := bus.OutboundMessage{
+		Channel:          req.Channel,
+		ChatID:           req.ChatID,
+		Content:          result.Content,
+		TenantID:         store.TenantIDFromContext(ctx),
+		AgentID:          ag.UUID(),
+		AgentOtherConfig: ag.OtherConfig(),
+		TraceID:          result.TraceID,
+	}
+	if req.PeerKind == "group" && req.ChatID != "" {
+		outMsg.Metadata = map[string]string{"group_id": req.ChatID}
+	}
+	appendMediaToOutbound(&outMsg, result.Media)
+	msgBus.PublishOutbound(outMsg)
+	slog.Info("trace.retry.dispatched",
+		"original_trace_id", originalTraceID,
+		"new_trace_id", result.TraceID,
+		"channel", req.Channel,
+		"chat_id", req.ChatID,
+		"has_media", len(result.Media) > 0,
+	)
 }
 
 // deserializeReplayRunRequest unmarshals the captured RunRequest payload and
