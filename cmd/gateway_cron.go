@@ -24,7 +24,7 @@ import (
 // Safe because cron jobs only fire after Start(), well after this is set.
 var cronHeartbeatWakeFn func(agentID string)
 
-func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg *config.Config, channelMgr *channels.Manager, sessionMgr store.SessionStore, agentStore store.AgentStore) func(job *store.CronJob) (*store.CronJobResult, error) {
+func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg *config.Config, channelMgr *channels.Manager, sessionMgr store.SessionStore, agentStore store.AgentStore, contactStore store.ContactStore) func(job *store.CronJob) (*store.CronJobResult, error) {
 	return func(job *store.CronJob) (*store.CronJobResult, error) {
 		agentID := job.AgentID
 		if agentID == "" && agentStore != nil {
@@ -54,9 +54,7 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 			channel = "cron"
 		}
 
-		// Infer peer kind from the stored session metadata (group chats need it
-		// so that tools like message can route correctly via group APIs).
-		peerKind := resolveCronPeerKind(job)
+		peerKind := resolveCronPeerKind(cronContextForJob(job), job, contactStore)
 
 		// Resolve channel type for system prompt context.
 		channelType := resolveChannelType(channelMgr, channel)
@@ -162,11 +160,33 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 	}
 }
 
-// resolveCronPeerKind infers peer kind from the cron job's user ID.
-// Group cron jobs have userID prefixed with "group:" or "guild:" (set during job creation).
-func resolveCronPeerKind(job *store.CronJob) string {
+// cronContextForJob builds a short tenant-scoped context for resolver lookups.
+func cronContextForJob(job *store.CronJob) context.Context {
+	return store.WithTenantID(context.Background(), job.TenantID)
+}
+
+// resolveCronPeerKind returns "group" or "direct" for the cron's reply target.
+// Order of precedence: legacy UserID prefix → channel_contacts.contact_type lookup
+// by DeliverTo → fail-safe "direct". Legacy prefix kept for crons created before
+// contact-aware seeding.
+func resolveCronPeerKind(ctx context.Context, job *store.CronJob, contactStore store.ContactStore) string {
 	if strings.HasPrefix(job.UserID, "group:") || strings.HasPrefix(job.UserID, "guild:") {
 		return "group"
 	}
-	return ""
+	if contactStore == nil || job.DeliverTo == "" {
+		return "direct"
+	}
+	contacts, err := contactStore.GetContactsBySenderIDs(ctx, []string{job.DeliverTo})
+	if err != nil {
+		slog.Warn("cron: contact peer-kind lookup failed", "job_id", job.ID, "deliver_to", job.DeliverTo, "error", err)
+		return "direct"
+	}
+	c, ok := contacts[job.DeliverTo]
+	if !ok {
+		return "direct"
+	}
+	if c.ContactType == "group" {
+		return "group"
+	}
+	return "direct"
 }
