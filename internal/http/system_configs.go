@@ -54,12 +54,14 @@ func (h *SystemConfigsHandler) handleList(w http.ResponseWriter, r *http.Request
 }
 
 func (h *SystemConfigsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	locale := extractLocale(r)
 	key := r.PathValue("key")
 	val, err := h.store.Get(r.Context(), key)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": i18n.T(locale, i18n.MsgNotFound, "config", key)})
-		return
+		// Fail-soft: settings-store "missing" = "empty". Returning 200 here
+		// stops Chrome from logging 404s for polled alert-state keys
+		// (e.g. alert.background.provider_error) that legitimately don't
+		// exist most of the time. Frontend treats empty as "no alert".
+		val = ""
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"key": key, "value": val})
 }
