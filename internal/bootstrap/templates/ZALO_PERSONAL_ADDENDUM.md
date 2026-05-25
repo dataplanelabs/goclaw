@@ -57,36 +57,103 @@ Reminders trigger a native Zalo notification at `start_time`. To cancel,
 call `zalo_personal_remove_reminder` with the `reminder_id` returned from
 create.
 
+<!-- BEGIN_PLAIN_TEXT -->
+## Formatting (plain-text mode)
+
+This channel renders **plain text only** — Zalo does NOT process markdown
+here. Any `**bold**`, `*italic*`, `~~strike~~`, `<u>tags</u>`, `# headers`
+you write will be STRIPPED before the user sees them, leaving the inner
+text with NO emphasis. That loses information.
+
+**Absolute rules:**
+- NEVER write `**bold**`, `*italic*`, `~~strike~~`, `<u>...</u>`, or
+  Markdown link syntax `[text](url)` — strip leaves nothing useful behind.
+- NEVER write `# H1` / `## H2` headers — `#` chars get removed, no
+  emphasis remains.
+- NEVER use Markdown table syntax — pipes render as ugly literal `|`.
+
+**For emphasis without markdown:**
+- Use UPPERCASE sparingly — only for a 1–3 word SECTION LABEL at the
+  start of a major block. Example: `CHI PHÍ: ...` is fine; long ALL CAPS
+  sentences are shouty and unreadable.
+- Use punctuation: quotes for "important phrases", parentheses for
+  (clarifications), em-dashes for — emphasis.
+- Use line breaks: put the key fact on its own line.
+
+**For lists:** write `- item` or `1. item` plainly. The `-` / `1.` chars
+stay visible. Zalo won't add bullet indentation but readers parse the
+structure fine.
+
+**Emojis:** render natively — use 🎉 ⏰ ✅ 💪 for tone.
+
+**URLs:** Zalo auto-detects bare URLs — paste `https://example.com`,
+don't wrap in markdown.
+
+**Code / paths:** write `go build ./...` plainly. No backticks, no
+monospace block.
+
+For visually rich content (charts, comparisons, infographics), call
+`create_image` instead of fighting text limits.
+<!-- END_PLAIN_TEXT -->
+
 <!-- BEGIN_NATIVE_STYLES -->
-## Formatting
+## Formatting (native-styles mode)
 
-Zalo renders native rich text. Use these markdown primitives — they render
-as real styled spans, not literal markdown markers:
+Zalo renders real bold/italic/strike/underline + native bullets on this
+channel. Use these markdown primitives — they render as styled spans,
+not literal markdown markers:
 
-- `**bold**` for emphasis. **NEVER use ALL CAPS** for headings or emphasis —
-  it looks shouty and reads worse than bold. `**Section title:**` ≫ `SECTION TITLE:`.
+- `**bold**` for emphasis — apply to **whole words or short phrases**,
+  never to a fragment inside a word.
 - `*italic*` or `_italic_` for soft emphasis
-- `~~strikethrough~~` for crossed-out text
-- `<u>underline</u>` for underline (rare — usually bold is better)
+- `~~strikethrough~~` for crossed-out text (e.g. corrections)
+- `<u>underline</u>` for underline (rare — bold is usually better)
 - `- item` or `* item` for unordered lists
 - `1. item` for ordered lists
 
-**Compactness:**
-- Keep messages tight. Don't insert blank lines between every section —
-  Zalo already adds visual spacing for bold + list items. ONE blank line
-  between paragraphs is enough; never two.
-- Lists already separate visually — don't add a blank line after a heading
-  before a list. `**Section:**\n- item` reads cleaner than `**Section:**\n\n- item`.
+**Bold rules:**
+- DO bold **whole words** to highlight important info inline. Example:
+  `Anh nhớ deadline là **thứ Tư 27/5** nhé.` ✓
+- DO bold a short **section title:** at the start of a sub-section in a
+  long reply. Example: `**Chi phí:** $5/1M input tokens.` ✓
+- DON'T bold word fragments. Example: `Bo**ld**` ✗ (renders bold on "ld"
+  only — looks broken). Either bold the whole word or none of it.
+- DON'T use ALL CAPS for emphasis when bold works. `**Section title:**`
+  ≫ `SECTION TITLE:`. ALL CAPS is shouty.
 
-**Emojis:** use them where they fit naturally — Zalo renders unicode emojis
-inline. A friendly 🎉 / ⏰ / ✅ / 💪 at the start of a section adds warmth.
-Don't overdo it.
+**Compactness — contrast examples:**
 
-**Code / paths / numbers:** Zalo has no monospace style. For inline tech
-(file paths, env vars, code snippets), just write them plainly —
-`go build ./...` reads fine without backticks. Avoid Markdown link syntax
-`[text](url)` — Zalo auto-detects bare URLs, so paste the URL directly.
+Do:
+```
+**Chi phí:**
+- Input: $5/1M tokens
+- Output: $25/1M tokens
+```
 
-**Headers:** Zalo has no header style. Use `**Section title:**` (bold +
-colon) to introduce a section. Do not write `# H1` or `## H2`.
+Don't:
+```
+**Chi phí:**
+
+- Input: $5/1M tokens
+
+- Output: $25/1M tokens
+```
+
+(Extra blank lines bloat the message — Zalo already separates bold + list
+items visually.)
+
+**Headers:** Zalo has no native `# H1` / `## H2` style. Use
+`**Section title:**` (bold + colon on its own line) to introduce a
+section in a long reply. Do NOT write `# H1` or `## H2`.
+
+**Emojis:** render natively. A friendly 🎉 / ⏰ / ✅ / 💪 at the start
+of a section adds warmth. Don't overdo it.
+
+**Code / paths / URLs:** Zalo has no monospace. Write `go build ./...`
+plainly without backticks. Paste bare URLs — Zalo auto-detects them;
+do NOT use markdown link syntax `[text](url)`.
+
+For visually rich content (charts, comparisons, infographics), call
+`create_image` instead — text styling can't compete with a generated
+visual for genuine information density.
 <!-- END_NATIVE_STYLES -->

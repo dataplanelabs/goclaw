@@ -30,34 +30,43 @@ func TestChannelAddendum_EmptyString_NotFound(t *testing.T) {
 	}
 }
 
-func TestChannelAddendum_NativeStylesOn_IncludesFormattingBlock(t *testing.T) {
+func TestChannelAddendum_NativeStylesOn_IncludesNativeBlockOnly(t *testing.T) {
 	addendum, ok := ChannelAddendum("zalo_personal", AddendumOpts{EnableNativeStyles: true})
 	if !ok {
 		t.Fatal("addendum not found")
 	}
-	if !strings.Contains(addendum, "## Formatting") {
-		t.Error("native ON should include Formatting section")
+	if !strings.Contains(addendum, "Formatting (native-styles mode)") {
+		t.Error("native ON should include native-styles Formatting section")
 	}
 	if !strings.Contains(addendum, "**bold**") {
 		t.Error("native ON should mention **bold** primitive")
 	}
+	if strings.Contains(addendum, "Formatting (plain-text mode)") {
+		t.Error("native ON must NOT include plain-text guidance")
+	}
 	if strings.Contains(addendum, "BEGIN_NATIVE_STYLES") || strings.Contains(addendum, "END_NATIVE_STYLES") {
 		t.Error("sentinel markers must be stripped from output")
 	}
+	if strings.Contains(addendum, "BEGIN_PLAIN_TEXT") {
+		t.Error("plain-text sentinels must be stripped along with body")
+	}
 }
 
-func TestChannelAddendum_NativeStylesOff_StripsFormattingBlock(t *testing.T) {
+func TestChannelAddendum_NativeStylesOff_IncludesPlainTextBlockOnly(t *testing.T) {
 	addendum, ok := ChannelAddendum("zalo_personal", AddendumOpts{EnableNativeStyles: false})
 	if !ok {
 		t.Fatal("addendum not found")
 	}
-	if strings.Contains(addendum, "## Formatting") {
-		t.Error("native OFF should NOT include Formatting section")
+	if !strings.Contains(addendum, "Formatting (plain-text mode)") {
+		t.Error("native OFF should include plain-text guidance so LLM stops emitting markdown")
 	}
-	if strings.Contains(addendum, "**bold**") {
-		t.Error("native OFF should NOT mention **bold** (legacy strip path removes it anyway)")
+	if !strings.Contains(addendum, "STRIPPED") {
+		t.Error("plain-text block should warn that markdown is stripped")
 	}
-	if strings.Contains(addendum, "BEGIN_NATIVE_STYLES") || strings.Contains(addendum, "END_NATIVE_STYLES") {
+	if strings.Contains(addendum, "Formatting (native-styles mode)") {
+		t.Error("native OFF must NOT include native-styles guidance")
+	}
+	if strings.Contains(addendum, "BEGIN_NATIVE_STYLES") || strings.Contains(addendum, "BEGIN_PLAIN_TEXT") {
 		t.Error("sentinel markers must be stripped")
 	}
 	// Other guidance (mentions, reminders) must survive the strip.
@@ -66,5 +75,16 @@ func TestChannelAddendum_NativeStylesOff_StripsFormattingBlock(t *testing.T) {
 	}
 	if !strings.Contains(addendum, "zalo_personal_create_reminder") {
 		t.Error("native OFF still needs reminder tool guidance")
+	}
+}
+
+func TestChannelAddendum_NoLeakAcrossModes(t *testing.T) {
+	on, _ := ChannelAddendum("zalo_personal", AddendumOpts{EnableNativeStyles: true})
+	off, _ := ChannelAddendum("zalo_personal", AddendumOpts{EnableNativeStyles: false})
+	if strings.Contains(on, "plain-text mode") {
+		t.Error("native ON leaked plain-text content")
+	}
+	if strings.Contains(off, "native-styles mode") {
+		t.Error("native OFF leaked native-styles content")
 	}
 }
