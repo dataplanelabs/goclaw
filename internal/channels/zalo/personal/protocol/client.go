@@ -21,21 +21,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// ipv4Dialer forces tcp4 because Zalo's CDN endpoints (notably
-// `tt-files-wpa.chat.zalo.me` for file uploads) return AAAA records, and the
-// K3S cluster has no IPv6 egress — happy-eyeballs picks v6 first and the
-// kernel rejects with ENETUNREACH instantly, so file uploads fail with
-// `network is unreachable` (trace 019e601a). Forcing tcp4 sidesteps the
-// dual-stack resolution entirely.
+// Zalo CDN AAAA + no v6 egress = ENETUNREACH. Force tcp4. Trace 019e601a.
 var ipv4Dialer = &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 
 func dialIPv4(ctx context.Context, network, addr string) (net.Conn, error) {
 	return ipv4Dialer.DialContext(ctx, normalizeNetworkForIPv4(network), addr)
 }
 
-// normalizeNetworkForIPv4 promotes dual-stack and v6 network names to tcp4.
-// Extracted from dialIPv4 so the rewrite is unit-testable without binding to
-// the OS network stack.
 func normalizeNetworkForIPv4(network string) string {
 	switch network {
 	case "tcp", "tcp6":
