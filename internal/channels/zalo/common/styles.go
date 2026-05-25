@@ -81,14 +81,14 @@ func collapseBlankAfterBoldHeader(text string) string {
 	out := make([]string, 0, len(lines))
 	for i := 0; i < len(lines); i++ {
 		out = append(out, lines[i])
-		if !isBoldOnlyLine(lines[i]) {
+		if !isBoldHeaderLine(lines[i]) {
 			continue
 		}
 		j := i + 1
 		for j < len(lines) && strings.TrimSpace(lines[j]) == "" {
 			j++
 		}
-		if j == i+1 || j >= len(lines) || isBoldOnlyLine(lines[j]) {
+		if j == i+1 || j >= len(lines) || isBoldHeaderLine(lines[j]) {
 			continue
 		}
 		i = j - 1
@@ -96,13 +96,29 @@ func collapseBlankAfterBoldHeader(text string) string {
 	return strings.Join(out, "\n")
 }
 
-func isBoldOnlyLine(s string) bool {
+// isBoldHeaderLine matches lines like `**X**`, `**X:**`, or `**X** 💪` —
+// pure bold or bold followed by trailing decoration (emoji, punctuation,
+// whitespace). Rejects lines where letters/digits appear after the closing
+// `**` (that's content, not a header).
+func isBoldHeaderLine(s string) bool {
 	s = strings.TrimSpace(s)
-	if len(s) < 5 || !strings.HasPrefix(s, "**") || !strings.HasSuffix(s, "**") {
+	if len(s) < 5 || !strings.HasPrefix(s, "**") {
 		return false
 	}
-	inner := s[2 : len(s)-2]
-	return inner != "" && !strings.Contains(inner, "**")
+	closeRel := strings.Index(s[2:], "**")
+	if closeRel <= 0 {
+		return false
+	}
+	inner := s[2 : 2+closeRel]
+	if strings.Contains(inner, "**") {
+		return false
+	}
+	for _, r := range s[2+closeRel+2:] {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
 }
 
 var (
@@ -120,7 +136,7 @@ func indentUnderBoldHeader(text string) string {
 	inSection := false
 	prevOrdered := false
 	for i, line := range lines {
-		if isBoldOnlyLine(line) {
+		if isBoldHeaderLine(line) {
 			inSection = true
 			prevOrdered = false
 			out = append(out, line)
@@ -129,7 +145,7 @@ func indentUnderBoldHeader(text string) string {
 		if strings.TrimSpace(line) == "" {
 			if inSection {
 				if next := nextNonBlankIndex(lines, i+1); next >= 0 &&
-					!isBoldOnlyLine(lines[next]) && !isListLine(lines[next]) {
+					!isBoldHeaderLine(lines[next]) && !isListLine(lines[next]) {
 					inSection = false
 					prevOrdered = false
 				}
