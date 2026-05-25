@@ -196,6 +196,11 @@ type ZaloOAConfig struct {
 	JudgeEvaluation              *bool  `json:"judge_evaluation,omitempty"`
 	JudgeAgentKey                string `json:"judge_agent_key,omitempty"`
 	TeamReplyPollIntervalSeconds int    `json:"team_reply_poll_interval_seconds,omitempty"` // default 60
+	// JudgeEvaluationMode: "per_event" (default) or "scheduled". When scheduled,
+	// the poll worker skips publishing team.reply.observed; JudgeScheduler ticks
+	// per JudgeEvaluationSchedule cron expression and grades pending rows.
+	JudgeEvaluationMode     string `json:"judge_evaluation_mode,omitempty"`
+	JudgeEvaluationSchedule string `json:"judge_evaluation_schedule,omitempty"` // default "0 8-18 * * 1-5" Asia/Saigon
 }
 
 // TeamReplyPollInterval returns the configured polling interval clamped

@@ -306,6 +306,14 @@ func runGateway() {
 		})
 		defer cleanupJudge()
 		slog.Info("judge worker registered for team-reply evaluations")
+
+		judgeScheduler := consolidation.NewJudgeScheduler(consolidation.JudgeSchedulerDeps{
+			Evals:     pgStores.TeamReplyEvals,
+			Instances: pgStores.ChannelInstances,
+			Bus:       domainBus,
+		})
+		judgeScheduler.Start(context.Background())
+		defer judgeScheduler.Stop()
 	}
 
 	// Create gateway server and wire enforcement

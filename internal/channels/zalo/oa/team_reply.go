@@ -86,6 +86,7 @@ func (c *Channel) startTeamReplyWorker() {
 		Atomic:       c.teamReplyAtomic,
 		Bus:          c.teamReplyBus,
 		CustomerLast: customerLast,
+		JudgeMode:    c.cfg.JudgeEvaluationMode,
 	}
 	w := NewPollWorker(c.instanceID, c.Name(), c.teamReplyTenantID, channels.TypeZaloOA,
 		creds.OAID, c.cfg.TeamReplyPollInterval(), deps)

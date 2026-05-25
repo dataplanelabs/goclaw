@@ -553,6 +553,12 @@
     "rejudgeBatchCapped": "每次最多 100 条；再次点击处理下一批",
     "rejudgeProgress": "正在重评 {{total}} — {{graded}} 已评 · {{failed}} 失败 · {{retrying}} 重试中",
     "rejudgeComplete": "已重评：{{graded}} 已评 · {{failed}} 失败 · {{retry_exhausted}} 已耗尽重试",
-    "rejudgePollFailed": "已派发重评但状态检查失败 — 请手动刷新表格"
+    "rejudgePollFailed": "已派发重评但状态检查失败 — 请手动刷新表格",
+    "judgeModeLabel": "评分模式",
+    "judgeModePerEvent": "每条消息（实时）",
+    "judgeModeScheduled": "定时（批量）",
+    "judgeScheduleLabel": "计划（cron）",
+    "judgeScheduleHint": "5 字段 cron 表达式，时区 Asia/Saigon。默认：周一至周五每小时 8-18 点。",
+    "gradePendingButton": "立即评 {{count}} 条待处理"
   }
 }

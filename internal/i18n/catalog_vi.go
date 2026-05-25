@@ -344,6 +344,7 @@ func init() {
 		TeamCaptureRPCInvalidConfig:   "cấu hình capture không hợp lệ: %s",
 		TeamCaptureJudgeAgentNotFound: "không tìm thấy judge agent %q trong tenant — hãy tạo agent này hoặc chọn agent_key khác",
 		TeamCaptureJudgeKeyRequired:   "phải có judge_agent_key khi bật judge_evaluation",
+		TeamCaptureScheduleInvalid:    "lịch judge không hợp lệ %q — dùng biểu thức cron 5 trường",
 		TeamEvalNotFound:              "không tìm thấy đánh giá trả lời của team",
 		TeamEvalJudgeError:            "đánh giá thất bại: %s",
 

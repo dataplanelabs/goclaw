@@ -553,6 +553,12 @@
     "rejudgeBatchCapped": "giới hạn 100 mỗi lần; nhấn lại cho đợt tiếp theo",
     "rejudgeProgress": "Đang đánh giá lại {{total}} — {{graded}} xong · {{failed}} lỗi · {{retrying}} đang chạy",
     "rejudgeComplete": "Đã xong: {{graded}} xong · {{failed}} lỗi · {{retry_exhausted}} hết lượt thử",
-    "rejudgePollFailed": "Đã gửi đánh giá lại nhưng kiểm tra trạng thái thất bại — làm mới bảng thủ công"
+    "rejudgePollFailed": "Đã gửi đánh giá lại nhưng kiểm tra trạng thái thất bại — làm mới bảng thủ công",
+    "judgeModeLabel": "Chế độ đánh giá",
+    "judgeModePerEvent": "Từng tin nhắn (real-time)",
+    "judgeModeScheduled": "Theo lịch (batch)",
+    "judgeScheduleLabel": "Lịch (cron)",
+    "judgeScheduleHint": "Biểu thức cron 5 trường, giờ Asia/Saigon. Mặc định: mỗi giờ 8h-18h T2-T6.",
+    "gradePendingButton": "Chấm {{count}} chờ ngay"
   }
 }

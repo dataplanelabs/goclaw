@@ -379,6 +379,7 @@ const (
 	TeamCaptureRPCInvalidConfig   = "team_capture.rpc.invalid_config"
 	TeamCaptureJudgeAgentNotFound = "team_capture.judge_agent_not_found"
 	TeamCaptureJudgeKeyRequired   = "team_capture.judge_key_required"
+	TeamCaptureScheduleInvalid    = "team_capture.schedule_invalid"
 	TeamEvalNotFound              = "team_eval.not_found"
 	TeamEvalJudgeError            = "team_eval.judge_error"
 
