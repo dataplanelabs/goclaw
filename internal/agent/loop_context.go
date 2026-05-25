@@ -147,7 +147,7 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 	// Seeding must run before buildMessages→resolveContextFiles reads context files.
 	// Team sessions skip seeding: members process tasks from leader, not end-user onboarding.
 	isTeamSession := bootstrap.IsTeamSession(req.SessionKey)
-	channelMeta := l.buildChannelMeta(req)
+	channelMeta := l.buildChannelMeta(ctx, req)
 	setup := l.getOrCreateUserSetup(ctx, req.UserID, req.Channel, isTeamSession, channelMeta)
 
 	// Workspace resolution (layered pipeline).

@@ -118,6 +118,34 @@ func (s *seedStubStore) PropagateContextFile(_ context.Context, _ uuid.UUID, _ s
 }
 // ---- Tests ----
 
+func TestBuildPrefilledUser_TimezonePriority(t *testing.T) {
+	cases := []struct {
+		name      string
+		channelTZ string
+		defaultTZ string
+		wantTZ    string
+	}{
+		{"channel wins", "Asia/Ho_Chi_Minh", "UTC", "Asia/Ho_Chi_Minh"},
+		{"workspace fallback", "", "Asia/Ho_Chi_Minh", "Asia/Ho_Chi_Minh"},
+		{"both empty renders unknown", "", "", "(unknown)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			meta := &ChannelMeta{
+				ChannelType:     "pancake",
+				DisplayName:     "Alice",
+				ChannelTimezone: tc.channelTZ,
+				DefaultTimezone: tc.defaultTZ,
+			}
+			content := buildPrefilledUser(meta)
+			want := "**Timezone:** " + tc.wantTZ
+			if !strings.Contains(content, want) {
+				t.Errorf("expected %q in USER.md content, got:\n%s", want, content)
+			}
+		})
+	}
+}
+
 // TestBuildPrefilledUser_SanitizesMarkdownInjection verifies that DisplayName with
 // newlines or markdown syntax does not inject into USER.md structure.
 func TestBuildPrefilledUser_SanitizesMarkdownInjection(t *testing.T) {

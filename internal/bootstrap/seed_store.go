@@ -17,7 +17,8 @@ import (
 type ChannelMeta struct {
 	ChannelType     string
 	DisplayName     string
-	DefaultTimezone string
+	ChannelTimezone string // from channel_instances.config.timezone, optional
+	DefaultTimezone string // workspace fallback
 }
 
 // shouldSkipBootstrap returns true when channel provides enough user info
@@ -31,7 +32,10 @@ func shouldSkipBootstrap(meta *ChannelMeta) bool {
 
 // buildPrefilledUser generates USER.md content pre-filled with channel-provided contact info.
 func buildPrefilledUser(meta *ChannelMeta) string {
-	tz := meta.DefaultTimezone
+	tz := meta.ChannelTimezone
+	if tz == "" {
+		tz = meta.DefaultTimezone
+	}
 	if tz == "" {
 		tz = "(unknown)"
 	}
