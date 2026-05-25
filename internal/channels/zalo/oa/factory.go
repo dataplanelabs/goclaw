@@ -51,7 +51,7 @@ func Factory(ciStore store.ChannelInstanceStore) channels.ChannelFactory {
 // Tenant resolution: ciStore lookup by instanceID is set by the loader via
 // SetInstanceID; the worker reads tenantID lazily from credentials/loader.
 func FactoryWithDeps(ciStore store.ChannelInstanceStore, domainBus eventbus.DomainEventBus,
-	sessions store.SessionStore, evals store.TeamReplyEvalStore) channels.ChannelFactory {
+	sessions store.SessionStore, evals store.TeamReplyEvalStore, atomic store.AtomicTeamReplyWriter) channels.ChannelFactory {
 
 	base := Factory(ciStore)
 	return func(name string, credsRaw json.RawMessage, cfgRaw json.RawMessage,
@@ -65,10 +65,7 @@ func FactoryWithDeps(ciStore store.ChannelInstanceStore, domainBus eventbus.Doma
 		if !ok {
 			return c, nil
 		}
-		// tenantID is resolved at Start() via ciStore.Get(instanceID) — the
-		// loader sets instanceID after factory return, so a fetch here would
-		// race with SetInstanceID.
-		oaCh.SetTeamReplyDeps(domainBus, sessions, evals, "")
+		oaCh.SetTeamReplyDeps(domainBus, sessions, evals, atomic, "")
 		return oaCh, nil
 	}
 }

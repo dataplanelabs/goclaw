@@ -27,6 +27,15 @@ type PGSessionStore struct {
 	OnDelete func(sessionKey string)
 }
 
+// invalidateCache drops the cached SessionData entry for a key so the next
+// Get/GetHistory rehydrates from DB. Used by external writers (e.g. the
+// team-reply atomic writer) that bypass the cache.
+func (s *PGSessionStore) invalidateCache(ctx context.Context, key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.cache, sessionCacheKey(ctx, key))
+}
+
 func NewPGSessionStore(db *sql.DB) *PGSessionStore {
 	s := &PGSessionStore{
 		db:    db,
