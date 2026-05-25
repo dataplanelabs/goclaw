@@ -104,7 +104,7 @@ export function TraceDetailDialog({ traceId, onClose, getTrace, retryTrace, onRe
                 <Square className="h-3.5 w-3.5" />{t("detail.stopRun")}
               </button>
             )}
-            {trace && (trace.status === "error" || trace.status === "cancelled") && retryTrace && (
+            {trace && trace.status !== "running" && retryTrace && (
               <RetryButton trace={trace} retry={retryTrace} onRetried={onRetried} />
             )}
           </DialogTitle>

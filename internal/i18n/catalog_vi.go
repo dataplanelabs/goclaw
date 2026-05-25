@@ -354,7 +354,7 @@ func init() {
 		TraceRetryPayloadMissing:  "Dữ liệu replay không còn khả dụng.",
 		TraceRetryConfirmRequired: "Lần chạy này đã gửi tin nhắn — xác nhận để chạy lại.",
 		TraceRetryStarted:         "Đã bắt đầu chạy lại.",
-		TraceRetryNotFailed:       "Chỉ có thể chạy lại trace bị lỗi hoặc bị dừng.",
+		TraceRetryNotFailed:       "Chỉ có thể chạy lại trace đã kết thúc (run vẫn đang chạy).",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Đã forward sang %s theo yêu cầu: %q",
