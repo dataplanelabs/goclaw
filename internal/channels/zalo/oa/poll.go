@@ -154,7 +154,6 @@ func (c *Channel) dispatchInbound(m message) {
 	if m.Text == "" {
 		return
 	}
-	c.upsertSenderContact(m.FromID, m.FromDisplayName)
 	metadata := common.InboundMeta{
 		MessageID:         m.MessageID,
 		Platform:          common.PlatformZaloOA,
