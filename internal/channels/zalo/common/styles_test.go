@@ -31,17 +31,18 @@ func TestRenderStyles(t *testing.T) {
 		{"horizontal_rule_dropped", "before\n---\nafter", "before\n\nafter", nil},
 		{"adjacent_bold", "**a** **b**", "a b", []Style{{0, 1, StyleBold}, {2, 1, StyleBold}}},
 		{"unbalanced_preserved", "no closing **here", "no closing **here", nil},
-		// List items kept literal — Zalo mobile renders lst_1/lst_2 spans as
-		// raw `<list>`/`<number>` XML markup in-band, worse than plain text.
-		{"unordered_list", "- foo\n- bar", "- foo\n- bar", nil},
+		// Lists pass through as literal text; `- ` / `* ` / `+ ` prefixes
+		// rewritten to `• ` for nicer rendering (UTF-16 width unchanged).
+		// Ordered keeps the numeric prefix as-is.
+		{"unordered_list", "- foo\n- bar", "• foo\n• bar", nil},
 		{"ordered_list", "1. foo\n2. bar", "1. foo\n2. bar", nil},
 		{"ordered_list_three_items", "1. a\n2. b\n3. c", "1. a\n2. b\n3. c", nil},
 		{"ordered_list_single_isolated", "before\n1. foo\nafter", "before\n1. foo\nafter", nil},
-		{"unordered_list_single_isolated", "before\n- foo\nafter", "before\n- foo\nafter", nil},
+		{"unordered_list_single_isolated", "before\n- foo\nafter", "before\n• foo\nafter", nil},
 		{"nested_numbered_with_unicode_bullets", "1. Header\n• sub\n2. Header2", "1. Header\n• sub\n2. Header2", nil},
-		{"mixed_ordered_unordered_adjacent", "1. a\n- b", "1. a\n- b", nil},
+		{"mixed_ordered_unordered_adjacent", "1. a\n- b", "1. a\n• b", nil},
 		{"ordered_with_blank_line_break", "1. a\n\n2. b", "1. a\n\n2. b", nil},
-		{"unordered_two_blocks_separated", "- a\n- b\n\n- c\n- d", "- a\n- b\n\n- c\n- d", nil},
+		{"unordered_two_blocks_separated", "- a\n- b\n\n- c\n- d", "• a\n• b\n\n• c\n• d", nil},
 		{"url_escapes_italic", "see https://a.com/foo_bar_baz for x", "see https://a.com/foo_bar_baz for x", nil},
 		{"email_escapes_italic", "ping alice_doe@example.com", "ping alice_doe@example.com", nil},
 		{"inline_code_kept_plain", "use `foo()` here", "use foo() here", nil},
@@ -64,6 +65,48 @@ func TestRenderStyles(t *testing.T) {
 			[]Style{{8, 4, StyleBold}},
 		},
 		{"triple_bold_glued_left_unchanged", "pre***x***", "prex", []Style{{3, 1, StyleBold}, {3, 1, StyleItalic}}},
+
+		// Bold-only header collapses the blank before its content AND
+		// indents that content 2 spaces. Bullets that follow a numbered item
+		// get 4 spaces (sub-bullet inference).
+		{
+			"bold_header_blank_collapsed_before_ordered",
+			"**Đánh giá:**\n\n1. Doanh thu giảm",
+			"Đánh giá:\n  1. Doanh thu giảm",
+			[]Style{{0, 9, StyleBold}},
+		},
+		{
+			"bold_header_blank_collapsed_before_bullet",
+			"**Dữ liệu:**\n\n- Tổng đơn: 17",
+			"Dữ liệu:\n  • Tổng đơn: 17",
+			[]Style{{0, 8, StyleBold}},
+		},
+		{
+			"bold_header_blank_preserved_between_two_headers",
+			"**A:**\n\n**B:**\n- x",
+			"A:\n\nB:\n  • x",
+			[]Style{{0, 2, StyleBold}, {4, 2, StyleBold}},
+		},
+		{
+			"bold_header_sub_bullet_under_ordered",
+			"**Đánh giá:**\n1. Doanh thu giảm mạnh\n- Giảm 52% so hôm trước\n\n2. AOV ở mức khá\n- 3.5tr/don",
+			"Đánh giá:\n  1. Doanh thu giảm mạnh\n    • Giảm 52% so hôm trước\n\n  2. AOV ở mức khá\n    • 3.5tr/don",
+			[]Style{{0, 9, StyleBold}},
+		},
+		{
+			"bold_header_section_ends_at_trailing_prose",
+			"**Đề xuất:**\n- Tìm hiểu nguyên nhân\n\nAnh có file chi tiết không?",
+			"Đề xuất:\n  • Tìm hiểu nguyên nhân\n\nAnh có file chi tiết không?",
+			[]Style{{0, 8, StyleBold}},
+		},
+
+		// Tables convert to bulleted labeled blocks (same as StripMarkdown).
+		{
+			"table_two_col_native",
+			"| Key | Value |\n|---|---|\n| Total | 8,370,300đ |\n| Bank | BIDV |",
+			"• Total\n  Value: 8,370,300đ\n• Bank\n  Value: BIDV",
+			nil,
+		},
 	}
 	for _, c := range cases {
 		c := c

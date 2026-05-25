@@ -27,12 +27,14 @@ type Style struct {
 }
 
 // RenderStyles strips markdown markup and emits Zalo native Style spans.
-// Lists are NOT styled: Zalo mobile dumps lst_1/lst_2 spans as raw
-// `<list>`/`<number>` XML in-band, so list lines pass through as literal text.
+// Lists pass through as literal text (`• item` / `1. item`) — Zalo mobile
+// dumps lst_1/lst_2 spans as raw `<list>`/`<number>` XML in-band.
 func RenderStyles(text string) (string, []Style) {
 	if text == "" {
 		return "", nil
 	}
+	text = renderMarkdownTables(text)
+
 	codeBlocks, text := extractCodeBlocks(text)
 	inlineCodes, text := extractInlineCodes(text)
 	urls, text := extractURLs(text)
@@ -45,6 +47,8 @@ func RenderStyles(text string) (string, []Style) {
 	text = reHorizontalRule.ReplaceAllString(text, "")
 
 	text = stripFragmentBoldStar(text)
+	text = collapseBlankAfterBoldHeader(text)
+	text = indentUnderBoldHeader(text)
 
 	out, styles := strings.Builder{}, []Style{}
 	scan(text, &out, &styles)
@@ -54,11 +58,113 @@ func RenderStyles(text string) (string, []Style) {
 	res = restorePlaceholders(res, urls, inlineCodes, codeBlocks)
 	res = reExcessiveNewlines.ReplaceAllString(res, "\n\n")
 	res = strings.TrimSpace(res)
+	res = reBullet.ReplaceAllString(res, "${1}• ")
 
 	if len(styles) == 0 {
 		return res, nil
 	}
 	return res, styles
+}
+
+// collapseBlankAfterBoldHeader drops blank lines between a bold-only header
+// (e.g. `**Đánh giá:**`) and its following content. LLMs inconsistently
+// insert blank padding after such headers; Zalo renders the blank as visible
+// extra vertical space. Two adjacent headers keep their blank as section
+// separator.
+func collapseBlankAfterBoldHeader(text string) string {
+	lines := strings.Split(text, "\n")
+	if len(lines) < 3 {
+		return text
+	}
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); i++ {
+		out = append(out, lines[i])
+		if !isBoldOnlyLine(lines[i]) {
+			continue
+		}
+		j := i + 1
+		for j < len(lines) && strings.TrimSpace(lines[j]) == "" {
+			j++
+		}
+		if j == i+1 || j >= len(lines) || isBoldOnlyLine(lines[j]) {
+			continue
+		}
+		i = j - 1
+	}
+	return strings.Join(out, "\n")
+}
+
+func isBoldOnlyLine(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 5 || !strings.HasPrefix(s, "**") || !strings.HasSuffix(s, "**") {
+		return false
+	}
+	inner := s[2 : len(s)-2]
+	return inner != "" && !strings.Contains(inner, "**")
+}
+
+var (
+	reOrderedPrefix = regexp.MustCompile(`^\s*\d+\.\s+`)
+	reBulletPrefix  = regexp.MustCompile(`^\s*[-*+•]\s+`)
+)
+
+// indentUnderBoldHeader nests content under each bold-only header by 2 spaces.
+// Bullets that immediately follow a numbered item get 4 spaces (sub-bullet).
+// Section ends on the next bold-only header, OR on a blank line followed by
+// non-list non-header prose (treated as closing remarks).
+func indentUnderBoldHeader(text string) string {
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	inSection := false
+	prevOrdered := false
+	for i, line := range lines {
+		if isBoldOnlyLine(line) {
+			inSection = true
+			prevOrdered = false
+			out = append(out, line)
+			continue
+		}
+		if strings.TrimSpace(line) == "" {
+			if inSection {
+				if next := nextNonBlankIndex(lines, i+1); next >= 0 &&
+					!isBoldOnlyLine(lines[next]) && !isListLine(lines[next]) {
+					inSection = false
+					prevOrdered = false
+				}
+			}
+			out = append(out, line)
+			continue
+		}
+		if !inSection {
+			out = append(out, line)
+			continue
+		}
+		indent := "  "
+		isBullet := reBulletPrefix.MatchString(line)
+		if prevOrdered && isBullet {
+			indent = "    "
+		}
+		out = append(out, indent+line)
+		if reOrderedPrefix.MatchString(line) {
+			prevOrdered = true
+		} else if !isBullet {
+			prevOrdered = false
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func nextNonBlankIndex(lines []string, start int) int {
+	for i := start; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "" {
+			return i
+		}
+	}
+	return -1
+}
+
+func isListLine(s string) bool {
+	return reOrderedPrefix.MatchString(s) || reBulletPrefix.MatchString(s)
 }
 
 var (
