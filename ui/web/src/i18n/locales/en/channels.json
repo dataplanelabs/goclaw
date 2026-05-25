@@ -653,7 +653,9 @@
     "exportJsonl": "Export training data (JSONL)",
     "exporting": "Exporting…",
     "exportSuccess": "Downloaded {{count}} examples ({{bytes}} bytes)",
+    "exportTruncated": "export truncated at 5MB — narrow the date range",
     "configSaved": "Settings saved",
+    "restartRequired": "Channel restart required for these settings to take effect.",
     "save": "Save"
   }
 }

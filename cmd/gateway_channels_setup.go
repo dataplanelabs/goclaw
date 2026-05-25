@@ -174,7 +174,7 @@ func wireChannelRPCMethods(server *gateway.Server, pgStores *store.Stores, chann
 
 	// Team-reply evaluations RPC (Phase 6).
 	if pgStores.TeamReplyEvals != nil && pgStores.ChannelInstances != nil {
-		methods.NewTeamRepliesMethods(pgStores.TeamReplyEvals, pgStores.ChannelInstances).Register(server.Router())
+		methods.NewTeamRepliesMethods(pgStores.TeamReplyEvals, pgStores.ChannelInstances, pgStores.Agents).Register(server.Router())
 	}
 
 	// Register agent links WS RPC methods

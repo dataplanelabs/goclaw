@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 
@@ -152,36 +153,66 @@ func (w *PollWorker) tick(ctx context.Context) {
 
 func (w *PollWorker) applyMessages(ctx context.Context, uid string, msgs []ConversationMessage) {
 	last := w.cursor(uid)
-	var newCursor int64 = last
 	ctx2 := ctx
 	if tid, err := uuid.Parse(w.tenantID); err == nil {
 		ctx2 = store.WithTenantID(ctx, tid)
 	}
 	sessionKey := w.sessionKeyFor(uid)
 	threadKey := "direct:" + uid
+	type outcome struct {
+		t     int64
+		retry bool
+	}
+	outcomes := make([]outcome, 0, len(msgs))
 	for _, m := range msgs {
-		if m.Time > newCursor {
-			newCursor = m.Time
-		}
 		if m.Time <= last || m.MsgID == "" {
+			outcomes = append(outcomes, outcome{t: m.Time, retry: false})
 			continue
 		}
 		if m.SrcID == uid {
-			// Customer-side; already captured via the existing user-msg pipeline.
+			outcomes = append(outcomes, outcome{t: m.Time, retry: false})
 			continue
 		}
 		if w.selfUID != "" && m.SrcID != w.selfUID {
-			// Drop messages from any non-self UID (defensive guard).
+			outcomes = append(outcomes, outcome{t: m.Time, retry: false})
 			continue
 		}
-		w.persistTeamReply(ctx2, uid, threadKey, sessionKey, m)
+		if err := w.persistTeamReply(ctx2, uid, threadKey, sessionKey, m); err != nil {
+			outcomes = append(outcomes, outcome{t: m.Time, retry: true})
+			continue
+		}
+		outcomes = append(outcomes, outcome{t: m.Time, retry: false})
 	}
-	if newCursor > last {
-		w.setCursor(uid, newCursor)
+	// Never advance cursor past a failed message — next tick must retry it.
+	var minRetry int64 = math.MaxInt64
+	var maxOK int64 = last
+	for _, o := range outcomes {
+		if o.retry && o.t > 0 && o.t < minRetry {
+			minRetry = o.t
+		}
+	}
+	for _, o := range outcomes {
+		if o.retry {
+			continue
+		}
+		if o.t > maxOK && o.t < minRetry {
+			maxOK = o.t
+		}
+	}
+	if maxOK > last {
+		w.setCursor(uid, maxOK)
 	}
 }
 
-func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessionKey string, m ConversationMessage) {
+// Returns err only when eval insert fails; downstream session/bus failures are logged not propagated.
+func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessionKey string, m ConversationMessage) error {
+	// Skip if eval row already exists — prevents session duplication on retry
+	// after a transient post-commit failure (e.g. network timeout after DB
+	// commit). The cursor-no-advance behavior would otherwise re-process the
+	// same msg next tick and append a second copy to sessions.messages JSONB.
+	if existing, _ := w.evals.GetByMessageID(ctx, w.instanceID.String(), m.MsgID); existing != nil {
+		return nil
+	}
 	captured := time.UnixMilli(m.Time).UTC()
 	if m.Time == 0 {
 		captured = time.Now().UTC()
@@ -204,17 +235,17 @@ func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessi
 	if err != nil {
 		slog.Warn("oa.poll_worker.eval_insert_fail",
 			"instance", w.instanceName, "msg_id", m.MsgID, "err", err)
-		return
+		return err
 	}
 
 	msg := providers.Message{
 		Role:    "assistant",
 		Content: m.Text,
 		Metadata: map[string]any{
-			"source":       providers.MessageSourceTeam,
-			"team_msg_id":  m.MsgID,
-			"captured_at":  captured.Format(time.RFC3339Nano),
-			"poll_origin":  true,
+			"source":      providers.MessageSourceTeam,
+			"team_msg_id": m.MsgID,
+			"captured_at": captured.Format(time.RFC3339Nano),
+			"poll_origin": true,
 		},
 	}
 	w.sessions.AddMessage(ctx, sessionKey, msg)
@@ -245,6 +276,7 @@ func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessi
 	if w.bus != nil {
 		w.bus.Publish(event)
 	}
+	return nil
 }
 
 func (w *PollWorker) classifyErr(err error, op string) {

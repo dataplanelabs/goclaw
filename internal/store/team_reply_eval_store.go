@@ -40,8 +40,12 @@ type TeamReplyEvalFilter struct {
 	Until             *time.Time
 	MaxDiffScore      *float64
 	JudgeOnlyComplete bool
-	Limit             int
-	Offset            int
+	// ExcludeFailed drops rows with judge_error set. Default false (include
+	// failed evals) so the analytics table shows them — operators want to
+	// know what didn't grade. Export defaults true (filter out failed).
+	ExcludeFailed bool
+	Limit         int
+	Offset        int
 }
 
 // TeamReplyEvalStore persists judge verdicts on captured team replies.
@@ -54,6 +58,7 @@ type TeamReplyEvalStore interface {
 	MarkJudgeError(ctx context.Context, id string, errMsg string) error
 
 	List(ctx context.Context, tenantID string, f TeamReplyEvalFilter) ([]TeamReplyEvaluation, error)
+	Count(ctx context.Context, tenantID string, f TeamReplyEvalFilter) (int64, error)
 	GetByMessageID(ctx context.Context, channelInstanceID, teamMsgID string) (*TeamReplyEvaluation, error)
 	ListPendingJudge(ctx context.Context, limit int) ([]TeamReplyEvaluation, error)
 

@@ -2,6 +2,7 @@ package oa
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -44,10 +45,11 @@ func (f *fakeSessionCore) Save(context.Context, string) error {
 }
 
 type fakeEvalStore struct {
-	mu          sync.Mutex
-	rows        []store.TeamReplyEvaluation
-	byKey       map[string]string // (channel_instance|msg_id) → id
-	lastInsertTenant uuid.UUID    // captures store.TenantIDFromContext on Insert
+	mu               sync.Mutex
+	rows             []store.TeamReplyEvaluation
+	byKey            map[string]string
+	lastInsertTenant uuid.UUID
+	failMsgIDs       map[string]bool
 }
 
 func newFakeEvalStore() *fakeEvalStore {
@@ -58,6 +60,9 @@ func (f *fakeEvalStore) Insert(ctx context.Context, e store.TeamReplyEvaluation)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.lastInsertTenant = store.TenantIDFromContext(ctx)
+	if f.failMsgIDs[e.TeamMsgID] {
+		return "", fmt.Errorf("simulated DB failure for msg %s", e.TeamMsgID)
+	}
 	key := e.ChannelInstanceID + "|" + e.TeamMsgID
 	if id, ok := f.byKey[key]; ok {
 		return id, nil
@@ -74,6 +79,9 @@ func (f *fakeEvalStore) UpdateJudgeVerdict(context.Context, string, string, floa
 func (f *fakeEvalStore) MarkJudgeError(context.Context, string, string) error { return nil }
 func (f *fakeEvalStore) List(context.Context, string, store.TeamReplyEvalFilter) ([]store.TeamReplyEvaluation, error) {
 	return nil, nil
+}
+func (f *fakeEvalStore) Count(context.Context, string, store.TeamReplyEvalFilter) (int64, error) {
+	return 0, nil
 }
 func (f *fakeEvalStore) GetByMessageID(context.Context, string, string) (*store.TeamReplyEvaluation, error) {
 	return nil, nil
@@ -214,3 +222,42 @@ func TestPollWorker_PropagatesTenantContext(t *testing.T) {
 		t.Fatalf("Insert tenant ctx = %s, want %s", ev.lastInsertTenant, tenantUUID)
 	}
 }
+
+func TestPollWorker_CursorDoesNotAdvancePastFailedMessage(t *testing.T) {
+	tenantID := uuid.NewString()
+	instID := uuid.New()
+	sess := &fakeSessionCore{}
+	ev := newFakeEvalStore()
+	ev.failMsgIDs = map[string]bool{"m2": true}
+	bus := &fakeBus{}
+	w := NewPollWorker(instID, "zalo-oa-test", tenantID, "zalo_oa", "oa-self",
+		1*time.Second, PollWorkerDeps{Sessions: sess, Evals: ev, Bus: bus})
+
+	msgs := []ConversationMessage{
+		{MsgID: "m1", SrcID: "oa-self", DstID: "u1", Type: "text", Text: "first", Time: 1735041000000},
+		{MsgID: "m2", SrcID: "oa-self", DstID: "u1", Type: "text", Text: "second-fails", Time: 1735041001000},
+		{MsgID: "m3", SrcID: "oa-self", DstID: "u1", Type: "text", Text: "third", Time: 1735041002000},
+	}
+	w.applyMessages(context.Background(), "u1", msgs)
+
+	got := w.cursor("u1")
+	if got >= 1735041001000 {
+		t.Fatalf("cursor advanced past failed msg m2 (time=1735041001000): cursor=%d — next tick will skip retry", got)
+	}
+	if got < 1735041000000 {
+		t.Fatalf("cursor did not advance past successful m1: cursor=%d", got)
+	}
+	if !contains(ev.rows, "m1") || contains(ev.rows, "m2") {
+		t.Fatalf("wrong rows persisted: %+v", ev.rows)
+	}
+}
+
+func contains(rows []store.TeamReplyEvaluation, msgID string) bool {
+	for _, r := range rows {
+		if r.TeamMsgID == msgID {
+			return true
+		}
+	}
+	return false
+}
+

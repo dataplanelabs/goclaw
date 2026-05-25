@@ -375,10 +375,12 @@ const (
 	StandbyRPCNoPermission      = "standby.rpc.no_permission"
 
 	// Team-reply capture + evaluation (Phase 6+7)
-	TeamCaptureRPCNoPermission  = "team_capture.rpc.no_permission"
-	TeamCaptureRPCInvalidConfig = "team_capture.rpc.invalid_config"
-	TeamEvalNotFound            = "team_eval.not_found"
-	TeamEvalJudgeError          = "team_eval.judge_error"
+	TeamCaptureRPCNoPermission    = "team_capture.rpc.no_permission"
+	TeamCaptureRPCInvalidConfig   = "team_capture.rpc.invalid_config"
+	TeamCaptureJudgeAgentNotFound = "team_capture.judge_agent_not_found"
+	TeamCaptureJudgeKeyRequired   = "team_capture.judge_key_required"
+	TeamEvalNotFound              = "team_eval.not_found"
+	TeamEvalJudgeError            = "team_eval.judge_error"
 
 	// --- Trace retry ---
 	TraceRetryPayloadOversize = "trace.retry.payload_oversize"

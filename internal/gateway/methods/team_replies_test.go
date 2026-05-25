@@ -33,6 +33,9 @@ func (s *stubTeamEvalStore) List(_ context.Context, _ string, _ store.TeamReplyE
 	s.listCalls++
 	return s.rows, nil
 }
+func (s *stubTeamEvalStore) Count(_ context.Context, _ string, _ store.TeamReplyEvalFilter) (int64, error) {
+	return int64(len(s.rows)), nil
+}
 func (s *stubTeamEvalStore) GetByMessageID(_ context.Context, _ string, msgID string) (*store.TeamReplyEvaluation, error) {
 	for _, r := range s.rows {
 		if r.TeamMsgID == msgID {
@@ -86,12 +89,43 @@ func (s *stubInstStoreLite) CountInstances(context.Context, store.ChannelInstanc
 	return 0, nil
 }
 
+type stubAgentStoreLite struct {
+	byKey map[string]*store.AgentData
+}
+
+var _ store.AgentCRUDStore = (*stubAgentStoreLite)(nil)
+
+func (s *stubAgentStoreLite) Create(context.Context, *store.AgentData) error { return nil }
+func (s *stubAgentStoreLite) GetByKey(_ context.Context, key string) (*store.AgentData, error) {
+	return s.byKey[key], nil
+}
+func (s *stubAgentStoreLite) GetByID(context.Context, uuid.UUID) (*store.AgentData, error) {
+	return nil, nil
+}
+func (s *stubAgentStoreLite) GetByIDUnscoped(context.Context, uuid.UUID) (*store.AgentData, error) {
+	return nil, nil
+}
+func (s *stubAgentStoreLite) GetByKeys(context.Context, []string) ([]store.AgentData, error) {
+	return nil, nil
+}
+func (s *stubAgentStoreLite) GetByIDs(context.Context, []uuid.UUID) ([]store.AgentData, error) {
+	return nil, nil
+}
+func (s *stubAgentStoreLite) Update(context.Context, uuid.UUID, map[string]any) error { return nil }
+func (s *stubAgentStoreLite) Delete(context.Context, uuid.UUID) error                 { return nil }
+func (s *stubAgentStoreLite) List(context.Context, string) ([]store.AgentData, error) {
+	return nil, nil
+}
+func (s *stubAgentStoreLite) GetDefault(context.Context) (*store.AgentData, error) { return nil, nil }
+func (s *stubAgentStoreLite) ResetStuckSummoning(context.Context) (int64, error)   { return 0, nil }
+
 func setupTeamRepliesHandlers(tenantID, instID uuid.UUID) (*TeamRepliesMethods, *stubTeamEvalStore, *stubInstStoreLite) {
 	insts := &stubInstStoreLite{insts: map[uuid.UUID]*store.ChannelInstanceData{
 		instID: {BaseModel: store.BaseModel{ID: instID}, TenantID: tenantID, Name: "zalo-oa-test"},
 	}}
 	evals := &stubTeamEvalStore{}
-	return NewTeamRepliesMethods(evals, insts), evals, insts
+	agents := &stubAgentStoreLite{byKey: map[string]*store.AgentData{}}
+	return NewTeamRepliesMethods(evals, insts, agents), evals, insts
 }
 
 func newTRReq(method, body string) *protocol.RequestFrame {
@@ -142,6 +176,7 @@ func TestTeamReplies_ToggleAdminHappyPath(t *testing.T) {
 	tenantID := uuid.New()
 	instID := uuid.New()
 	m, _, insts := setupTeamRepliesHandlers(tenantID, instID)
+	m.agents.(*stubAgentStoreLite).byKey["j1"] = &store.AgentData{BaseModel: store.BaseModel{ID: uuid.New()}, AgentKey: "j1"}
 	client := gateway.NewTestClient(permissions.RoleAdmin, tenantID, "user-1")
 	body := `{"channel_instance_id":"` + instID.String() + `","capture_team_replies":true,"judge_evaluation":true,"judge_agent_key":"j1"}`
 	m.handleToggle(wsCallCtx(client), client, newTRReq(protocol.MethodChannelsTeamCaptureToggle, body))
@@ -150,6 +185,30 @@ func TestTeamReplies_ToggleAdminHappyPath(t *testing.T) {
 	}
 	if !strings.Contains(string(insts.insts[instID].Config), `"capture_team_replies":true`) {
 		t.Fatalf("missing key in merged config: %s", insts.insts[instID].Config)
+	}
+}
+
+func TestTeamReplies_ToggleRejectsMissingJudgeKey(t *testing.T) {
+	tenantID := uuid.New()
+	instID := uuid.New()
+	m, _, insts := setupTeamRepliesHandlers(tenantID, instID)
+	client := gateway.NewTestClient(permissions.RoleAdmin, tenantID, "user-1")
+	body := `{"channel_instance_id":"` + instID.String() + `","judge_evaluation":true}`
+	m.handleToggle(wsCallCtx(client), client, newTRReq(protocol.MethodChannelsTeamCaptureToggle, body))
+	if len(insts.insts[instID].Config) != 0 {
+		t.Fatalf("config should not be updated when judge_key missing: %s", insts.insts[instID].Config)
+	}
+}
+
+func TestTeamReplies_ToggleRejectsUnknownJudgeAgent(t *testing.T) {
+	tenantID := uuid.New()
+	instID := uuid.New()
+	m, _, insts := setupTeamRepliesHandlers(tenantID, instID)
+	client := gateway.NewTestClient(permissions.RoleAdmin, tenantID, "user-1")
+	body := `{"channel_instance_id":"` + instID.String() + `","judge_evaluation":true,"judge_agent_key":"ghost"}`
+	m.handleToggle(wsCallCtx(client), client, newTRReq(protocol.MethodChannelsTeamCaptureToggle, body))
+	if len(insts.insts[instID].Config) != 0 {
+		t.Fatalf("config should not be updated when judge agent not found: %s", insts.insts[instID].Config)
 	}
 }
 

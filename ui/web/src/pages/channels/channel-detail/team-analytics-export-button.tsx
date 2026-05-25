@@ -14,6 +14,7 @@ interface ExportResponse {
   jsonl: string;
   count: number;
   bytes: number;
+  truncated?: boolean;
 }
 
 export function TeamAnalyticsExportButton({
@@ -47,7 +48,8 @@ export function TeamAnalyticsExportButton({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setStatus(t("teamAnalytics.exportSuccess", { count: res.count, bytes: res.bytes }));
+      const successMsg = t("teamAnalytics.exportSuccess", { count: res.count, bytes: res.bytes });
+      setStatus(res.truncated ? `${successMsg} — ${t("teamAnalytics.exportTruncated")}` : successMsg);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus(msg);

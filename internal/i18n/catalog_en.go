@@ -340,10 +340,12 @@ func init() {
 		StandbyRPCInvalidSchedule:   "invalid schedule: %s",
 		StandbyRPCNoPermission:      "tenant admin required to edit channel schedules",
 
-		TeamCaptureRPCNoPermission:  "tenant admin required to toggle team-reply capture",
-		TeamCaptureRPCInvalidConfig: "invalid capture config: %s",
-		TeamEvalNotFound:            "team reply evaluation not found",
-		TeamEvalJudgeError:          "judge evaluation failed: %s",
+		TeamCaptureRPCNoPermission:    "tenant admin required to toggle team-reply capture",
+		TeamCaptureRPCInvalidConfig:   "invalid capture config: %s",
+		TeamCaptureJudgeAgentNotFound: "judge agent %q not found in this tenant — create it first or pick an existing agent_key",
+		TeamCaptureJudgeKeyRequired:   "judge_agent_key is required when judge_evaluation is enabled",
+		TeamEvalNotFound:              "team reply evaluation not found",
+		TeamEvalJudgeError:            "judge evaluation failed: %s",
 
 		TraceRetryPayloadOversize: "Payload too large to replay (>2 MB).",
 		TraceRetryLocked:          "Retry already in progress.",

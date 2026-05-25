@@ -36,6 +36,9 @@ func (f *fakeEvalStore) MarkJudgeError(_ context.Context, id, msg string) error 
 func (f *fakeEvalStore) List(context.Context, string, store.TeamReplyEvalFilter) ([]store.TeamReplyEvaluation, error) {
 	return nil, nil
 }
+func (f *fakeEvalStore) Count(context.Context, string, store.TeamReplyEvalFilter) (int64, error) {
+	return 0, nil
+}
 func (f *fakeEvalStore) GetByMessageID(context.Context, string, string) (*store.TeamReplyEvaluation, error) {
 	return nil, nil
 }

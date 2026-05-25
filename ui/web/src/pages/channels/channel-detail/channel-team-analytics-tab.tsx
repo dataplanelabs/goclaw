@@ -47,10 +47,22 @@ export function ChannelTeamAnalyticsTab({
   const [threadFilter, setThreadFilter] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [capture, setCapture] = useState(initialConfig?.capture_team_replies ?? false);
   const [judge, setJudge] = useState(initialConfig?.judge_evaluation ?? false);
   const [judgeKey, setJudgeKey] = useState(initialConfig?.judge_agent_key ?? "");
+  const [restartHint, setRestartHint] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    // Skip re-sync if operator has unsaved edits — avoids clobbering form
+    // state when a cross-tab update refreshes initialConfig mid-typing.
+    if (dirty) return;
+    setCapture(initialConfig?.capture_team_replies ?? false);
+    setJudge(initialConfig?.judge_evaluation ?? false);
+    setJudgeKey(initialConfig?.judge_agent_key ?? "");
+  }, [initialConfig?.capture_team_replies, initialConfig?.judge_evaluation, initialConfig?.judge_agent_key, dirty]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,8 +79,9 @@ export function ChannelTeamAnalyticsTab({
         params,
       );
       setRows(res.evaluations ?? []);
+      setLoadError(null);
     } catch (err) {
-      setStatus(errMsg(err));
+      setLoadError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -76,7 +89,13 @@ export function ChannelTeamAnalyticsTab({
 
   useEffect(() => {
     load();
-  }, [load]);
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (!ws.isConnected) return;
+      load();
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [load, ws]);
 
   const scores = useMemo(
     () =>
@@ -94,14 +113,19 @@ export function ChannelTeamAnalyticsTab({
 
   async function saveToggle() {
     setStatus(null);
+    setRestartHint(null);
     try {
-      await ws.call(Methods.CHANNELS_TEAM_CAPTURE_TOGGLE, {
+      const resp = await ws.call<{ hint?: string }>(Methods.CHANNELS_TEAM_CAPTURE_TOGGLE, {
         channel_instance_id: channelInstanceId,
         capture_team_replies: capture,
         judge_evaluation: judge,
         judge_agent_key: judgeKey.trim(),
       });
       setStatus(t("teamAnalytics.configSaved"));
+      setDirty(false);
+      if (resp?.hint?.toLowerCase().includes("restart")) {
+        setRestartHint(t("teamAnalytics.restartRequired"));
+      }
     } catch (err) {
       setStatus(errMsg(err));
     }
@@ -119,7 +143,7 @@ export function ChannelTeamAnalyticsTab({
           <Switch
             id="capture-toggle"
             checked={capture}
-            onCheckedChange={(v) => setCapture(Boolean(v))}
+            onCheckedChange={(v) => { setCapture(Boolean(v)); setDirty(true); }}
           />
           <Label htmlFor="capture-toggle">{t("teamAnalytics.captureToggle")}</Label>
         </div>
@@ -127,7 +151,7 @@ export function ChannelTeamAnalyticsTab({
           <Switch
             id="judge-toggle"
             checked={judge}
-            onCheckedChange={(v) => setJudge(Boolean(v))}
+            onCheckedChange={(v) => { setJudge(Boolean(v)); setDirty(true); }}
           />
           <Label htmlFor="judge-toggle">{t("teamAnalytics.judgeToggle")}</Label>
         </div>
@@ -136,7 +160,7 @@ export function ChannelTeamAnalyticsTab({
           <Input
             id="judge-agent"
             value={judgeKey}
-            onChange={(e) => setJudgeKey(e.target.value)}
+            onChange={(e) => { setJudgeKey(e.target.value); setDirty(true); }}
             placeholder="team-reply-judge"
             className="text-base md:text-sm mt-1"
           />
@@ -186,8 +210,16 @@ export function ChannelTeamAnalyticsTab({
         />
       </div>
 
+      {restartHint && (
+        <div className="text-xs text-amber-600 dark:text-amber-400 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+          {restartHint}
+        </div>
+      )}
       {status && (
         <div className="text-xs text-muted-foreground">{status}</div>
+      )}
+      {loadError && (
+        <div className="text-xs text-destructive">{loadError}</div>
       )}
     </div>
   );

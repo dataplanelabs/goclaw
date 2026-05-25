@@ -93,10 +93,7 @@ func (s *SQLiteTeamReplyEvalStore) MarkJudgeError(ctx context.Context, id string
 	return nil
 }
 
-func (s *SQLiteTeamReplyEvalStore) List(ctx context.Context, tenantID string, f store.TeamReplyEvalFilter) ([]store.TeamReplyEvaluation, error) {
-	if tenantID == "" {
-		return nil, nil
-	}
+func buildFilterClauseSQLite(tenantID string, f store.TeamReplyEvalFilter) ([]string, []any) {
 	conds := []string{"tenant_id = ?"}
 	args := []any{tenantID}
 	if f.ChannelInstanceID != "" {
@@ -122,6 +119,17 @@ func (s *SQLiteTeamReplyEvalStore) List(ctx context.Context, tenantID string, f 
 	if f.JudgeOnlyComplete {
 		conds = append(conds, "judge_completed_at IS NOT NULL")
 	}
+	if f.ExcludeFailed {
+		conds = append(conds, "judge_error IS NULL")
+	}
+	return conds, args
+}
+
+func (s *SQLiteTeamReplyEvalStore) List(ctx context.Context, tenantID string, f store.TeamReplyEvalFilter) ([]store.TeamReplyEvaluation, error) {
+	if tenantID == "" {
+		return nil, nil
+	}
+	conds, args := buildFilterClauseSQLite(tenantID, f)
 	limit := f.Limit
 	if limit <= 0 || limit > 1000 {
 		limit = 100
@@ -153,6 +161,19 @@ func (s *SQLiteTeamReplyEvalStore) List(ctx context.Context, tenantID string, f 
 		out = append(out, *e)
 	}
 	return out, rows.Err()
+}
+
+func (s *SQLiteTeamReplyEvalStore) Count(ctx context.Context, tenantID string, f store.TeamReplyEvalFilter) (int64, error) {
+	if tenantID == "" {
+		return 0, nil
+	}
+	conds, args := buildFilterClauseSQLite(tenantID, f)
+	q := "SELECT COUNT(*) FROM team_reply_evaluations WHERE " + strings.Join(conds, " AND ")
+	var n int64
+	if err := s.db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count team_reply_evals: %w", err)
+	}
+	return n, nil
 }
 
 func (s *SQLiteTeamReplyEvalStore) GetByMessageID(ctx context.Context, channelInstanceID, teamMsgID string) (*store.TeamReplyEvaluation, error) {

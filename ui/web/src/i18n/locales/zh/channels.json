@@ -539,7 +539,9 @@
     "exportJsonl": "导出训练数据 (JSONL)",
     "exporting": "导出中…",
     "exportSuccess": "已下载 {{count}} 条（{{bytes}} 字节）",
+    "exportTruncated": "在 5MB 处截断 — 请缩小日期范围",
     "configSaved": "配置已保存",
+    "restartRequired": "需要重启 channel 才能让设置生效。",
     "save": "保存"
   }
 }
