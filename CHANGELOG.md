@@ -38,6 +38,27 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- **Zalo Personal — TTS audio now arrives as native voice bubble** — agents
+  calling `tts` (or any of the audio-producing tools) then `send_file(path=*.mp3)`
+  targeting a `zalo_personal` chat now produce a native voice-bubble in the
+  recipient's Zalo app (playable inline with waveform/duration), not a file
+  attachment. Matches the Telegram `sendVoice` UX. Implementation: (1) new
+  `internal/media/audio_normalize.go` re-encodes the source to M4A (mono, 16 kHz,
+  AAC-LC) via `ffmpeg` — added to the Docker image under `ENABLE_FULL_SKILLS=true`.
+  (2) New `internal/channels/zalo/personal/protocol/send_voice.go` reuses the
+  existing chunked `UploadFile` path (returns a Zalo CDN URL via WS callback),
+  then POSTs to `/api/message/forward` (or `/api/group/forward`) with `msgType=3`
+  + `msgInfo={voiceUrl, m4aUrl, fileSize}` — matches zca-js's `sendVoice` wire
+  shape exactly. (3) Channel-level `sendMediaBestEffort` now detects audio
+  extensions (`.mp3` / `.m4a` / `.ogg` / `.opus` / `.wav` / `.aac`) and routes
+  through voice-send BEFORE the image / file branches; on any failure (ffmpeg
+  missing, upload error, voice-endpoint reject) the channel falls back to
+  `share.file` so the message is never dropped. (4) New `disable_voice_send`
+  per-channel kill switch (default off) routes audio straight to `share.file`
+  when set. `ZALO_PERSONAL_ADDENDUM.md` updated so the LLM knows audio is
+  auto-routed to voice bubble. ZCA-JS protocol verified live during the spike
+  phase against `RFS-ADRENO/zca-js` source.
+
 - **Configurable trace replay retention** — new `trace.replay_retention_days`
   system_config (default 7 via `config.DefaultReplayRetentionDays`). Replaces
   the prior hard-coded "sweep on every successful run" behavior that wiped
