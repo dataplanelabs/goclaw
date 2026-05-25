@@ -18,8 +18,8 @@ const (
 	StyleListOrdered   = "lst_2"
 )
 
-// Style is one positional run of formatting over the final plain-text body.
-// Positions are UTF-16 code units (matches Zalo client / zca-js wire shape).
+// Style positions are UTF-16 code units over the OUTPUT text — matches the
+// Zalo client / zca-js wire shape.
 type Style struct {
 	Start int    `json:"start"`
 	Len   int    `json:"len"`
@@ -27,35 +27,25 @@ type Style struct {
 }
 
 // RenderStyles strips markdown markup and emits Zalo native Style spans.
-// Positions are UTF-16 code units over the OUTPUT (stripped) text.
-// Unmapped markdown (headers, blockquotes, code blocks, links, images) is
-// stripped per existing StripMarkdown behavior but emits no style.
+// Lists are NOT styled: Zalo mobile dumps lst_1/lst_2 spans as raw
+// `<list>`/`<number>` XML in-band, so list lines pass through as literal text.
 func RenderStyles(text string) (string, []Style) {
 	if text == "" {
 		return "", nil
 	}
-	// Stash code blocks and inline code FIRST so list / italic regex don't
-	// touch their contents. Restore at end.
 	codeBlocks, text := extractCodeBlocks(text)
 	inlineCodes, text := extractInlineCodes(text)
-	// URLs / emails likewise — protect from italic underscores.
 	urls, text := extractURLs(text)
-	// __identifier__ dunders: extract before bold/italic so they survive intact.
 	dunders, text := extractDunders(text)
 
-	// Strip non-mappable markup (no Style emitted): images, header markers,
-	// blockquotes, horizontal rules, markdown links → "text (url)".
 	text = reImage.ReplaceAllString(text, "")
 	text = reLink.ReplaceAllString(text, "$1 ($2)")
 	text = reHeader.ReplaceAllString(text, "$1")
 	text = reBlockquote.ReplaceAllString(text, "$1")
 	text = reHorizontalRule.ReplaceAllString(text, "")
 
-	// Drop `**…**` markers glued mid-word (e.g. `ove**rtrain**g`) — emitting
-	// a Style over the fragment renders as broken partial bold on Zalo.
 	text = stripFragmentBoldStar(text)
 
-	// Walk inline emphasis patterns in PRIORITY order — outer-first.
 	out, styles := strings.Builder{}, []Style{}
 	scan(text, &out, &styles)
 
@@ -65,20 +55,12 @@ func RenderStyles(text string) (string, []Style) {
 	res = reExcessiveNewlines.ReplaceAllString(res, "\n\n")
 	res = strings.TrimSpace(res)
 
-	// Handle list-prefix lines AFTER inline pass — strip `- ` / `1. ` and
-	// emit lst_1 / lst_2 over the item text range.
-	res, listStyles := emitListStyles(res)
-	styles = append(styles, listStyles...)
-
 	if len(styles) == 0 {
 		return res, nil
 	}
 	return res, styles
 }
 
-// Regex constants for code blocks / images / links / headers / blockquotes /
-// horizontal-rules / excessive-newlines / bold / strikethrough / identifier
-// already live in markdown.go (this package) — reuse, don't redeclare.
 var (
 	reURL   = regexp.MustCompile(`https?://[^\s<>\)\]]+`)
 	reEmail = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
@@ -86,15 +68,10 @@ var (
 	reItalicStar    = regexp.MustCompile(`\*([^*\s][^*]*?)\*`)
 	reItalicUnder   = regexp.MustCompile(`_([^_\s][^_]*?)_`)
 	reHtmlUnderline = regexp.MustCompile(`(?is)<u>(.+?)</u>`)
-
-	reListUnordered = regexp.MustCompile(`(?m)^(\s*)[-*+]\s+(.+)$`)
-	reListOrdered   = regexp.MustCompile(`(?m)^(\s*)\d+\.\s+(.+)$`)
 )
 
-// scan walks `text` and emits matches for the inline emphasis patterns in
-// outer-first order. Triple-star/under emit two styles (b+i) at the same span.
+// scan walks `text` outer-first; triple-emphasis emits b+i at the same span.
 func scan(text string, out *strings.Builder, styles *[]Style) {
-	// Process triple-emphasis first.
 	text = applyPattern(text, reBoldItalicStar, out, styles, func(start, length int) {
 		*styles = append(*styles, Style{Start: start, Len: length, St: StyleBold})
 		*styles = append(*styles, Style{Start: start, Len: length, St: StyleItalic})
@@ -126,15 +103,6 @@ func scan(text string, out *strings.Builder, styles *[]Style) {
 	out.WriteString(text)
 }
 
-// applyPattern walks `text`, replaces every match with its capture-group-1
-// content, appends to `out`, and emits styles via the callback. Returns
-// the remaining text (which is empty after a full sweep) so the calling
-// pipeline can chain into the next pattern by re-feeding `out.String()`.
-//
-// Implementation: writes already-stripped prefix + emitted inner content to
-// `out` and returns empty string. The next pattern call receives a FRESH
-// builder seeded with the current `out` contents. This is simpler than
-// threading state through multiple passes.
 func applyPattern(text string, re *regexp.Regexp, out *strings.Builder, styles *[]Style, emit func(start, length int)) string {
 	return applyPatternFiltered(text, re, out, styles, nil, emit)
 }
@@ -168,117 +136,6 @@ func applyPatternFiltered(text string, re *regexp.Regexp, out *strings.Builder, 
 	return next.String()
 }
 
-// emitListStyles groups consecutive same-kind list lines into ONE Style range
-// per run so Zalo's client numbers items sequentially. Single isolated ordered
-// items keep their literal "1." prefix (no style — Zalo's block highlight is
-// ugly for one item). Single isolated unordered items strip "-" + emit lst_1.
-// Runs break on opposite kind, kindOther, or a blank line.
-func emitListStyles(text string) (string, []Style) {
-	if text == "" {
-		return text, nil
-	}
-	lines := strings.Split(text, "\n")
-
-	type lineKind int
-	const (
-		kindOther lineKind = iota
-		kindOrdered
-		kindUnordered
-	)
-	type classifiedLine struct {
-		kind     lineKind
-		leading  string
-		body     string
-		original string
-	}
-	raw := make([]classifiedLine, len(lines))
-	for i, line := range lines {
-		if m := reListUnordered.FindStringSubmatchIndex(line); m != nil {
-			raw[i] = classifiedLine{kindUnordered, line[m[2]:m[3]], line[m[4]:m[5]], line}
-		} else if m := reListOrdered.FindStringSubmatchIndex(line); m != nil {
-			raw[i] = classifiedLine{kindOrdered, line[m[2]:m[3]], line[m[4]:m[5]], line}
-		} else {
-			raw[i] = classifiedLine{kind: kindOther, original: line}
-		}
-	}
-
-	// Drop blank lines that bridge list ↔ non-list (Zalo's lst_1/lst_2 style
-	// already adds visual padding; explicit blank lines stack into a double
-	// gap). Keep blanks between two list runs — they're intentional run breaks.
-	classified := make([]classifiedLine, 0, len(raw))
-	for i, c := range raw {
-		if c.kind == kindOther && strings.TrimSpace(c.original) == "" {
-			prevIsList := i > 0 && raw[i-1].kind != kindOther
-			nextIsList := i+1 < len(raw) && raw[i+1].kind != kindOther
-			if prevIsList != nextIsList {
-				continue
-			}
-		}
-		classified = append(classified, c)
-	}
-
-	var out strings.Builder
-	var styles []Style
-	outOffset := 0
-	i := 0
-	for i < len(classified) {
-		c := classified[i]
-		if c.kind == kindOther {
-			if i > 0 {
-				out.WriteString("\n")
-				outOffset++
-			}
-			out.WriteString(c.original)
-			outOffset += pkgproto.UTF16Len(c.original)
-			i++
-			continue
-		}
-		j := i
-		for j < len(classified) && classified[j].kind == c.kind {
-			j++
-		}
-		runLen := j - i
-
-		if i > 0 {
-			out.WriteString("\n")
-			outOffset++
-		}
-
-		if c.kind == kindOrdered && runLen == 1 {
-			// Single isolated numbered line — keep "1." prefix visible.
-			out.WriteString(c.original)
-			outOffset += pkgproto.UTF16Len(c.original)
-		} else {
-			styleStart := outOffset
-			for k := i; k < j; k++ {
-				if k > i {
-					out.WriteString("\n")
-					outOffset++
-				}
-				out.WriteString(classified[k].leading)
-				outOffset += pkgproto.UTF16Len(classified[k].leading)
-				out.WriteString(classified[k].body)
-				outOffset += pkgproto.UTF16Len(classified[k].body)
-			}
-			st := StyleListOrdered
-			if c.kind == kindUnordered {
-				st = StyleListUnordered
-			}
-			styles = append(styles, Style{
-				Start: styleStart,
-				Len:   outOffset - styleStart,
-				St:    st,
-			})
-		}
-		i = j
-	}
-
-	return out.String(), styles
-}
-
-// extractCodeBlocks pulls fenced ``` blocks out into placeholders before any
-// other regex sees them. Returns (placeholders, text-with-placeholders).
-// Inner-content stripped of leading language hint.
 func extractCodeBlocks(text string) ([]string, string) {
 	var stash []string
 	out := reFencedCode.ReplaceAllStringFunc(text, func(match string) string {
@@ -358,10 +215,10 @@ func restorePlaceholders(text string, urls, inlineCodes, codeBlocks []string) st
 	return text
 }
 
-// stripFragmentBoldStar removes `**…**` whose markers are glued to a
-// letter/digit on either side (e.g. `ove**rtrain**g`). Such spans render as
-// broken partial-word bold on Zalo. Triple-star `***x***` is left intact so
-// the scan pass can still emit bold+italic for it.
+// stripFragmentBoldStar drops `**…**` glued to a letter/digit on either side
+// (e.g. `ove**rtrain**g`) — emitting a Style over the fragment renders as
+// broken partial-word bold. Triple-emphasis `***x***` skipped via the `*`
+// outer guard so scan still emits b+i for it.
 func stripFragmentBoldStar(text string) string {
 	matches := reBoldStar.FindAllStringSubmatchIndex(text, -1)
 	if len(matches) == 0 {
@@ -372,7 +229,6 @@ func stripFragmentBoldStar(text string) string {
 	for _, m := range matches {
 		matchStart, matchEnd := m[0], m[1]
 		innerStart, innerEnd := m[2], m[3]
-		// Skip triple-emphasis (***...***): outer rune is another `*`.
 		if matchStart > 0 && text[matchStart-1] == '*' {
 			continue
 		}

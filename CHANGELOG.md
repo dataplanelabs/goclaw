@@ -6,19 +6,18 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
-- **Zalo native renderer — tighter bullets + no broken partial-word bold** —
-  Two LLM-output rendering issues on `zalo_personal` when
-  `enable_native_styles=true`. (1) Blank lines bridging non-list ↔ list runs
-  are now collapsed so Zalo's `lst_1`/`lst_2` native padding isn't doubled by
-  an explicit gap; blanks between two adjacent list runs (the
-  `- a\n- b\n\n- c\n- d` shape) stay intact as intentional run breaks.
-  (2) `**…**` whose markers are glued to a letter/digit on either side
-  (e.g. `Dễ ove**rtrain nếu khôn**g`) are stripped — no Style emitted — so the
-  reader sees the words plainly instead of broken partial-word bold. Triple
-  emphasis `***x***` is detected via the adjacent `*` guard and left intact.
-  Both fixes scoped to `internal/channels/zalo/common/styles.go` with
-  Vietnamese-diacritic-safe word boundary via `unicode.IsLetter` over decoded
-  runes. 11 new unit-test cases.
+- **Zalo native renderer — drop list styles + fix fragment-bold** — on
+  `zalo_personal` with `enable_native_styles=true`, Zalo mobile dumps `lst_1`
+  / `lst_2` spans as raw `<list>` / `<number index="N">…</number>` XML in the
+  message body. Renderer no longer emits list styles at all; `- item` and
+  `1. item` lines pass through as literal text (visible dash / number).
+  Companion fix: `**…**` glued to a letter/digit on either side
+  (e.g. `Dễ ove**rtrain nếu khôn**g`) drops the markers — no Style emitted —
+  so the reader sees the words plainly instead of broken partial-word bold.
+  Triple-emphasis `***x***` left intact via the adjacent-`*` guard.
+  Vietnamese-diacritic-safe word boundary via `unicode.IsLetter` over runes.
+  Prompt addendum (`ZALO_PERSONAL_ADDENDUM.md`) updated to tell the LLM lists
+  are literal text on this channel.
 
 - **Orphaned traces can now be Stopped and Retried** — when an agent process
   died mid-run (panic, OOM, rolling update), the trace previously remained stuck
