@@ -38,8 +38,10 @@ func (t *DateTimeTool) Parameters() map[string]any {
 func (t *DateTimeTool) Execute(_ context.Context, args map[string]any) *Result {
 	now := time.Now()
 	result := map[string]any{
-		"utc":     now.UTC().Format(time.RFC3339),
-		"unix_ms": now.UnixMilli(),
+		"utc":         now.UTC().Format(time.RFC3339),
+		"unix_ms":     now.UnixMilli(),
+		"weekday":     now.UTC().Weekday().String(),
+		"human":       now.UTC().Format("Monday, 2 January 2006 15:04 MST"),
 	}
 
 	if tz, ok := args["timezone"].(string); ok && tz != "" {
@@ -47,8 +49,11 @@ func (t *DateTimeTool) Execute(_ context.Context, args map[string]any) *Result {
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("invalid timezone '%s': use IANA names like 'Asia/Ho_Chi_Minh', 'America/New_York'", tz))
 		}
-		result["local"] = now.In(loc).Format(time.RFC3339)
+		local := now.In(loc)
+		result["local"] = local.Format(time.RFC3339)
 		result["timezone"] = tz
+		result["weekday"] = local.Weekday().String()
+		result["human"] = local.Format("Monday, 2 January 2006 15:04 MST")
 	}
 
 	data, _ := json.MarshalIndent(result, "", "  ")
