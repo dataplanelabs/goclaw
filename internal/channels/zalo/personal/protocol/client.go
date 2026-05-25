@@ -1,12 +1,14 @@
 package protocol
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -18,6 +20,40 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// ipv4Dialer forces tcp4 because Zalo's CDN endpoints (notably
+// `tt-files-wpa.chat.zalo.me` for file uploads) return AAAA records, and the
+// K3S cluster has no IPv6 egress — happy-eyeballs picks v6 first and the
+// kernel rejects with ENETUNREACH instantly, so file uploads fail with
+// `network is unreachable` (trace 019e601a). Forcing tcp4 sidesteps the
+// dual-stack resolution entirely.
+var ipv4Dialer = &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+
+func dialIPv4(ctx context.Context, network, addr string) (net.Conn, error) {
+	return ipv4Dialer.DialContext(ctx, normalizeNetworkForIPv4(network), addr)
+}
+
+// normalizeNetworkForIPv4 promotes dual-stack and v6 network names to tcp4.
+// Extracted from dialIPv4 so the rewrite is unit-testable without binding to
+// the OS network stack.
+func normalizeNetworkForIPv4(network string) string {
+	switch network {
+	case "tcp", "tcp6":
+		return "tcp4"
+	}
+	return network
+}
+
+func newIPv4Transport() *http.Transport {
+	return &http.Transport{
+		DialContext:           dialIPv4,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+}
 
 // Session holds authenticated Zalo session state.
 type Session struct {
@@ -41,8 +77,9 @@ func NewSession() *Session {
 		Language:  DefaultLanguage,
 		CookieJar: jar,
 		Client: &http.Client{
-			Jar:     jar,
-			Timeout: 60 * time.Second,
+			Jar:       jar,
+			Timeout:   60 * time.Second,
+			Transport: newIPv4Transport(),
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= MaxRedirects {
 					return fmt.Errorf("zalo_personal: too many redirects")

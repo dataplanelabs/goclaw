@@ -4,6 +4,19 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ## Unreleased
 
+### Fixed
+
+- **Zalo Personal file upload no longer fails on IPv6 dial** — trace
+  `019e601a-…` showed a TTS audio that never reached the chat: the Session
+  HTTP client used Go's default transport, happy-eyeballs raced v6 and v4
+  for `tt-files-wpa.chat.zalo.me`, picked the AAAA address, and the K3S pod
+  (no IPv6 egress) instant-failed with `connect: network is unreachable`.
+  `Session.Client` now uses an explicit `*http.Transport` with a dialer
+  that promotes `tcp` / `tcp6` to `tcp4`, sidestepping the dual-stack
+  resolution entirely. Covers every Zalo Personal outbound (file upload,
+  message send, group ops, reactions) since they all share the session
+  client. Regression test verifies the network-string rewrite.
+
 ### Changed (BREAKING for LLM behavior — see below)
 
 - **Media generation tools no longer auto-deliver** —

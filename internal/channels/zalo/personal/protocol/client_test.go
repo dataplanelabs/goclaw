@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"context"
+	"net"
 	"strings"
 	"testing"
 )
@@ -220,5 +222,43 @@ func TestBuildFormBody(t *testing.T) {
 	}
 	if !strings.Contains(str, "foo=bar") {
 		t.Error("missing foo=bar")
+	}
+}
+
+// Regression: trace 019e601a — Zalo's CDN resolved to IPv6 but the K3S
+// cluster has no IPv6 egress, so happy-eyeballs dialed v6 first and failed
+// with `network is unreachable` before falling back. dialIPv4 forces tcp4
+// regardless of the requested network so the dial never goes to a v6 address.
+func TestDialIPv4_ForcesTCPv4(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"tcp_promoted", "tcp", "tcp4"},
+		{"tcp6_promoted", "tcp6", "tcp4"},
+		{"tcp4_unchanged", "tcp4", "tcp4"},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			got := normalizeNetworkForIPv4(c.in)
+			if got != c.want {
+				t.Errorf("normalize(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+	// Sanity-check the dialer doesn't accept a v6 address. Use an obvious
+	// loopback-v6 target — the connect would fail anyway but the error
+	// surface must mention v4 (resolver had no AAAA→A fallback path).
+	_, err := dialIPv4(context.Background(), "tcp6", "[::1]:1")
+	if err == nil {
+		t.Fatal("expected dial to fail; got nil error")
+	}
+	// The error address must NOT be a v6 literal — confirms tcp6 → tcp4 rewrite.
+	if ne, ok := err.(*net.OpError); ok {
+		if ne.Net == "tcp6" {
+			t.Errorf("dial network was still tcp6: %v", err)
+		}
 	}
 }
