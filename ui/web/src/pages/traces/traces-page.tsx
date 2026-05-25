@@ -246,7 +246,7 @@ export function TracesPage() {
                       className="cursor-pointer border-b last:border-0 hover:bg-muted/30"
                       onClick={() => setSelectedTraceId(trace.id)}
                     >
-                      <td className="px-4 py-2.5 max-w-[300px] lg:max-w-[500px] xl:max-w-[800px] 2xl:max-w-none">
+                      <td className="px-4 py-2.5 max-w-[300px] lg:max-w-[500px] xl:max-w-[700px] 2xl:max-w-[900px]">
                         <div className="flex items-center gap-1.5 text-sm font-medium min-w-0">
                           {trace.parent_trace_id && (
                             <GitFork className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
