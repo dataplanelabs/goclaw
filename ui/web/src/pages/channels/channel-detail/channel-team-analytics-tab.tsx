@@ -25,13 +25,10 @@ interface AgentListItem {
 
 const CREATE_NEW_AGENT_SENTINEL = "__create_new__";
 
-import {
-  TeamAnalyticsHistogram,
-} from "./team-analytics-histogram";
-import {
-  TeamAnalyticsTable,
-  type TeamReplyEvaluation,
-} from "./team-analytics-table";
+import { TeamAnalyticsHistogram } from "./team-analytics-histogram";
+import { TeamAnalyticsThreadList } from "./team-analytics-thread-list";
+import { aggregateThreads } from "./aggregate-threads";
+import type { TeamReplyEvaluation } from "./team-reply-types";
 import { TeamAnalyticsExportButton } from "./team-analytics-export-button";
 import { tallyRejudgeOutcome } from "./tally-rejudge-outcome";
 
@@ -424,7 +421,7 @@ export function ChannelTeamAnalyticsTab({
           </div>
         )}
 
-        <TeamAnalyticsTable rows={rows} />
+        <TeamAnalyticsThreadList threads={aggregateThreads(rows)} threadFilter={threadFilter} />
       </div>
 
       <div className="flex justify-end">

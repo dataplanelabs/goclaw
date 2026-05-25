@@ -561,6 +561,18 @@
     "judgeScheduleHint": "Biểu thức cron 5 trường, giờ Asia/Saigon. Mặc định: mỗi giờ 8h-18h T2-T6.",
     "gradePendingButton": "Chấm {{count}} chờ ngay",
     "judgeBatchSizeLabel": "Kích thước batch",
-    "judgeBatchSizeHint": "Số dòng/lần gọi LLM (1-50). Càng lớn càng tiết kiệm token, nhưng có rủi ro chất lượng."
+    "judgeBatchSizeHint": "Số dòng/lần gọi LLM (1-50). Càng lớn càng tiết kiệm token, nhưng có rủi ro chất lượng.",
+    "threadCount": "{{count}} cuộc trò chuyện",
+    "threadCaptureCount": "{{count}} lượt",
+    "expandAll": "Mở rộng tất cả",
+    "collapseAll": "Thu gọn tất cả",
+    "loadOlderCaptures": "Tải thêm {{count}}",
+    "viewDetails": "Xem chi tiết đánh giá",
+    "noMatchingThreads": "Không có cuộc trò chuyện nào khớp",
+    "detailTitle": "Đánh giá của judge",
+    "detailCustomerMessage": "Khách",
+    "detailTeamReply": "Phản hồi của team",
+    "detailBotWouldSay": "Bot sẽ trả lời",
+    "detailDiffReasoning": "Lý do"
   }
 }

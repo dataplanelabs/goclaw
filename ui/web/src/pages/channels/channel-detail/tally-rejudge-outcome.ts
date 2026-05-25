@@ -1,4 +1,4 @@
-import type { TeamReplyEvaluation } from "./team-analytics-table";
+import type { TeamReplyEvaluation } from "./team-reply-types";
 
 export interface RejudgeTally {
   total: number;

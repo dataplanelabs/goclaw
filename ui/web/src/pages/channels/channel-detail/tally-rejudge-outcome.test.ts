@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { tallyRejudgeOutcome } from "./tally-rejudge-outcome";
-import type { TeamReplyEvaluation } from "./team-analytics-table";
+import type { TeamReplyEvaluation } from "./team-reply-types";
 
 const baseRow = (over: Partial<TeamReplyEvaluation> = {}): TeamReplyEvaluation => ({
   id: "r",
