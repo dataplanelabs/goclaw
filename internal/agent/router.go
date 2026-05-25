@@ -38,6 +38,7 @@ type AgentActivityStatus struct {
 // *tracing.Collector implements this interface implicitly.
 type TraceCollector interface {
 	FinishTrace(ctx context.Context, traceID uuid.UUID, status, errMsg, outputPreview string)
+	Store() store.TracingStore
 }
 
 // Router manages multiple agent Loop instances.
@@ -333,13 +334,22 @@ func (r *Router) UnregisterRun(runID string) {
 // Phase 2: wait ≤abortGraceTimeout for goroutine to exit via Done channel.
 // On timeout: force-mark trace as cancelled so the UI moves on.
 //
+// On activeRuns miss: falls through to a tenant-scoped DB lookup. If a
+// matching trace is still status='running' (process gone post-crash/restart),
+// force-mark it cancelled and return Orphaned=true. Single-pod assumption.
+//
 // sessionKey is validated for authorization when non-empty.
-func (r *Router) AbortRun(runID, sessionKey string) AbortResult {
+// tenantID is required for the orphan-fallback DB query (uuid.Nil = master).
+func (r *Router) AbortRun(runID, sessionKey string, tenantID uuid.UUID) AbortResult {
 	res := AbortResult{RunID: runID}
 
 	val, ok := r.activeRuns.Load(runID)
 	if !ok {
-		res.NotFound = true
+		if r.markOrphanedRunAborted(runID, tenantID) {
+			res.Orphaned = true
+		} else {
+			res.NotFound = true
+		}
 		return res
 	}
 	run := val.(*ActiveRun)
@@ -354,8 +364,14 @@ func (r *Router) AbortRun(runID, sessionKey string) AbortResult {
 	// Any failure means abort is already in flight (state==1) or run is done (state==2).
 	if !run.State.CompareAndSwap(0, 1) {
 		if run.State.Load() == 2 {
-			// Race: run finished between Load and CAS
-			res.NotFound = true
+			// Race: run finished between Load and CAS. Orphan-check defends
+			// against a DB row that's still 'running' (e.g. UnregisterRun
+			// raced FinishTrace) — usually false, but cheap to verify.
+			if r.markOrphanedRunAborted(runID, tenantID) {
+				res.Orphaned = true
+			} else {
+				res.NotFound = true
+			}
 		} else {
 			res.AlreadyAborting = true
 		}
@@ -373,6 +389,33 @@ func (r *Router) AbortRun(runID, sessionKey string) AbortResult {
 		res.Forced = true
 	}
 	return res
+}
+
+// markOrphanedRunAborted force-marks a trace as cancelled in DB when the
+// activeRuns map shows no entry for runID but DB still has the trace at
+// status='running' (process gone post-crash/restart). Returns true iff a
+// matching row was force-marked.
+//
+// Tenant scoping: tenantID filters the DB lookup so a caller can't clobber
+// another tenant's run by guessing a run_id. uuid.Nil = master scope.
+//
+// SINGLE-POD ASSUMPTION: only safe under one replica. Under multi-pod, an
+// activeRuns miss on pod-A could race pod-B's live run. Revisit on scale-out.
+func (r *Router) markOrphanedRunAborted(runID string, tenantID uuid.UUID) bool {
+	if r.traceCollector == nil || r.traceCollector.Store() == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if tenantID != uuid.Nil {
+		ctx = store.WithTenantID(ctx, tenantID)
+	}
+	traceID, status, err := r.traceCollector.Store().GetTraceByRunID(ctx, runID, tenantID)
+	if err != nil || traceID == uuid.Nil || status != "running" {
+		return false
+	}
+	r.traceCollector.FinishTrace(ctx, traceID, "cancelled", "orphan abort: process gone (likely crash or restart)", "")
+	return true
 }
 
 // forceMarkTraceAborted marks a trace as cancelled in DB when the 3s grace
@@ -401,13 +444,14 @@ func (r *Router) forceMarkTraceAborted(runID string) {
 }
 
 // AbortRunsForSession cancels all active runs for a session key.
-// Returns rich results for each run (one timer per run is fine for typical 1–2 runs/session).
+// Orphan-DB-fallback intentionally NOT applied here — bulk session abort only
+// touches activeRuns. Single-run orphan recovery happens via AbortRun(runID, ...).
 func (r *Router) AbortRunsForSession(sessionKey string) []AbortResult {
 	var results []AbortResult
 	r.activeRuns.Range(func(key, val any) bool {
 		run := val.(*ActiveRun)
 		if run.SessionKey == sessionKey {
-			results = append(results, r.AbortRun(run.RunID, ""))
+			results = append(results, r.AbortRun(run.RunID, "", run.TenantID))
 		}
 		return true
 	})

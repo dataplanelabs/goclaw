@@ -58,6 +58,23 @@ func (s *SQLiteTracingStore) UpdateTrace(ctx context.Context, traceID uuid.UUID,
 	return execMapUpdateWhereTenant(ctx, s.db, "traces", updates, traceID, tid)
 }
 
+// GetTraceByRunID returns the latest trace ID + status for the given run_id,
+// scoped to tenantID (uuid.Nil = master scope). Used by abort handler to
+// detect orphans whose owning process has gone but DB still shows running.
+func (s *SQLiteTracingStore) GetTraceByRunID(ctx context.Context, runID string, tenantID uuid.UUID) (uuid.UUID, string, error) {
+	var id uuid.UUID
+	var status string
+	q := `SELECT id, status FROM traces WHERE run_id = ?`
+	args := []any{runID}
+	if tenantID != uuid.Nil {
+		q += ` AND tenant_id = ?`
+		args = append(args, tenantID)
+	}
+	q += ` ORDER BY created_at DESC LIMIT 1`
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&id, &status)
+	return id, status, err
+}
+
 func (s *SQLiteTracingStore) GetTrace(ctx context.Context, traceID uuid.UUID) (*store.TraceData, error) {
 	query := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,

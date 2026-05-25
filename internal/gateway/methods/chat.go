@@ -504,16 +504,17 @@ func (m *ChatMethods) handleAbort(ctx context.Context, client *gateway.Client, r
 	isAdmin := canSeeAll(client.Role(), m.cfg.Gateway.OwnerIDs, client.UserID())
 
 	// Collect abort results.
+	tenantID := store.TenantIDFromContext(ctx)
 	var results []agent.AbortResult
 	if params.RunID != "" {
-		results = []agent.AbortResult{m.agents.AbortRun(params.RunID, params.SessionKey)}
+		results = []agent.AbortResult{m.agents.AbortRun(params.RunID, params.SessionKey, tenantID)}
 	} else {
 		results = m.agents.AbortRunsForSession(params.SessionKey)
 	}
 
 	// Aggregate counts and run IDs.
 	var runIDs []string
-	stopped, forced, alreadyAborting, notFound, unauthorized := 0, 0, 0, 0, 0
+	stopped, forced, alreadyAborting, notFound, orphaned, unauthorized := 0, 0, 0, 0, 0, 0
 	for _, r := range results {
 		runIDs = append(runIDs, r.RunID)
 		switch {
@@ -521,6 +522,8 @@ func (m *ChatMethods) handleAbort(ctx context.Context, client *gateway.Client, r
 			stopped++
 		case r.Forced:
 			forced++
+		case r.Orphaned:
+			orphaned++
 		case r.AlreadyAborting:
 			alreadyAborting++
 		case r.NotFound:
@@ -542,11 +545,12 @@ func (m *ChatMethods) handleAbort(ctx context.Context, client *gateway.Client, r
 
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 		"ok":              true,
-		"aborted":         stopped+forced > 0,
+		"aborted":         stopped+forced+orphaned > 0,
 		"stopped":         stopped > 0,
 		"forced":          forced > 0,
+		"orphaned":        orphaned > 0,
 		"alreadyAborting": alreadyAborting > 0,
-		"notFound":        notFound > 0 && stopped+forced+alreadyAborting == 0,
+		"notFound":        notFound > 0 && stopped+forced+orphaned+alreadyAborting == 0,
 		"unauthorized":    respUnauthorized > 0,
 		"runIds":          runIDs,
 	}))

@@ -79,6 +79,7 @@
     "failedLoad": "Không thể tải dữ liệu theo dõi",
     "abortStopped": "Đã dừng tác vụ",
     "abortForced": "Đã buộc dừng tác vụ (đang dọn dẹp ở nền)",
+    "abortOrphan": "Đã dừng tác vụ (tiến trình không còn — bị bỏ rơi sau khi khởi động lại)",
     "abortAlreadyAborting": "Đang dừng tác vụ",
     "abortNotFound": "Tác vụ đã kết thúc",
     "abortUnauthorized": "Không có quyền dừng tác vụ này",

@@ -119,6 +119,7 @@ export function TracesPage() {
           aborted?: boolean;
           stopped?: boolean;
           forced?: boolean;
+          orphaned?: boolean;
           alreadyAborting?: boolean;
           notFound?: boolean;
           unauthorized?: boolean;
@@ -127,6 +128,8 @@ export function TracesPage() {
           toast.success(t("toast.abortStopped"));
         } else if (res?.forced) {
           toast.warning(t("toast.abortForced"));
+        } else if (res?.orphaned) {
+          toast.info(t("toast.abortOrphan"));
         } else if (res?.alreadyAborting) {
           toast.info(t("toast.abortAlreadyAborting"));
         } else if (res?.unauthorized) {
