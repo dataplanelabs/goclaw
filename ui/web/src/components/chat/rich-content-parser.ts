@@ -16,6 +16,11 @@ function extractMediaUrl(attrs: string): string | undefined {
   return raw;
 }
 
+function extractMediaName(attrs: string): string | undefined {
+  const m = attrs.match(/\bname="([^"]*)"/);
+  return m?.[1] || undefined;
+}
+
 // <file name="..." mime="...">content</file>
 const FILE_BLOCK_RE = /<file\s+name="([^"]+)"\s+mime="([^"]*)">([\s\S]*?)<\/file>/g;
 
@@ -33,7 +38,7 @@ const LOCATION_RE = /Coordinates:\s*([-\d.]+),\s*([-\d.]+)/;
 
 export type RichBlock =
   | { type: "markdown"; content: string }
-  | { type: "media"; mediaType: string; url?: string }
+  | { type: "media"; mediaType: string; url?: string; name?: string }
   | { type: "video-notice"; content: string }
   | { type: "file"; name: string; mime: string; content: string }
   | { type: "forward"; from: string; date: string }
@@ -67,11 +72,15 @@ export function parseRichContent(content: string): RichBlock[] {
     return "";
   });
 
-  // Extract media tags (with optional `url="..."` attribute for inline rendering)
+  // Extract media tags (with optional `url="..."` + `name="..."` attributes)
   const mediaBlocks: RichBlock[] = [];
   text = text.replace(MEDIA_TAG_RE, (_match, mediaType: string, attrs: string) => {
     const url = extractMediaUrl(attrs);
-    mediaBlocks.push(url ? { type: "media", mediaType, url } : { type: "media", mediaType });
+    const name = extractMediaName(attrs);
+    const block: RichBlock = { type: "media", mediaType };
+    if (url) block.url = url;
+    if (name) block.name = name;
+    mediaBlocks.push(block);
     return "";
   });
 

@@ -32,10 +32,10 @@ const mediaIcons: Record<string, typeof Image> = {
   animation: Video,
 };
 
-function MediaBadge({ mediaType, url, inline }: { mediaType: string; url?: string; inline?: boolean }) {
+function MediaBadge({ mediaType, url, name, inline }: { mediaType: string; url?: string; name?: string; inline?: boolean }) {
   const { t } = useTranslation("chat");
   const Icon = mediaIcons[mediaType] ?? FileText;
-  const label = t(`media.${mediaType}`, { defaultValue: mediaType });
+  const label = name || t(`media.${mediaType}`, { defaultValue: mediaType });
 
   if (!inline) {
     return (
@@ -283,7 +283,7 @@ export function RichContent({ content, role, inlineMediaUrls }: RichContentProps
           case "forward":
             return <ForwardBadge key={i} from={block.from} date={block.date} />;
           case "media":
-            return <MediaBadge key={i} mediaType={block.mediaType} url={block.url} inline={inlineMediaUrls} />;
+            return <MediaBadge key={i} mediaType={block.mediaType} url={block.url} name={block.name} inline={inlineMediaUrls} />;
           case "video-notice":
             return <VideoNoticeBadge key={i} content={block.content} />;
           case "markdown":

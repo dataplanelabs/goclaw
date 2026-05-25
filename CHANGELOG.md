@@ -38,6 +38,22 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Team Analytics — customer multi-message turns + file attachments now
+  render properly** — two co-located bugs from the rich-content rollout:
+  (1) customer turns are joined by the poll worker with single `\n`, but
+  markdown's soft-break rule collapsed them to spaces, so 4 customer
+  messages ("chao shop / hi shop / hello / hi shop") rendered as a single
+  line. Fixed by `preserveLineBreaks()` in `CaptureContent` — promotes
+  every `\n` to a markdown hard break (two-space + `\n`) before handing
+  to `RichContent`, so each captured turn shows on its own line.
+  (2) Customer-sent files (e.g. `HÀ TRUNG NĐ - SỔ HUẤN.xlsx` Excel) embed
+  as `<media:document name="…">` tags from the backend (see
+  `internal/channels/zalo/oa/media_tags.go`), but the parser only captured
+  `url=` — the filename was dropped. Parser now also extracts `name="..."`
+  on every `<media:*>` tag; `MediaBadge` renders the filename instead of
+  the generic "document" label when available. 6 new vitest cases pin
+  `preserveLineBreaks` + `name=` extraction.
+
 - **Team Analytics — Zalo CDN thumbnails were invisible (blocked by hot-link
   protection)** — v3.23.29 wired `<img src=zalo-cdn-url>` inline but Zalo's
   `photo-stal-*.zdn.vn` CDN 403s requests with our origin as Referer, and the

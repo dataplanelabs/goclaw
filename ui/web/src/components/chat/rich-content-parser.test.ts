@@ -44,4 +44,23 @@ describe("parseRichContent — media tag URL extraction", () => {
     expect(blocks.find((b) => b.type === "media")).toBeDefined();
     expect(blocks.find((b) => b.type === "markdown")).toBeDefined();
   });
+
+  it("captures name= attribute on <media:document> (Zalo OA file)", () => {
+    const blocks = parseRichContent('<media:document name="HÀ TRUNG NĐ - SỔ HUẤN.xlsx">');
+    expect(blocks[0]).toEqual({
+      type: "media",
+      mediaType: "document",
+      name: "HÀ TRUNG NĐ - SỔ HUẤN.xlsx",
+    });
+  });
+
+  it("captures both name= and url= on a single tag", () => {
+    const blocks = parseRichContent('<media:document name="x.pdf" url="https://example.com/x.pdf">');
+    expect(blocks[0]).toEqual({
+      type: "media",
+      mediaType: "document",
+      url: "https://example.com/x.pdf",
+      name: "x.pdf",
+    });
+  });
 });
