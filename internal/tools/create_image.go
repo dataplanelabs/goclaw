@@ -95,29 +95,17 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Res
 	filenameHint, _ := args["filename_hint"].(string)
 
 	var refImages []providers.ImageContent
+	var unresolvedRefIDs []string
 	if idsAny, ok := args["reference_image_ids"]; ok {
 		ids := toStringSlice(idsAny)
 		if len(ids) > 0 {
 			availableRefs := MediaImageRefsFromCtx(ctx)
-			refImages = resolveRefImageIDs(ctx, ids, availableRefs, maxRefImages)
+			refImages, unresolvedRefIDs = resolveRefImageIDsDetailed(ctx, ids, availableRefs, maxRefImages)
 			slog.Info("create_image: reference images resolved",
-				"requested", len(ids), "loaded", len(refImages))
-
-			// LLMs sometimes pass UUIDs from prior turns. Auto-bind to current
-			// turn's images instead of silently producing a random face.
-			if len(refImages) == 0 && len(availableRefs) > 0 {
-				fallback := make([]string, 0, len(availableRefs))
-				for _, r := range availableRefs {
-					fallback = append(fallback, r.ID)
-				}
-				refImages = resolveRefImageIDs(ctx, fallback, availableRefs, maxRefImages)
-				slog.Warn("create_image: requested IDs not in current turn — auto-bound to current refs",
-					"requested_ids", ids, "available_ids", fallback, "loaded", len(refImages))
-			}
+				"requested", len(ids), "loaded", len(refImages), "unresolved", len(unresolvedRefIDs))
 
 			if len(refImages) == 0 {
-				return ErrorResult(fmt.Sprintf(
-					"reference_image_ids %v could not be resolved (looked up by id, path, basename in %d available refs). Ask the user to resend the image before retrying.", ids, len(availableRefs)))
+				return ErrorResult(formatRefResolveError(ids, availableRefs))
 			}
 		}
 	}
@@ -195,7 +183,11 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) *Res
 		slog.Info("create_image: file saved", "path", imagePath, "size", fi.Size(), "data_len", len(imageData))
 	}
 
-	result := &Result{ForLLM: fmt.Sprintf("MEDIA:%s\nUse the EXACT filename when referencing: %s", imagePath, filepath.Base(imagePath))}
+	forLLM := fmt.Sprintf("MEDIA:%s\nUse the EXACT filename when referencing: %s", imagePath, filepath.Base(imagePath))
+	if len(unresolvedRefIDs) > 0 {
+		forLLM += formatRefPartialResolveNote(unresolvedRefIDs, MediaImageRefsFromCtx(ctx))
+	}
+	result := &Result{ForLLM: forLLM}
 	result.Media = []bus.MediaFile{{Path: imagePath, MimeType: "image/png", Filename: filepath.Base(imagePath)}}
 	result.MediaPrompts = map[int]string{0: prompt}
 	result.Deliverable = fmt.Sprintf("[Generated image: %s]\nPrompt: %s", filepath.Base(imagePath), prompt)
@@ -698,24 +690,12 @@ func toStringSlice(v any) []string {
 	return nil
 }
 
-// resolveRefImageIDs looks up image MediaRefs by ID, validates MIME and size,
-// loads file bytes, base64-encodes, and returns []ImageContent.
-//
-// Lookup tries three keys in order: MediaRef.ID, MediaRef.Path,
-// filepath.Base(MediaRef.Path). The last covers cases where the LLM lists the
-// uploads dir via exec and passes the filename it sees there.
-//
-// Refs that don't resolve, fail validation, or fail to load are dropped with a
-// warn log. Duplicates are deduped (first occurrence wins) and order is preserved.
-//
-// Tenant scope: `refs` originates from MediaImageRefsFromCtx(ctx), which is
-// populated only by the tenant-scoped persistence layer in loop_input_media.
-// Cross-tenant lookup is impossible — IDs outside the current-turn upload set
-// fall through to the "not found" branch.
-//
-// Logging hygiene: only logs id/mime/size — never the base64 Data.
-// Allocates a fresh slice — does NOT alias the input refs.
-func resolveRefImageIDs(_ context.Context, ids []string, refs []providers.MediaRef, maxRefs int) []providers.ImageContent {
+func resolveRefImageIDs(ctx context.Context, ids []string, refs []providers.MediaRef, maxRefs int) []providers.ImageContent {
+	out, _ := resolveRefImageIDsDetailed(ctx, ids, refs, maxRefs)
+	return out
+}
+
+func resolveRefImageIDsDetailed(_ context.Context, ids []string, refs []providers.MediaRef, maxRefs int) ([]providers.ImageContent, []string) {
 	refByID := make(map[string]providers.MediaRef, len(refs))
 	refByPath := make(map[string]providers.MediaRef, len(refs))
 	refByBase := make(map[string]providers.MediaRef, len(refs))
@@ -728,6 +708,7 @@ func resolveRefImageIDs(_ context.Context, ids []string, refs []providers.MediaR
 	}
 	seen := make(map[string]bool, len(ids))
 	out := make([]providers.ImageContent, 0, len(ids))
+	var unresolved []string
 	var aggregateBytes int64
 	for _, id := range ids {
 		if seen[id] {
@@ -737,7 +718,8 @@ func resolveRefImageIDs(_ context.Context, ids []string, refs []providers.MediaR
 		seen[id] = true
 		if len(out) >= maxRefs {
 			slog.Warn("create_image: reference images truncated at cap", "cap", maxRefs, "requested", len(ids))
-			break
+			unresolved = append(unresolved, id)
+			continue
 		}
 		ref, ok := refByID[id]
 		if !ok {
@@ -749,34 +731,41 @@ func resolveRefImageIDs(_ context.Context, ids []string, refs []providers.MediaR
 		}
 		if !ok {
 			slog.Warn("create_image: reference image not found by id/path/basename", "key", id)
+			unresolved = append(unresolved, id)
 			continue
 		}
 		if !allowedRefMIMEs[ref.MimeType] {
 			slog.Warn("create_image: skipping reference image with unsupported MIME", "id", id, "mime", ref.MimeType)
+			unresolved = append(unresolved, id)
 			continue
 		}
 		if ref.Path == "" {
 			slog.Warn("create_image: reference image has no path", "id", id)
+			unresolved = append(unresolved, id)
 			continue
 		}
 		fi, err := os.Stat(ref.Path)
 		if err != nil {
 			slog.Warn("create_image: failed to stat reference image", "id", id, "error", err)
+			unresolved = append(unresolved, id)
 			continue
 		}
 		if fi.Size() > maxRefImageBytes {
 			slog.Warn("create_image: reference image exceeds per-image byte cap",
 				"id", id, "size", fi.Size(), "cap", maxRefImageBytes)
+			unresolved = append(unresolved, id)
 			continue
 		}
 		if aggregateBytes+fi.Size() > maxRefImagesAggregateBytes {
 			slog.Warn("create_image: aggregate reference image bytes exceeded; stopping",
 				"accumulated", aggregateBytes, "cap", maxRefImagesAggregateBytes)
+			unresolved = append(unresolved, id)
 			break
 		}
 		data, err := os.ReadFile(ref.Path)
 		if err != nil {
 			slog.Warn("create_image: failed to read reference image", "id", id, "error", err)
+			unresolved = append(unresolved, id)
 			continue
 		}
 		aggregateBytes += int64(len(data))
@@ -785,5 +774,34 @@ func resolveRefImageIDs(_ context.Context, ids []string, refs []providers.MediaR
 			Data:     base64.StdEncoding.EncodeToString(data),
 		})
 	}
-	return out
+	return out, unresolved
+}
+
+func formatRefResolveError(requested []string, available []providers.MediaRef) string {
+	if len(available) == 0 {
+		return fmt.Sprintf(
+			"reference_image_ids %v could not be resolved — no user-uploaded images are visible in this conversation. Ask the user to attach the image and retry. Do NOT pass sandbox paths (e.g. /tmp/foo.png) or paths from your code-exec tools — only IDs/paths from <media:image id='...' path='...'> tags will resolve.",
+			requested)
+	}
+	lines := make([]string, 0, len(available))
+	for _, r := range available {
+		lines = append(lines, fmt.Sprintf("  - id=%q path=%q basename=%q mime=%s",
+			r.ID, r.Path, filepath.Base(r.Path), r.MimeType))
+	}
+	return fmt.Sprintf(
+		"reference_image_ids %v could not be resolved (looked up by id, path, basename). Available user-uploaded refs in this conversation:\n%s\nRetry with one of the id/path/basename values above — do NOT pass sandbox paths (e.g. /tmp/...) or paths from your code-exec tools.",
+		requested, strings.Join(lines, "\n"))
+}
+
+func formatRefPartialResolveNote(unresolved []string, available []providers.MediaRef) string {
+	if len(unresolved) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(available))
+	for _, r := range available {
+		lines = append(lines, fmt.Sprintf("  - id=%q basename=%q", r.ID, filepath.Base(r.Path)))
+	}
+	return fmt.Sprintf(
+		"\n\nNote: %d reference_image_ids did not resolve: %v. Available refs you could have used:\n%s",
+		len(unresolved), unresolved, strings.Join(lines, "\n"))
 }
