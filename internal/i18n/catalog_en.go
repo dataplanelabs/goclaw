@@ -352,7 +352,7 @@ func init() {
 		TraceRetryPayloadMissing:  "Replay data no longer available.",
 		TraceRetryConfirmRequired: "This run already sent a message — confirm to retry.",
 		TraceRetryStarted:         "Retry started.",
-		TraceRetryNotFailed:       "Only failed traces can be retried.",
+		TraceRetryNotFailed:       "Only failed or stopped traces can be retried.",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",

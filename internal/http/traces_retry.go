@@ -55,7 +55,7 @@ func (h *TracesHandler) handleRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if trace.Status != store.TraceStatusError {
+	if trace.Status != store.TraceStatusError && trace.Status != store.TraceStatusCancelled {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.TraceRetryNotFailed)})
 		return
 	}

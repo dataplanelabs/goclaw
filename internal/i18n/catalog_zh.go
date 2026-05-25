@@ -352,7 +352,7 @@ func init() {
 		TraceRetryPayloadMissing:  "重放数据已不可用。",
 		TraceRetryConfirmRequired: "此次运行已发送消息——请确认后再重试。",
 		TraceRetryStarted:         "重试已开始。",
-		TraceRetryNotFailed:       "只能重试失败的追踪。",
+		TraceRetryNotFailed:       "只能重试失败或已停止的追踪。",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 已按请求转发至 %s:%q",

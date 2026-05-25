@@ -18,7 +18,7 @@ export function RetryButton({ trace, retry, onRetried }: RetryButtonProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  if (trace.status !== "error") return null;
+  if (trace.status !== "error" && trace.status !== "cancelled") return null;
 
   const doRetry = async (confirmDoubleSend: boolean) => {
     setBusy(true);
