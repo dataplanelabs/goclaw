@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
@@ -14,6 +15,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels/typing"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/common"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
+	mediapkg "github.com/nextlevelbuilder/goclaw/internal/media"
 	pkgproto "github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
@@ -201,6 +203,13 @@ func (c *Channel) parseOutboundMentions(ctx context.Context, threadID string, th
 // share the same media loop.
 func (c *Channel) sendMediaBestEffort(ctx context.Context, sess *protocol.Session, chatID string, threadType protocol.ThreadType, media []bus.MediaAttachment) {
 	for _, m := range media {
+		if !c.config.DisableVoiceSend && mediapkg.IsAudioExt(m.URL) {
+			if err := c.sendVoice(ctx, sess, chatID, threadType, m.URL); err == nil {
+				continue
+			} else {
+				slog.Warn("zalo_personal: voice send failed, falling back to share.file", "path", m.URL, "error", err)
+			}
+		}
 		if protocol.IsImageFile(m.URL) {
 			if err := c.sendImage(ctx, sess, chatID, threadType, m.URL, m.Caption); err != nil {
 				slog.Warn("zalo_personal: failed to send image", "path", m.URL, "error", err)
@@ -211,6 +220,28 @@ func (c *Channel) sendMediaBestEffort(ctx context.Context, sess *protocol.Sessio
 			}
 		}
 	}
+}
+
+// sendVoice normalizes audio to M4A then sends via Zalo's voice endpoint.
+// Returns an error so the caller can fall back to share.file on failure.
+func (c *Channel) sendVoice(ctx context.Context, sess *protocol.Session, chatID string, threadType protocol.ThreadType, filePath string) error {
+	ln := c.getListener()
+	if ln == nil {
+		return fmt.Errorf("listener not available for voice upload")
+	}
+	normalized, err := mediapkg.NormalizeAudio(ctx, filePath, "m4a")
+	if err != nil {
+		return fmt.Errorf("normalize audio: %w", err)
+	}
+	if normalized != filePath {
+		defer func() { _ = os.Remove(normalized) }()
+	}
+	msgID, err := protocol.SendVoice(ctx, sess, ln, chatID, threadType, normalized, 0)
+	if err != nil {
+		return err
+	}
+	c.cacheOutboundMedia(msgID, "voice", filePath, "")
+	return nil
 }
 
 // sendImage uploads and sends an image file to a Zalo thread.
