@@ -31,15 +31,17 @@ func TestRenderStyles(t *testing.T) {
 		{"horizontal_rule_dropped", "before\n---\nafter", "before\n\nafter", nil},
 		{"adjacent_bold", "**a** **b**", "a b", []Style{{0, 1, StyleBold}, {2, 1, StyleBold}}},
 		{"unbalanced_preserved", "no closing **here", "no closing **here", nil},
-		{"unordered_list", "- foo\n- bar", "foo\nbar", []Style{{0, 7, StyleListUnordered}}},
-		{"ordered_list", "1. foo\n2. bar", "foo\nbar", []Style{{0, 7, StyleListOrdered}}},
-		{"ordered_list_three_items", "1. a\n2. b\n3. c", "a\nb\nc", []Style{{0, 5, StyleListOrdered}}},
+		// List items kept literal — Zalo mobile renders lst_1/lst_2 spans as
+		// raw `<list>`/`<number>` XML markup in-band, worse than plain text.
+		{"unordered_list", "- foo\n- bar", "- foo\n- bar", nil},
+		{"ordered_list", "1. foo\n2. bar", "1. foo\n2. bar", nil},
+		{"ordered_list_three_items", "1. a\n2. b\n3. c", "1. a\n2. b\n3. c", nil},
 		{"ordered_list_single_isolated", "before\n1. foo\nafter", "before\n1. foo\nafter", nil},
-		{"unordered_list_single_isolated", "before\n- foo\nafter", "before\nfoo\nafter", []Style{{7, 3, StyleListUnordered}}},
+		{"unordered_list_single_isolated", "before\n- foo\nafter", "before\n- foo\nafter", nil},
 		{"nested_numbered_with_unicode_bullets", "1. Header\n• sub\n2. Header2", "1. Header\n• sub\n2. Header2", nil},
-		{"mixed_ordered_unordered_adjacent", "1. a\n- b", "1. a\nb", []Style{{5, 1, StyleListUnordered}}},
+		{"mixed_ordered_unordered_adjacent", "1. a\n- b", "1. a\n- b", nil},
 		{"ordered_with_blank_line_break", "1. a\n\n2. b", "1. a\n\n2. b", nil},
-		{"unordered_two_blocks_separated", "- a\n- b\n\n- c\n- d", "a\nb\n\nc\nd", []Style{{0, 3, StyleListUnordered}, {5, 3, StyleListUnordered}}},
+		{"unordered_two_blocks_separated", "- a\n- b\n\n- c\n- d", "- a\n- b\n\n- c\n- d", nil},
 		{"url_escapes_italic", "see https://a.com/foo_bar_baz for x", "see https://a.com/foo_bar_baz for x", nil},
 		{"email_escapes_italic", "ping alice_doe@example.com", "ping alice_doe@example.com", nil},
 		{"inline_code_kept_plain", "use `foo()` here", "use foo() here", nil},
@@ -62,33 +64,6 @@ func TestRenderStyles(t *testing.T) {
 			[]Style{{8, 4, StyleBold}},
 		},
 		{"triple_bold_glued_left_unchanged", "pre***x***", "prex", []Style{{3, 1, StyleBold}, {3, 1, StyleItalic}}},
-
-		// List spacing: blank lines bridging list ↔ non-list collapse so
-		// Zalo's lst_1/lst_2 native padding isn't doubled by an explicit gap.
-		{
-			"list_blank_before_collapsed",
-			"intro:\n\n- a\n- b",
-			"intro:\na\nb",
-			[]Style{{7, 3, StyleListUnordered}},
-		},
-		{
-			"list_blank_after_collapsed",
-			"- a\n- b\n\nnext",
-			"a\nb\nnext",
-			[]Style{{0, 3, StyleListUnordered}},
-		},
-		{
-			"list_blank_both_sides_collapsed",
-			"intro:\n\n- a\n- b\n\nnext",
-			"intro:\na\nb\nnext",
-			[]Style{{7, 3, StyleListUnordered}},
-		},
-		{
-			"list_blank_between_same_kind_preserved",
-			"- a\n- b\n\n- c\n- d",
-			"a\nb\n\nc\nd",
-			[]Style{{0, 3, StyleListUnordered}, {5, 3, StyleListUnordered}},
-		},
 	}
 	for _, c := range cases {
 		c := c

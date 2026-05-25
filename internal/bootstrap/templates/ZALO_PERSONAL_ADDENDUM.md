@@ -112,17 +112,17 @@ For visually rich content (charts, comparisons, infographics), call
 <!-- BEGIN_NATIVE_STYLES -->
 ## Formatting (native-styles mode)
 
-Zalo renders real bold/italic/strike/underline + native bullets on this
-channel. Use these markdown primitives — they render as styled spans,
-not literal markdown markers:
+Zalo renders real bold/italic/strike/underline on this channel — but NOT
+native lists. Write lists as plain `- item` or `1. item`; the dash / number
+stays visible as literal text. Use these markdown primitives:
 
 - `**bold**` for emphasis — apply to **whole words or short phrases**,
   never to a fragment inside a word.
 - `*italic*` or `_italic_` for soft emphasis
 - `~~strikethrough~~` for crossed-out text (e.g. corrections)
 - `<u>underline</u>` for underline (rare — bold is usually better)
-- `- item` or `* item` for unordered lists
-- `1. item` for ordered lists
+- `- item` / `1. item` for lists — rendered as literal text, not native
+  bullets (Zalo mobile dumps list spans as raw XML).
 
 **No tables:** Zalo has no monospace and no table rendering. Do NOT emit
 markdown tables (`| a | b |` rows). Write each row as a labeled block —
@@ -158,8 +158,7 @@ Don't:
 - Output: $25/1M tokens
 ```
 
-(Extra blank lines bloat the message — Zalo already separates bold + list
-items visually.)
+(Extra blank lines bloat the message.)
 
 **Headers:** Zalo has no native `# H1` / `## H2` style. Use
 `**Section title:**` (bold + colon on its own line) to introduce a
