@@ -1,12 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router";
 
 import { Methods } from "@/api/protocol";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useWs } from "@/hooks/use-ws";
+
+interface AgentListItem {
+  id: string;
+  name: string;
+  emoji?: string;
+  status: string;
+}
+
+const CREATE_NEW_AGENT_SENTINEL = "__create_new__";
 
 import {
   TeamAnalyticsHistogram,
@@ -43,6 +60,7 @@ export function ChannelTeamAnalyticsTab({
 }: ChannelTeamAnalyticsTabProps) {
   const { t } = useTranslation("channels");
   const ws = useWs();
+  const navigate = useNavigate();
   const [rows, setRows] = useState<TeamReplyEvaluation[]>([]);
   const [threadFilter, setThreadFilter] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -54,6 +72,14 @@ export function ChannelTeamAnalyticsTab({
   const [judgeKey, setJudgeKey] = useState(initialConfig?.judge_agent_key ?? "");
   const [restartHint, setRestartHint] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [agents, setAgents] = useState<AgentListItem[]>([]);
+
+  useEffect(() => {
+    if (!ws.isConnected) return;
+    ws.call<{ agents: AgentListItem[] }>(Methods.AGENTS_LIST, {})
+      .then((res) => setAgents(res.agents ?? []))
+      .catch(() => setAgents([]));
+  }, [ws]);
 
   useEffect(() => {
     // Skip re-sync if operator has unsaved edits — avoids clobbering form
@@ -116,7 +142,17 @@ export function ChannelTeamAnalyticsTab({
     [rows],
   );
 
-  const saveDisabled = judge && judgeKey.trim() === "";
+  const saveDisabled =
+    judge && (judgeKey.trim() === "" || judgeKey === CREATE_NEW_AGENT_SENTINEL);
+
+  function handleJudgeKeySelect(v: string) {
+    if (v === CREATE_NEW_AGENT_SENTINEL) {
+      navigate("/agents/new?context=team-reply-judge");
+      return;
+    }
+    setJudgeKey(v);
+    setDirty(true);
+  }
 
   async function rejudgeFailed() {
     setStatus(null);
@@ -181,13 +217,22 @@ export function ChannelTeamAnalyticsTab({
         </div>
         <div className="sm:col-span-2">
           <Label htmlFor="judge-agent">{t("teamAnalytics.judgeAgent")}</Label>
-          <Input
-            id="judge-agent"
-            value={judgeKey}
-            onChange={(e) => { setJudgeKey(e.target.value); setDirty(true); }}
-            placeholder="team-reply-judge"
-            className="text-base md:text-sm mt-1"
-          />
+          <Select value={judgeKey || undefined} onValueChange={handleJudgeKeySelect}>
+            <SelectTrigger id="judge-agent" className="mt-1">
+              <SelectValue placeholder={t("teamAnalytics.selectJudgeAgent")} />
+            </SelectTrigger>
+            <SelectContent>
+              {agents.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.emoji ? `${a.emoji} ` : ""}{a.name} ({a.id})
+                </SelectItem>
+              ))}
+              {agents.length > 0 && <SelectSeparator />}
+              <SelectItem value={CREATE_NEW_AGENT_SENTINEL}>
+                {t("teamAnalytics.createNewJudgeAgent")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="sm:col-span-2 flex justify-end">
           <Button

@@ -127,6 +127,7 @@ func (m *AgentsMethods) handleList(ctx context.Context, client *gateway.Client, 
 			infos = append(infos, map[string]any{
 				"id":        a.AgentKey,
 				"name":      a.DisplayName,
+				"emoji":     a.Emoji,
 				"model":     a.Model,
 				"provider":  a.Provider,
 				"agentType": a.AgentType,
