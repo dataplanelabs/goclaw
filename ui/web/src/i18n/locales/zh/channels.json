@@ -550,6 +550,9 @@
     "rejudgeBanner": "{{count}} 条评估失败 — 重试？",
     "rejudgeButton": "重新评估",
     "rejudgeQueued": "已将 {{count}} 条评估加入队列",
-    "rejudgeBatchCapped": "每次最多 100 条；再次点击处理下一批"
+    "rejudgeBatchCapped": "每次最多 100 条；再次点击处理下一批",
+    "rejudgeProgress": "正在重评 {{total}} — {{graded}} 已评 · {{failed}} 失败 · {{retrying}} 重试中",
+    "rejudgeComplete": "已重评：{{graded}} 已评 · {{failed}} 失败 · {{retry_exhausted}} 已耗尽重试",
+    "rejudgePollFailed": "已派发重评但状态检查失败 — 请手动刷新表格"
   }
 }

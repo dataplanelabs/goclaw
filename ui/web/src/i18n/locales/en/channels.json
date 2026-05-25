@@ -664,6 +664,9 @@
     "rejudgeBanner": "{{count}} evaluations failed — retry?",
     "rejudgeButton": "Re-judge",
     "rejudgeQueued": "Queued {{count}} evaluations for re-judging",
-    "rejudgeBatchCapped": "batch capped at 100; click again for next batch"
+    "rejudgeBatchCapped": "batch capped at 100; click again for next batch",
+    "rejudgeProgress": "Re-judging {{total}} — {{graded}} graded · {{failed}} failed · {{retrying}} retrying",
+    "rejudgeComplete": "Re-judged: {{graded}} graded · {{failed}} failed · {{retry_exhausted}} retry exhausted",
+    "rejudgePollFailed": "Re-judge dispatched but status check failed — refresh the table manually"
   }
 }

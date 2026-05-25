@@ -261,6 +261,52 @@ func TestTeamReplies_RejudgeClearsErrorsAndPublishes(t *testing.T) {
 	}
 }
 
+func TestTeamReplies_RejudgeReturnsAffectedIDs(t *testing.T) {
+	tenantID := uuid.New()
+	instID := uuid.New()
+	insts := &stubInstStoreLite{insts: map[uuid.UUID]*store.ChannelInstanceData{
+		instID: {BaseModel: store.BaseModel{ID: instID}, TenantID: tenantID, Name: "zalo-oa-test"},
+	}}
+	id1, id2 := uuid.NewString(), uuid.NewString()
+	failedEv := &stubFailedEvalStore{
+		failedRows: []store.TeamReplyEvaluation{
+			{ID: id1, ChannelInstanceID: instID.String(), TenantID: tenantID.String(), TeamMsgID: "f1"},
+			{ID: id2, ChannelInstanceID: instID.String(), TenantID: tenantID.String(), TeamMsgID: "f2"},
+		},
+	}
+	agents := &stubAgentStoreLite{byKey: map[string]*store.AgentData{}}
+	bus := &fakeBusForRejudge{}
+	m := NewTeamRepliesMethods(failedEv, insts, agents, bus)
+	client, recv := gateway.NewCapturingTestClient(permissions.RoleAdmin, tenantID, "user-1")
+	body := `{"channel_instance_id":"` + instID.String() + `"}`
+	m.handleRejudge(wsCallCtx(client), client, newTRReq(protocol.MethodChannelsTeamRepliesRejudge, body))
+	select {
+	case raw := <-recv:
+		var frame struct {
+			Payload map[string]any `json:"payload"`
+		}
+		if err := json.Unmarshal(raw, &frame); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		idsRaw, ok := frame.Payload["rejudged_ids"].([]any)
+		if !ok || len(idsRaw) != 2 {
+			t.Fatalf("rejudged_ids = %v (%T), want 2 element array", frame.Payload["rejudged_ids"], frame.Payload["rejudged_ids"])
+		}
+		if idsRaw[0] != id1 || idsRaw[1] != id2 {
+			t.Fatalf("rejudged_ids = %v, want [%s %s]", idsRaw, id1, id2)
+		}
+		since, ok := frame.Payload["since_ts"].(string)
+		if !ok || since == "" {
+			t.Fatalf("since_ts missing/empty: %v", frame.Payload["since_ts"])
+		}
+		if _, err := time.Parse(time.RFC3339Nano, since); err != nil {
+			t.Fatalf("since_ts not RFC3339Nano: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no response within 1s")
+	}
+}
+
 type fakeBusForRejudge struct {
 	onPublish func()
 }

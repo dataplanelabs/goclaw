@@ -7,6 +7,7 @@ export interface TeamReplyEvaluation {
   session_key: string;
   team_msg_id: string;
   captured_at: string;
+  updated_at: string;
   customer_message: string;
   team_reply: string;
   hypothesized_bot_reply?: string;

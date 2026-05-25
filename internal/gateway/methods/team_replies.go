@@ -201,6 +201,7 @@ func serializeEval(e store.TeamReplyEvaluation) map[string]any {
 		"session_key":         e.SessionKey,
 		"team_msg_id":         e.TeamMsgID,
 		"captured_at":         e.CapturedAt.UTC().Format(time.RFC3339),
+		"updated_at":          e.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		"customer_message":    e.CustomerMessage,
 		"team_reply":          e.TeamReply,
 	}
@@ -266,9 +267,12 @@ func (m *TeamRepliesMethods) handleRejudge(ctx context.Context, client *gateway.
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
 	}
+	sinceTs := time.Now().UTC().Format(time.RFC3339Nano)
 	if len(failed) == 0 {
 		client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 			"rejudged":      0,
+			"rejudged_ids":  []string{},
+			"since_ts":      sinceTs,
 			"batch_capped":  false,
 		}))
 		return
@@ -286,7 +290,6 @@ func (m *TeamRepliesMethods) handleRejudge(ctx context.Context, client *gateway.
 			ev := eventbus.DomainEvent{
 				ID:        uuid.NewString(),
 				Type:      eventbus.EventTeamReplyObserved,
-				// Suffix prevents eventbus dedup from suppressing the retry.
 				SourceID:  eventbus.TeamReplyObservedSourceID(e.ChannelInstanceID, e.TeamMsgID) + "?rejudge=" + uuid.NewString()[:8],
 				TenantID:  e.TenantID,
 				Timestamp: time.Now().UTC(),
@@ -308,6 +311,8 @@ func (m *TeamRepliesMethods) handleRejudge(ctx context.Context, client *gateway.
 	}
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 		"rejudged":     len(failed),
+		"rejudged_ids": ids,
+		"since_ts":     sinceTs,
 		"batch_capped": len(failed) == rejudgeBatchCap,
 	}))
 }
