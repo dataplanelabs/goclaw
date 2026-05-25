@@ -19,7 +19,7 @@ func TestRouter_AbortRun_NotFound(t *testing.T) {
 	t.Parallel()
 
 	router := agent.NewRouter()
-	result := router.AbortRun("nonexistent-run-id", "")
+	result := router.AbortRun("nonexistent-run-id", "", uuid.Nil)
 
 	if !result.NotFound {
 		t.Errorf("expected NotFound=true, got %+v", result)
@@ -42,7 +42,7 @@ func TestRouter_AbortRun_Unauthorized(t *testing.T) {
 	router.RegisterRun(context.Background(), "run-1", "session-A", "agent-1", cancel)
 
 	// Try to abort with a different sessionKey
-	result := router.AbortRun("run-1", "session-B")
+	result := router.AbortRun("run-1", "session-B", uuid.Nil)
 
 	if !result.Unauthorized {
 		t.Errorf("expected Unauthorized=true, got %+v", result)
@@ -79,7 +79,7 @@ func TestRouter_AbortRun_Concurrent_OnlyOneStops(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			result := router.AbortRun(runID, sessionKey)
+			result := router.AbortRun(runID, sessionKey, uuid.Nil)
 			resultsCh <- result
 		}()
 	}
@@ -162,7 +162,7 @@ func TestRouter_AbortRun_ForcesAfter3s(t *testing.T) {
 
 	// Call AbortRun and time it
 	start := time.Now()
-	result := router.AbortRun(runID, sessionKey)
+	result := router.AbortRun(runID, sessionKey, testTenantID)
 	elapsed := time.Since(start)
 
 	// Verify: returned Forced=true

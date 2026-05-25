@@ -106,11 +106,13 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 
 	var refImages []providers.ImageContent
 	var unresolvedRefIDs []string
+	var requestedRefIDs []string
 	if idsAny, ok := args["reference_image_ids"]; ok {
 		ids := toStringSlice(idsAny)
 		if len(ids) > 0 {
 			availableRefs := MediaImageRefsFromCtx(ctx)
 			refImages, unresolvedRefIDs = resolveRefImageIDsDetailed(ctx, ids, availableRefs, maxRefImages)
+			requestedRefIDs = ids
 			slog.Info("create_image: reference images resolved",
 				"requested", len(ids), "loaded", len(refImages), "unresolved", len(unresolvedRefIDs))
 
@@ -134,34 +136,27 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 			}
 			refImages = resolveRefImageIDs(ctx, ids, currentRefs, maxRefImages)
 			if len(refImages) > 0 {
+				requestedRefIDs = ids
 				slog.Info("create_image: auto-injected user current-turn images as references",
 					"ref_count", len(refImages), "ref_ids", ids)
 			}
 		}
 	}
 
-	chain := ResolveMediaProviderChain(ctx, "create_image", "", "",
+	originalChain := ResolveMediaProviderChain(ctx, "create_image", "", "",
 		imageGenProviderPriority, imageGenModelDefaults, t.registry)
 
-	// Inject prompt, aspect_ratio, and reference_images into each chain entry's params.
-	// `reference_images` is always written as a typed `[]providers.ImageContent`
-	// (nil when no refs). Per-provider consumers must use
-	//   refs, _ := params["reference_images"].([]providers.ImageContent)
-	// and treat len(refs)==0 as the text-only path (do NOT range or index).
-	for i := range chain {
-		if chain[i].Params == nil {
-			chain[i].Params = make(map[string]any)
-		}
-		chain[i].Params["prompt"] = prompt
-		chain[i].Params["aspect_ratio"] = aspectRatio
-		chain[i].Params["reference_images"] = refImages
-	}
-
-	chainResult, err := ExecuteWithChain(ctx, chain, t.registry, t.callProvider)
+	// Refs-aware chain selection: when refs are present, prefer providers that
+	// genuinely support image-edit. If the filtered chain is empty (e.g. tenant
+	// configured only dashscope+byteplus which silently drop refs), fall through
+	// to text-only generation with an explicit notice — better UX than a 53s
+	// chain-exhausted error followed by an LLM retry that lands at the same
+	// dead-end via auto-inject.
+	chainResult, degradedReason, err := runImageGenChain(ctx, t, originalChain, prompt, aspectRatio, refImages)
 	if err != nil {
 		if len(refImages) > 0 {
 			return ErrorResult(fmt.Sprintf(
-				"image generation with reference images failed (chain exhausted). "+
+				"image generation with reference images failed (chain exhausted with refs; text-only fallback also failed). "+
 					"Configured providers may not support image-to-image edits. Underlying error: %v", err))
 		}
 		return ErrorResult(fmt.Sprintf("image generation failed: %v", err))
@@ -197,6 +192,9 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 	if len(unresolvedRefIDs) > 0 {
 		forLLM += formatRefPartialResolveNote(unresolvedRefIDs, MediaImageRefsFromCtx(ctx))
 	}
+	if degradedReason != "" {
+		forLLM += formatRefsDroppedNote(degradedReason, requestedRefIDs)
+	}
 	out := &Result{ForLLM: forLLM}
 	out.Media = []bus.MediaFile{{Path: imagePath, MimeType: "image/png", Filename: filepath.Base(imagePath)}}
 	out.MediaPrompts = map[int]string{0: prompt}
@@ -216,6 +214,105 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 		out.Usage = chainResult.Usage
 	}
 	return out
+}
+
+// providerSupportsRefs reports whether the given provider type genuinely
+// passes reference_images through to its wire body. Sources:
+//   - gemini: inline_data parts (create_image.go::callGeminiNativeImageGen)
+//   - openrouter: image_url parts in chat-completions (callImageGenAPI)
+//   - openai: /v1/images/edits multipart (callOpenAIImageEdit)
+//   - minimax: subject_reference (callMinimaxImageGen, capped at 1, char only)
+//   - codex / chatgpt_oauth_router: Responses API input_image (codex_native_image.go)
+//   - dashscope, byteplus: refs explicitly dropped (warnIfRefsDropped, Phase 04 deferred)
+func providerSupportsRefs(providerType string) bool {
+	switch providerType {
+	case "gemini", "openrouter", "openai", "minimax", "codex", "chatgpt_oauth_router":
+		return true
+	default:
+		return false
+	}
+}
+
+// filterChainForRefs returns chain entries whose provider type supports
+// reference images. Caller falls back to text-only when the filtered chain
+// is empty.
+func filterChainForRefs(chain []MediaProviderEntry) []MediaProviderEntry {
+	out := make([]MediaProviderEntry, 0, len(chain))
+	for _, entry := range chain {
+		// providerTypeFromName is the same inference used by callProvider when
+		// _provider_type isn't set yet (chain is pre-execute here).
+		if providerSupportsRefs(providerTypeFromName(entry.Provider)) {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// injectImageGenParams sets the prompt + aspect_ratio + refs onto every
+// chain entry's Params. Idempotent across re-runs: replaces the prior value
+// rather than appending.
+func injectImageGenParams(chain []MediaProviderEntry, prompt, aspectRatio string, refs []providers.ImageContent) {
+	for i := range chain {
+		if chain[i].Params == nil {
+			chain[i].Params = make(map[string]any)
+		}
+		chain[i].Params["prompt"] = prompt
+		chain[i].Params["aspect_ratio"] = aspectRatio
+		chain[i].Params["reference_images"] = refs
+	}
+}
+
+// runImageGenChain tries refs-mode first when refs present + refs-capable
+// providers exist, then falls back to text-only. Returns chainResult, a
+// degradedReason ("" / "no_refs_capable_provider" / "refs_failed"), and err.
+func runImageGenChain(
+	ctx context.Context,
+	t *CreateImageTool,
+	chain []MediaProviderEntry,
+	prompt, aspectRatio string,
+	refImages []providers.ImageContent,
+) (*ChainResult, string, error) {
+	if len(refImages) > 0 {
+		refsChain := filterChainForRefs(chain)
+		if len(refsChain) > 0 {
+			injectImageGenParams(refsChain, prompt, aspectRatio, refImages)
+			if res, err := ExecuteWithChain(ctx, refsChain, t.registry, t.callProvider); err == nil {
+				return res, "", nil
+			} else {
+				slog.Warn("create_image: refs-mode chain failed, falling back to text-only",
+					"err", truncateError(err), "refs_chain_len", len(refsChain))
+			}
+			injectImageGenParams(chain, prompt, aspectRatio, nil)
+			res, err := ExecuteWithChain(ctx, chain, t.registry, t.callProvider)
+			return res, "refs_failed", err
+		}
+		slog.Warn("create_image: no refs-capable provider in chain, falling back to text-only",
+			"chain_len", len(chain))
+		injectImageGenParams(chain, prompt, aspectRatio, nil)
+		res, err := ExecuteWithChain(ctx, chain, t.registry, t.callProvider)
+		return res, "no_refs_capable_provider", err
+	}
+	injectImageGenParams(chain, prompt, aspectRatio, nil)
+	res, err := ExecuteWithChain(ctx, chain, t.registry, t.callProvider)
+	return res, "", err
+}
+
+// formatRefsDroppedNote returns an explicit LLM-facing note explaining why
+// the user's reference photo wasn't applied. Surfaced so the LLM tells the
+// user instead of silently producing a generic image.
+func formatRefsDroppedNote(reason string, refIDs []string) string {
+	switch reason {
+	case "refs_failed":
+		return fmt.Sprintf(
+			"\n\n⚠️ NOTE TO ASSISTANT: Reference image(s) %v could not be applied — refs-capable providers in the chain all failed. Generated from prompt only. **Tell the user explicitly** that their attached photo could not be used and the result is based on the description alone.",
+			refIDs)
+	case "no_refs_capable_provider":
+		return fmt.Sprintf(
+			"\n\n⚠️ NOTE TO ASSISTANT: Reference image(s) %v dropped — no configured image provider supports image-to-image edits. Generated from prompt only. **Tell the user explicitly** that the system can't apply their photo as a reference with the current provider setup, and suggest the operator add Gemini or OpenAI (gpt-image-*) to the Create Image provider chain.",
+			refIDs)
+	default:
+		return ""
+	}
 }
 
 // embedPromptIntoPNG wraps agent.EmbedPNGPrompt for the tools package.

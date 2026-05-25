@@ -132,3 +132,7 @@ func (m *mockTraceCollector) LastFinishTrace() *struct {
 func (m *mockTraceCollector) FinishCallCount() int {
 	return len(m.finishCalls)
 }
+
+// Store satisfies agent.TraceCollector. Tests don't drive the store path,
+// so nil is fine — callers in router.go check for nil before using it.
+func (m *mockTraceCollector) Store() store.TracingStore { return nil }
