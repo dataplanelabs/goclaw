@@ -153,6 +153,10 @@ func runGateway() {
 
 	pgStores, traceCollector, snapshotWorker := setupStoresAndTracing(cfg, dataDir, msgBus)
 
+	if ttsTool != nil && pgStores.SystemConfigs != nil {
+		ttsTool.SetSystemConfigStore(pgStores.SystemConfigs)
+	}
+
 	// Recover from crashes: flip ghost 'summoning' rows to 'summon_failed'.
 	// Summon goroutines don't survive process restart; stale DB rows would trap the UI.
 	if pgStores.Agents != nil {
