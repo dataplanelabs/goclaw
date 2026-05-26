@@ -524,6 +524,81 @@ func (l *Loader) GetSkill(ctx context.Context, name string) (*Info, bool) {
 	return info, ok
 }
 
+// ActivationPayload is the full skill bundle returned by use_skill activation.
+// Inlines SKILL.md content when under SkillMDByteBudget; otherwise returns
+// paths-only and sets SkillMDTruncatedReason so the agent reads chunks manually.
+// AssetPaths and ScriptPaths are flat — files in `assets/` and `scripts/`
+// directly, not recursive. Skills bundling nested directories should list
+// them in SKILL.md prose.
+type ActivationPayload struct {
+	Slug                   string    `json:"slug"`
+	Name                   string    `json:"name"`
+	Source                 string    `json:"source"`
+	BaseDir                string    `json:"base_dir"`
+	SkillMDPath            string    `json:"skill_md_path"`
+	AssetPaths             []string  `json:"asset_paths,omitempty"`
+	ScriptPaths            []string  `json:"script_paths,omitempty"`
+	SkillMDContent         string    `json:"skill_md_content,omitempty"`
+	SkillMDTruncatedReason string    `json:"skill_md_truncated_reason,omitempty"`
+	ActivatedAt            time.Time `json:"activated_at"`
+}
+
+// SkillMDByteBudget caps inline SKILL.md content. Byte-based (provider-agnostic)
+// to avoid tokenizer drift across GLM / Anthropic / OpenAI.
+const SkillMDByteBudget = 200 * 1024
+
+// LoadActivationPayload resolves the skill by slug/name and returns the full
+// activation bundle: structured paths + inline SKILL.md when under the byte budget.
+// Returns an error wrapping "skill_not_found" when the slug isn't in the loader cache.
+// Caller is responsible for grant validation (via SkillAccessStore on managed skills).
+func (l *Loader) LoadActivationPayload(ctx context.Context, slug string) (*ActivationPayload, error) {
+	info, ok := l.GetSkill(ctx, slug)
+	if !ok {
+		return nil, fmt.Errorf("skill_not_found: %q", slug)
+	}
+
+	payload := &ActivationPayload{
+		Slug:        info.Slug,
+		Name:        info.Name,
+		Source:      info.Source,
+		BaseDir:     info.BaseDir,
+		SkillMDPath: info.Path,
+		AssetPaths:  listFilesInSubdir(info.BaseDir, "assets"),
+		ScriptPaths: listFilesInSubdir(info.BaseDir, "scripts"),
+		ActivatedAt: time.Now().UTC(),
+	}
+
+	data, err := os.ReadFile(info.Path)
+	if err != nil {
+		return nil, fmt.Errorf("read SKILL.md: %w", err)
+	}
+	if len(data) > SkillMDByteBudget {
+		payload.SkillMDTruncatedReason = "exceeds_200kb_budget"
+	} else {
+		payload.SkillMDContent = string(data)
+	}
+	return payload, nil
+}
+
+func listFilesInSubdir(baseDir, sub string) []string {
+	dir := filepath.Join(baseDir, sub)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	paths := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		paths = append(paths, filepath.Join(dir, e.Name()))
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	return paths
+}
+
 // --- Frontmatter parsing ---
 
 var frontmatterRe = regexp.MustCompile(`(?s)^---\n(.*?)\n---\n?`)
