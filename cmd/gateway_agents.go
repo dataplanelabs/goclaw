@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -327,6 +328,30 @@ func setupTTS(cfg *config.Config) *tts.Manager {
 	return mgr
 }
 
+// filteredDaemonEnv removes agent-runtime overlay vars so spawned daemons resolve deps from the image's system site-packages, not from /app/data/.runtime/pip (which can carry ABI-incompatible .so files across image rebuilds).
+func filteredDaemonEnv(parent []string) []string {
+	dropped := map[string]bool{
+		"PYTHONPATH":      true,
+		"PIP_TARGET":      true,
+		"PIP_CACHE_DIR":   true,
+		"NPM_CONFIG_PREFIX": true,
+		"NODE_PATH":       true,
+	}
+	out := make([]string, 0, len(parent))
+	for _, kv := range parent {
+		eq := strings.IndexByte(kv, '=')
+		if eq <= 0 {
+			out = append(out, kv)
+			continue
+		}
+		if dropped[kv[:eq]] {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
 // spawnVieNeuDaemonIfPresent launches the bundled uvicorn daemon as a child
 // process when /app/vieneu-sidecar exists (only in :full images). Skips silently
 // otherwise. Daemon binds 127.0.0.1:7333; logs go to goclaw's stdout/stderr.
@@ -340,6 +365,7 @@ func spawnVieNeuDaemonIfPresent() bool {
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = filteredDaemonEnv(os.Environ())
 	if err := cmd.Start(); err != nil {
 		slog.Warn("vieneu.daemon: spawn failed", "err", err)
 		return false
