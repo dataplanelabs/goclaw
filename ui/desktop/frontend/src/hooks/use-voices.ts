@@ -13,7 +13,7 @@ interface UseRefreshVoicesResult {
   isPending: boolean
 }
 
-export function useVoices(): UseVoicesResult {
+export function useVoices(provider?: string): UseVoicesResult {
   const [data, setData] = useState<Voice[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -22,31 +22,31 @@ export function useVoices(): UseVoicesResult {
     setIsLoading(true)
     setError(null)
     try {
-      const voices = await listVoices()
+      const voices = await listVoices(provider)
       setData(voices)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load voices')
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [provider])
 
   useEffect(() => { fetch() }, [fetch])
 
   return { data, isLoading, error, refetch: fetch }
 }
 
-export function useRefreshVoices(): UseRefreshVoicesResult {
+export function useRefreshVoices(provider?: string): UseRefreshVoicesResult {
   const [isPending, setIsPending] = useState(false)
 
   const mutate = useCallback(async () => {
     setIsPending(true)
     try {
-      await refreshVoices()
+      await refreshVoices(provider)
     } finally {
       setIsPending(false)
     }
-  }, [])
+  }, [provider])
 
   return { mutate, isPending }
 }

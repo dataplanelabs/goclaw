@@ -337,6 +337,9 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 			tenantStore = d.pgStores.Tenants
 		}
 		voicesH := httpapi.NewVoicesHandler(voiceCache, secretStore, tenantStore)
+		if d.audioMgr != nil {
+			voicesH.SetManager(d.audioMgr)
+		}
 		d.server.SetVoicesHandler(voicesH)
 		// Wire WS method — provider nil means each request resolves key via secretStore at HTTP layer.
 		// For WS, use same cache. Provider is resolved via secretStore at WS level in a future phase.

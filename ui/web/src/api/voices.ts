@@ -15,14 +15,19 @@ interface VoicesResponse {
 
 export const voiceKeys = {
   all: ["voices"] as const,
+  byProvider: (provider?: string) => ["voices", provider ?? "default"] as const,
 };
 
-export function useVoices() {
+function buildQuery(provider?: string): string {
+  return provider ? `?provider=${encodeURIComponent(provider)}` : "";
+}
+
+export function useVoices(provider?: string) {
   const http = useHttp();
   return useQuery({
-    queryKey: voiceKeys.all,
+    queryKey: voiceKeys.byProvider(provider),
     queryFn: async () => {
-      const res = await http.get<VoicesResponse>("/v1/voices");
+      const res = await http.get<VoicesResponse>(`/v1/voices${buildQuery(provider)}`);
       return res.voices ?? [];
     },
     staleTime: 5 * 60_000,
@@ -30,13 +35,13 @@ export function useVoices() {
   });
 }
 
-export function useRefreshVoices() {
+export function useRefreshVoices(provider?: string) {
   const http = useHttp();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => http.post<{ status: string }>("/v1/voices/refresh"),
+    mutationFn: () => http.post<{ status: string }>(`/v1/voices/refresh${buildQuery(provider)}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: voiceKeys.all });
+      queryClient.invalidateQueries({ queryKey: voiceKeys.byProvider(provider) });
     },
   });
 }

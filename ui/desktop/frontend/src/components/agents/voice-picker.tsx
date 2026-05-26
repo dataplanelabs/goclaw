@@ -101,6 +101,7 @@ export function VoicePicker({ value, onChange, disabled, provider }: Props) {
         onChange={onChange}
         disabled={disabled}
         allowFreeText={provider === 'minimax'}
+        provider={provider || undefined}
       />
     )
   }
@@ -111,6 +112,7 @@ export function VoicePicker({ value, onChange, disabled, provider }: Props) {
       onChange={onChange}
       disabled={disabled}
       allowFreeText={false}
+      provider={provider || undefined}
     />
   )
 }
@@ -343,14 +345,16 @@ function DynamicVoicePicker({
   onChange,
   disabled,
   allowFreeText,
+  provider,
 }: {
   value: string | null
   onChange: (voiceId: string) => void
   disabled?: boolean
   allowFreeText: boolean
+  provider?: string
 }) {
-  const { data: voices = [], isLoading, error } = useVoices()
-  const { mutate: refresh, isPending: refreshing } = useRefreshVoices()
+  const { data: voices = [], isLoading, error } = useVoices(provider)
+  const { mutate: refresh, isPending: refreshing } = useRefreshVoices(provider)
 
   // Fall back to free-text when first fetch fails and list is empty
   if (allowFreeText && error && voices.length === 0) {

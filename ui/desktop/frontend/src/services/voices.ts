@@ -12,11 +12,15 @@ interface VoicesResponse {
   voices: Voice[]
 }
 
-export async function listVoices(): Promise<Voice[]> {
-  const res = await getApiClient().get<VoicesResponse>('/v1/voices')
+function buildQuery(provider?: string): string {
+  return provider ? `?provider=${encodeURIComponent(provider)}` : ''
+}
+
+export async function listVoices(provider?: string): Promise<Voice[]> {
+  const res = await getApiClient().get<VoicesResponse>(`/v1/voices${buildQuery(provider)}`)
   return res.voices ?? []
 }
 
-export async function refreshVoices(): Promise<void> {
-  await getApiClient().post<{ status: string }>('/v1/voices/refresh')
+export async function refreshVoices(provider?: string): Promise<void> {
+  await getApiClient().post<{ status: string }>(`/v1/voices/refresh${buildQuery(provider)}`)
 }
