@@ -2475,3 +2475,103 @@ func TestPruneStage_CacheTtlGate_MarkTouchedOnlyOnMutation(t *testing.T) {
 		t.Error("MarkCacheTouched should NOT be called when prune returns no mutation")
 	}
 }
+
+func TestFinalizeStage_RecoversFromLastResponseWhenObserveSkipped(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{
+		SanitizeContent: func(c string) string { return c },
+		FlushMessages:   func(_ context.Context, _ string, _ []providers.Message) error { return nil },
+	}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Observe.FinalContent = ""
+	state.Think.LastResponse = &providers.ChatResponse{
+		Content:      "the answer the user should see",
+		FinishReason: "stop",
+	}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if state.Observe.FinalContent != "the answer the user should see" {
+		t.Errorf("FinalContent = %q, want recovered from LastResponse", state.Observe.FinalContent)
+	}
+}
+
+func TestFinalizeStage_EmptyContentNoEllipsis(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{
+		SanitizeContent: func(c string) string { return c },
+		FlushMessages:   func(_ context.Context, _ string, _ []providers.Message) error { return nil },
+	}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Observe.FinalContent = ""
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if state.Observe.FinalContent != "" {
+		t.Errorf("FinalContent = %q, want empty (silent delivery, no ellipsis)", state.Observe.FinalContent)
+	}
+}
+
+func TestFinalizeStage_DoesNotRecoverWhenToolCallsPresent(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{
+		SanitizeContent: func(c string) string { return c },
+		FlushMessages:   func(_ context.Context, _ string, _ []providers.Message) error { return nil },
+	}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Observe.FinalContent = ""
+	state.Think.LastResponse = &providers.ChatResponse{
+		Content:   "intermediate text with pending tool call",
+		ToolCalls: []providers.ToolCall{{Name: "search"}},
+	}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if state.Observe.FinalContent != "" {
+		t.Errorf("FinalContent = %q, want empty (tool-iteration text must not be recovered as final)", state.Observe.FinalContent)
+	}
+}
+
+func TestPruneStage_SkipsWhenThinkHasFinalAnswer(t *testing.T) {
+	t.Parallel()
+	var compactCalled int32
+	deps := &PipelineDeps{
+		Config:       PipelineConfig{ContextWindow: 1000, MaxTokens: 100},
+		TokenCounter: &mockTokenCounter{countPerMessage: 100},
+		PruneMessages: func(msgs []providers.Message, _ int) ([]providers.Message, PruneStats) {
+			return msgs, PruneStats{}
+		},
+		CompactMessages: func(_ context.Context, msgs []providers.Message, _ string) ([]providers.Message, error) {
+			atomic.AddInt32(&compactCalled, 1)
+			return msgs, nil
+		},
+	}
+	stage := NewPruneStage(deps, NewMemoryFlushStage(deps))
+	state := defaultState()
+
+	history := make([]providers.Message, 50)
+	for i := range history {
+		history[i] = providers.Message{Role: "user", Content: "msg"}
+	}
+	state.Messages.SetHistory(history)
+	state.Think.LastResponse = &providers.ChatResponse{
+		Content:      "final answer",
+		FinishReason: "stop",
+	}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if stage.Result() != Continue {
+		t.Errorf("Result() = %v, want Continue (no AbortRun when Think has final answer)", stage.Result())
+	}
+	if atomic.LoadInt32(&compactCalled) != 0 {
+		t.Error("CompactMessages should NOT be called when Think has final answer")
+	}
+}
