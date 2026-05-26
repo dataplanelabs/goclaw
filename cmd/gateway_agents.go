@@ -331,11 +331,13 @@ func setupTTS(cfg *config.Config) *tts.Manager {
 // filteredDaemonEnv removes agent-runtime overlay vars so spawned daemons resolve deps from the image's system site-packages, not from /app/data/.runtime/pip (which can carry ABI-incompatible .so files across image rebuilds).
 func filteredDaemonEnv(parent []string) []string {
 	dropped := map[string]bool{
-		"PYTHONPATH":      true,
-		"PIP_TARGET":      true,
-		"PIP_CACHE_DIR":   true,
+		"PYTHONPATH":        true,
+		"PIP_TARGET":        true,
+		"PIP_CACHE_DIR":     true,
 		"NPM_CONFIG_PREFIX": true,
-		"NODE_PATH":       true,
+		"NODE_PATH":         true,
+		"HF_HOME":           true,
+		"XDG_CACHE_HOME":    true,
 	}
 	out := make([]string, 0, len(parent))
 	for _, kv := range parent {
@@ -365,7 +367,12 @@ func spawnVieNeuDaemonIfPresent() bool {
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = filteredDaemonEnv(os.Environ())
+	hfCache := "/app/data/.cache/huggingface"
+	_ = os.MkdirAll(hfCache, 0o755)
+	cmd.Env = append(filteredDaemonEnv(os.Environ()),
+		"HF_HOME="+hfCache,
+		"XDG_CACHE_HOME=/app/data/.cache",
+	)
 	if err := cmd.Start(); err != nil {
 		slog.Warn("vieneu.daemon: spawn failed", "err", err)
 		return false
