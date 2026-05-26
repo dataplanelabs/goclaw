@@ -98,11 +98,14 @@ RUN set -eux; \
         apt-get install -y --no-install-recommends docker.io; \
     fi; \
     if [ "$ENABLE_FULL_SKILLS" = "true" ]; then \
-        apt-get install -y --no-install-recommends nodejs npm pandoc poppler-utils ffmpeg libsndfile1 git; \
+        apt-get install -y --no-install-recommends nodejs npm pandoc poppler-utils ffmpeg libsndfile1 git \
+            build-essential cmake pkg-config rustc cargo; \
         wget -qO- https://github.com/cli/cli/releases/download/v2.65.0/gh_2.65.0_linux_amd64.tar.gz \
             | tar -xz -C /tmp && mv /tmp/gh_*/bin/gh /usr/local/bin/gh && rm -rf /tmp/gh_*; \
         pip3 install --no-cache-dir --break-system-packages \
+            --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu \
             -r /tmp/requirements-base.txt -r /tmp/requirements-skills.txt; \
+        apt-get purge -y --auto-remove build-essential cmake pkg-config rustc cargo; \
         npm install -g --cache /tmp/npm-cache docx@^9.6.1 pptxgenjs@^4.0.1; \
         rm -rf /tmp/npm-cache /root/.cache; \
     else \
