@@ -214,7 +214,7 @@ func TestCapabilitiesHandler_BuiltinCatalog(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	want := map[string]bool{"openai": true, "elevenlabs": true, "edge": true, "minimax": true, "gemini": true}
+	want := map[string]bool{"openai": true, "elevenlabs": true, "edge": true, "minimax": true, "gemini": true, "vieneu": true}
 	got := make(map[string]bool, len(resp.Providers))
 	for _, p := range resp.Providers {
 		got[p.Provider] = true

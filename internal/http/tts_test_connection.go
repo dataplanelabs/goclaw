@@ -51,6 +51,7 @@ var supportedTestProviders = map[string]bool{
 	"edge":       true,
 	"minimax":    true,
 	"gemini":     true,
+	"vieneu":     true,
 }
 
 // providersRequiringAPIKey lists providers that need an API key.
