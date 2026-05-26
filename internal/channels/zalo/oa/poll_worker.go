@@ -37,6 +37,7 @@ type PollWorker struct {
 	evals    store.TeamReplyEvalStore
 	atomic   store.AtomicTeamReplyWriter
 	bus      eventbus.DomainEventBus
+	contacts *store.ContactCollector
 
 	cursorMu sync.Mutex
 	cursors  map[string]int64 // uid → last-seen msg time (Unix ms)
@@ -59,6 +60,7 @@ type PollWorkerDeps struct {
 	Evals        store.TeamReplyEvalStore
 	Atomic       store.AtomicTeamReplyWriter
 	Bus          eventbus.DomainEventBus
+	Contacts     *store.ContactCollector // optional — when set, customer DisplayName from poll response is upserted lazily
 	CustomerLast func(ctx context.Context, sessionKey string) string
 	JudgeMode    string // "per_event" (default) or "scheduled" — when scheduled, publish is suppressed; JudgeScheduler grades pending rows on cron tick
 	AgentKey     string // canonical agent identifier; "" falls back to legacy zalo_oa:<uid> session key
@@ -80,6 +82,7 @@ func NewPollWorker(instanceID uuid.UUID, name, tenantID, channelType, selfUID st
 		evals:        deps.Evals,
 		atomic:       deps.Atomic,
 		bus:          deps.Bus,
+		contacts:     deps.Contacts,
 		customerLast: deps.CustomerLast,
 		selfUID:      selfUID,
 		judgeMode:    deps.JudgeMode,
@@ -169,6 +172,7 @@ func (w *PollWorker) applyMessages(ctx context.Context, uid string, msgs []Conve
 	}
 	sessionKey := w.sessionKeyFor(uid)
 	threadKey := "direct:" + uid
+	w.maybeResolveCustomerName(ctx2, uid, msgs)
 	type outcome struct {
 		t     int64
 		retry bool
@@ -212,6 +216,27 @@ func (w *PollWorker) applyMessages(ctx context.Context, uid string, msgs []Conve
 	if maxOK > last {
 		w.setCursor(uid, maxOK)
 	}
+}
+
+// Backstop for the webhook-path upsert: covers polling-only flows + stale-name backfill. Seen-cache dedups across ticks.
+func (w *PollWorker) maybeResolveCustomerName(ctx context.Context, uid string, msgs []ConversationMessage) {
+	if w.contacts == nil {
+		return
+	}
+	name := extractCustomerNameFromBatch(uid, msgs)
+	if name == "" {
+		return
+	}
+	w.contacts.EnsureContact(ctx, w.channelType, w.instanceName, uid, uid, name, "", "direct", "user", "", "")
+}
+
+func extractCustomerNameFromBatch(uid string, msgs []ConversationMessage) string {
+	for _, m := range msgs {
+		if m.SrcID == uid && m.DisplayName != "" {
+			return m.DisplayName
+		}
+	}
+	return ""
 }
 
 // Returns err only when atomic write fails; bus.Publish dedupes via SourceID.

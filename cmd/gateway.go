@@ -570,7 +570,11 @@ func runGateway() {
 		if pgStores.Tenants != nil && pgStores.Agents != nil {
 			oaJudgeResolver = zalooa.JudgeAgentResolver(consolidation.NewTenantJudgeResolver(pgStores.Tenants, pgStores.Agents, pgStores.ChannelInstances))
 		}
-		instanceLoader.RegisterFactory(channels.TypeZaloOA, zalooa.FactoryWithDeps(pgStores.ChannelInstances, domainBus, pgStores.Sessions, pgStores.TeamReplyEvals, pgStores.TeamReplyAtomicWriter, oaJudgeResolver))
+		var oaContacts *store.ContactCollector
+		if pgStores.Contacts != nil {
+			oaContacts = store.NewContactCollector(pgStores.Contacts, cache.NewInMemoryCache[bool]())
+		}
+		instanceLoader.RegisterFactory(channels.TypeZaloOA, zalooa.FactoryWithDeps(pgStores.ChannelInstances, domainBus, pgStores.Sessions, pgStores.TeamReplyEvals, pgStores.TeamReplyAtomicWriter, oaContacts, oaJudgeResolver))
 		instanceLoader.RegisterFactory(channels.TypeZaloPersonal, zalopersonal.FactoryWithPendingStore(pgStores.PendingMessages, pgStores.Episodic))
 		instanceLoader.RegisterFactory(channels.TypeWhatsApp, whatsapp.FactoryWithDBAudio(pgStores.DB, pgStores.PendingMessages, "pgx", audioMgr, pgStores.BuiltinTools))
 		instanceLoader.RegisterFactory(channels.TypeSlack, slackchannel.FactoryWithPendingStore(pgStores.PendingMessages))

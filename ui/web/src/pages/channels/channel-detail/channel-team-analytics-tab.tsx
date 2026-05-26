@@ -29,7 +29,7 @@ const CREATE_NEW_AGENT_SENTINEL = "__create_new__";
 
 import { TeamAnalyticsHistogram } from "./team-analytics-histogram";
 import { TeamAnalyticsThreadList } from "./team-analytics-thread-list";
-import { aggregateThreads } from "./aggregate-threads";
+import { aggregateThreads, isPermanentJudgeError } from "./aggregate-threads";
 
 export function formatAgo(ms: number, t: TFunction<"channels">): string {
   if (ms < 5_000) return t("teamAnalytics.refreshJustNow");
@@ -167,7 +167,7 @@ export function ChannelTeamAnalyticsTab({
   }, [rows]);
 
   const failedCount = useMemo(
-    () => rows.filter((r) => Boolean(r.judge_error)).length,
+    () => rows.filter((r) => Boolean(r.judge_error) && !isPermanentJudgeError(r.judge_error)).length,
     [rows],
   );
 
