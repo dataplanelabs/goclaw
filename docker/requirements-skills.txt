@@ -19,3 +19,12 @@ lxml~=6.0.2
 
 # AI SDK — relaxed to allow minor updates (fast-moving SDK)
 anthropic>=0.88.0,<2.0.0
+
+# Vietnamese TTS (VieNeu) — CPU-only ONNX, bundled into :full image. Loaded at
+# goclaw startup by the supervised Python daemon at internal/audio/vieneu-sidecar/.
+vieneu~=2.7.0
+fastapi~=0.115.0
+uvicorn[standard]~=0.32.0
+python-multipart~=0.0.9
+python-json-logger~=2.0.7
+soundfile~=0.12.0

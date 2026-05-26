@@ -248,6 +248,12 @@ const (
 	MsgTtsParamUnknownKey       = "error.tts_param_unknown_key"       // "TTS param %q is not supported by this provider"
 	MsgTtsMiniMaxVoicesFailed   = "error.tts_minimax_voices_failed"   // "failed to fetch MiniMax voices: %s"
 
+	// --- VieNeu (Vietnamese TTS) ---
+	MsgTtsVieneuSynthesisFailed   = "error.tts_vieneu_synthesis_failed"   // "VieNeu synthesis failed: %s"
+	MsgTtsVieneuVoicesFailed      = "error.tts_vieneu_voices_failed"      // "failed to fetch VieNeu voices: %s"
+	MsgTtsVieneuRefAudioInvalid   = "error.tts_vieneu_ref_audio_invalid"  // "reference audio invalid: %s"
+	MsgTtsVieneuDaemonUnreachable = "error.tts_vieneu_daemon_unreachable" // "VieNeu daemon unreachable; ensure goclaw is built with ENABLE_FULL_SKILLS"
+
 	// --- STT ---
 	MsgSTTAllProvidersFailed     = "error.stt_all_providers_failed"    // "All STT providers failed"
 	MsgSTTLegacyConfigDeprecated = "warn.stt_legacy_config_deprecated" // "Legacy STT config deprecated; migrate to builtin_tools[stt]"

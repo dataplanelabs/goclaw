@@ -101,7 +101,7 @@ RUN set -eux; \
         apk add --no-cache docker-cli; \
     fi; \
     if [ "$ENABLE_FULL_SKILLS" = "true" ]; then \
-        apk add --no-cache python3 py3-pip nodejs npm pandoc github-cli poppler-utils bash ffmpeg; \
+        apk add --no-cache python3 py3-pip nodejs npm pandoc github-cli poppler-utils bash ffmpeg libsndfile; \
         pip3 install --no-cache-dir --break-system-packages \
             -r /tmp/requirements-base.txt -r /tmp/requirements-skills.txt; \
         npm install -g --cache /tmp/npm-cache docx@^9.6.1 pptxgenjs@^4.0.1; \
@@ -132,6 +132,18 @@ COPY --from=builder /out/pkg-helper /app/pkg-helper
 COPY --from=builder /src/migrations/ /app/migrations/
 COPY --from=builder /src/skills/ /app/bundled-skills/
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+
+# VieNeu Vietnamese TTS: in-pod daemon source + baked ONNX weights, ENABLE_FULL_SKILLS only.
+# The `vieneu` SDK is installed via requirements-skills.txt above; here we copy the FastAPI
+# wrapper into the image and warm-load Vieneu() once so the model weights land in a layer.
+COPY internal/audio/vieneu-sidecar/ /app/vieneu-sidecar/
+RUN set -eux; \
+    if [ "$ENABLE_FULL_SKILLS" = "true" ]; then \
+        python3 -c "from vieneu import Vieneu; Vieneu()" || \
+            echo "vieneu-tts: warm-load failed; weights will download on first request"; \
+    else \
+        rm -rf /app/vieneu-sidecar; \
+    fi
 
 # B3-01 Phase 5: bake the gws-cli Python wrapper when ENABLE_FULL_SKILLS=true.
 # The image already has python3 from the full-skills layer. We copy the package

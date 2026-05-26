@@ -214,6 +214,12 @@ func init() {
 		MsgTtsParamUnknownKey:     "tham số TTS %q không được nhà cung cấp này hỗ trợ",
 		MsgTtsMiniMaxVoicesFailed: "không tải được danh sách giọng đọc MiniMax: %s",
 
+		// VieNeu
+		MsgTtsVieneuSynthesisFailed:   "tổng hợp giọng nói VieNeu thất bại: %s",
+		MsgTtsVieneuVoicesFailed:      "không tải được danh sách giọng đọc VieNeu: %s",
+		MsgTtsVieneuRefAudioInvalid:   "âm thanh tham chiếu không hợp lệ: %s",
+		MsgTtsVieneuDaemonUnreachable: "không kết nối được tới VieNeu; vui lòng dùng image goclaw với ENABLE_FULL_SKILLS",
+
 		// STT
 		MsgSTTAllProvidersFailed:     "Tất cả nhà cung cấp STT đều thất bại",
 		MsgSTTLegacyConfigDeprecated: "Cấu hình STT cũ đã lỗi thời; hãy chuyển sang builtin_tools[stt]",
