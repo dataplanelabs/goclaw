@@ -29,6 +29,17 @@ func (s *FinalizeStage) Name() string { return "finalize" }
 
 // Execute performs all post-loop cleanup. Errors are logged, not returned.
 func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
+	if state.Observe.FinalContent == "" && state.Think.LastResponse != nil &&
+		state.Think.LastResponse.Content != "" && len(state.Think.LastResponse.ToolCalls) == 0 {
+		state.Observe.FinalContent = state.Think.LastResponse.Content
+		slog.Warn("finalize: recovered final content from Think.LastResponse",
+			"session", state.Input.SessionKey,
+			"iteration", state.Iteration,
+			"exit_code", state.ExitCode,
+			"content_len", len(state.Think.LastResponse.Content),
+		)
+	}
+
 	// 1. Sanitize final content
 	if state.Observe.FinalContent != "" && s.deps.SanitizeContent != nil {
 		state.Observe.FinalContent = s.deps.SanitizeContent(state.Observe.FinalContent)
@@ -49,9 +60,22 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 		isSilent = true
 	}
 
-	// 2b. Fallback for empty content (matching v2: channels need non-empty content to deliver).
 	if state.Observe.FinalContent == "" && !isSilent {
-		state.Observe.FinalContent = "..."
+		thinkingLen := 0
+		var toolCallsLen int
+		if state.Think.LastResponse != nil {
+			thinkingLen = len(state.Think.LastResponse.Thinking)
+			toolCallsLen = len(state.Think.LastResponse.ToolCalls)
+		}
+		slog.Warn("finalize: empty final content — suppressing delivery",
+			"session", state.Input.SessionKey,
+			"iteration", state.Iteration,
+			"exit_code", state.ExitCode,
+			"thinking_len", thinkingLen,
+			"think_tool_calls", toolCallsLen,
+			"total_tool_calls", state.Tool.TotalToolCalls,
+		)
+		isSilent = true
 	}
 
 	// 2c. Append content suffix (e.g. image markdown for WS) with dedup.
