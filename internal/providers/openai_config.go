@@ -113,6 +113,7 @@ func (p *OpenAIProvider) Capabilities() ProviderCapabilities {
 		Thinking:         true,
 		Vision:           true,
 		CacheControl:     false,
+		ImageRefs:        ProviderTypeEmitsImageRefs(p.providerType),
 		MaxContextWindow: 128_000,
 		TokenizerID:      "o200k_base",
 	}
