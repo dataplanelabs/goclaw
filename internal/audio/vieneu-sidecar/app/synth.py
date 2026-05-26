@@ -72,7 +72,10 @@ class _Engine:
                 preset = get_voice(voice_id)
                 if preset is None:
                     raise SynthesisError(f"unknown voice_id: {voice_id}")
-                kwargs["voice"] = preset.name
+                try:
+                    kwargs["voice"] = self._tts.get_preset_voice(preset.id)
+                except (ValueError, KeyError) as exc:
+                    raise SynthesisError(f"vieneu preset lookup failed for {preset.id!r}: {exc}") from exc
 
             try:
                 wav = await asyncio.to_thread(self._tts.infer, **kwargs)
