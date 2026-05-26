@@ -8,7 +8,7 @@ import (
 
 const (
 	defaultEndpoint  = "http://127.0.0.1:7333"
-	defaultVoiceID   = "truc_ly"
+	defaultVoiceID   = "Ly"
 	defaultModel     = "standard"
 	defaultEmotion   = "natural"
 	defaultTimeoutMs = 30000
