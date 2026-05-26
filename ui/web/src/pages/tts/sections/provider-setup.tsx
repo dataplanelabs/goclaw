@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 
-const PROVIDER_VALUES = ["", "openai", "elevenlabs", "edge", "minimax", "gemini"] as const;
+const PROVIDER_VALUES = ["", "openai", "elevenlabs", "edge", "minimax", "gemini", "vieneu"] as const;
 
 interface Props {
   provider: string;
@@ -18,8 +18,11 @@ interface Props {
 export function ProviderSetup({ provider, onChange }: Props) {
   const { t } = useTranslation("tts");
 
-  // Edge is the only provider that requires no API key
-  const hint = provider === "edge" ? t("edge.hint") : null;
+  // Providers that require no API key
+  const hint =
+    provider === "edge" ? t("edge.hint")
+    : provider === "vieneu" ? t("vieneu.builtin_status")
+    : null;
 
   return (
     <Card className="gap-3">
