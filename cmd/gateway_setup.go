@@ -281,6 +281,11 @@ func setupToolRegistry(
 			t.DenyPaths(internalDenyPaths...)
 		}
 	}
+	if ri, ok := toolsReg.Get("read_image"); ok {
+		if t, ok := ri.(*tools.ReadImageTool); ok {
+			t.DenyPaths(readFileDenyPaths...)
+		}
+	}
 
 	return
 }
