@@ -25,7 +25,23 @@
     "elevenlabs": "ElevenLabs",
     "edge": "Edge (Miễn phí)",
     "minimax": "MiniMax",
-    "gemini": "Google Gemini"
+    "gemini": "Google Gemini",
+    "vieneu": "VieNeu (Tiếng Việt)"
+  },
+  "vieneu": {
+    "builtin_status": "Tích hợp sẵn (TTS tiếng Việt — cần image :full)",
+    "builtin_unavailable": "Không có trong bản build này (vui lòng dùng image :full)",
+    "defaultVoice": "Giọng mặc định",
+    "model": "Mô hình",
+    "emotion": "Cảm xúc",
+    "speed": "Tốc độ",
+    "clonedVoices": "Giọng nhân bản",
+    "uploadReference": "Tải lên âm thanh tham chiếu",
+    "uploadHint": "WAV, 3–5 giây, ≤ 5 MB",
+    "refText": "Lời thoại tham chiếu (bắt buộc)",
+    "name": "Tên giọng",
+    "delete": "Xóa",
+    "noClonedVoices": "Chưa có giọng nhân bản nào."
   },
   "autoModes": {
     "off": "Tắt",

@@ -25,7 +25,23 @@
     "elevenlabs": "ElevenLabs",
     "edge": "Edge（免费）",
     "minimax": "MiniMax",
-    "gemini": "Google Gemini"
+    "gemini": "Google Gemini",
+    "vieneu": "VieNeu（越南语）"
+  },
+  "vieneu": {
+    "builtin_status": "内置（越南语 TTS，需 :full 镜像）",
+    "builtin_unavailable": "此构建中不可用（请使用 :full 镜像）",
+    "defaultVoice": "默认声音",
+    "model": "模型",
+    "emotion": "情感",
+    "speed": "语速",
+    "clonedVoices": "克隆声音",
+    "uploadReference": "上传参考音频",
+    "uploadHint": "WAV，3–5 秒，≤ 5 MB",
+    "refText": "参考文本（必填）",
+    "name": "声音名称",
+    "delete": "删除",
+    "noClonedVoices": "尚无克隆声音。"
   },
   "autoModes": {
     "off": "关闭",

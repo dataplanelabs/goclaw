@@ -11,7 +11,7 @@
  * KEEP IN SYNC with ui/web/src/data/tts-providers.ts
  */
 
-export type TtsProviderId = "openai" | "elevenlabs" | "edge" | "minimax" | "gemini";
+export type TtsProviderId = "openai" | "elevenlabs" | "edge" | "minimax" | "gemini" | "vieneu";
 
 /** Minimal display info only — no runtime data. */
 export interface TtsProviderMeta {
@@ -51,6 +51,12 @@ export const TTS_PROVIDERS: Record<TtsProviderId, TtsProviderMeta> = {
     title: "Google Gemini",
     color: "#1a73e8",
     desc: "Gemini 3.1 Flash TTS — 70+ languages, multi-speaker, audio tags (preview)",
+  },
+  vieneu: {
+    id: "vieneu",
+    title: "VieNeu (Vietnamese)",
+    color: "#ff6f00",
+    desc: "On-device Vietnamese TTS with voice cloning — bundled in the :full image, no API key",
   },
 };
 
@@ -95,5 +101,9 @@ export const PROVIDER_MODEL_CATALOG: Record<TtsProviderId, TtsModelOption[]> = {
     { value: "gemini-3.1-flash-tts-preview", label: "Gemini 3.1 Flash TTS (preview)" },
     { value: "gemini-2.5-flash-preview-tts", label: "Gemini 2.5 Flash TTS (preview)" },
     { value: "gemini-2.5-pro-preview-tts", label: "Gemini 2.5 Pro TTS (preview)" },
+  ],
+  vieneu: [
+    { value: "standard", label: "Standard (higher quality)" },
+    { value: "turbo", label: "Turbo (faster)" },
   ],
 };

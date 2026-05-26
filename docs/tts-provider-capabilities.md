@@ -168,6 +168,43 @@ Sentinel validation errors (422 Unprocessable Entity):
 All 422 error messages are run through `i18n.T(locale, key, args...)` using the
 locale extracted from `Accept-Language` by `requireAuth → enrichContext`.
 
+### VieNeu (`internal/audio/vieneu/`)
+
+Vietnamese on-device TTS. The provider is a thin HTTP client over an in-pod
+Python daemon (`internal/audio/vieneu-sidecar/`) bundled into the goclaw
+`-full` Docker image. NO API key. Endpoint defaults to `http://127.0.0.1:7333`
+(loopback) and is build-time — not exposed in the dashboard.
+
+Voices are dynamic via `VoiceListProvider` + 6 baked-in presets (Trúc Ly /
+Bình / Tuyên / Nguyên / Hương / Ngọc / Đoan). Per-tenant cloned voices
+appear in `ListVoices()` with `Category: "cloned"` and IDs like
+`cloned:<uuid>`. Cloning persistence: DB table `vieneu_cloned_voices` +
+WAV files under `<data_dir>/vieneu-refs/{tenant_id}/{voice_id}.wav` (tenant-
+scoped via `internal/audio/vieneu/refstore/`). Two-layer path-traversal
+guard: Go refstore validates voice_id chars; Python daemon validates the
+`X-Tenant-ID` header matches the path prefix.
+
+| Key | Type | Default | Range / Options | DependsOn |
+|---|---|---|---|---|
+| `speed` | range | 1.0 | 0.5–2.0, step 0.1 | — |
+| `emotion` | enum | `"natural"` | natural, storytelling | — |
+| `format` | enum | `"mp3"` | mp3, opus, m4a, wav | — |
+
+`CustomFeatures`:
+- `voices_dynamic: true` — frontend calls `GET /v1/voices?provider=vieneu`.
+- `voice_cloning: true` — cloned-voice CRUD lives at `/v1/tts/vieneu/voices`
+  (POST/GET/DELETE; multipart upload, 5 MB cap, 10 voices/tenant quota).
+- `language: "vi"` — VI-only locale tag for the dashboard chip.
+
+Sentinel errors (i18n keys in `internal/i18n/keys.go`):
+
+| Sentinel | i18n key | Surface |
+|---|---|---|
+| `ErrSynthFailed` | `MsgTtsVieneuSynthesisFailed` | 500 from `/synthesize` |
+| `ErrVoicesFetchFailed` | `MsgTtsVieneuVoicesFailed` | 500 from `/voices` |
+| `ErrRefAudioInvalid` | `MsgTtsVieneuRefAudioInvalid` | 400 from `/clone-preview` |
+| `ErrDaemonUnreachable` | `MsgTtsVieneuDaemonUnreachable` | net-error wrapped (non-`:full` image) |
+
 ---
 
 ## 3. Storage Format — Dual-Read / Dual-Write

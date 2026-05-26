@@ -25,7 +25,23 @@
     "elevenlabs": "ElevenLabs",
     "edge": "Edge (Free)",
     "minimax": "MiniMax",
-    "gemini": "Google Gemini"
+    "gemini": "Google Gemini",
+    "vieneu": "VieNeu (Vietnamese)"
+  },
+  "vieneu": {
+    "builtin_status": "Built-in (Vietnamese TTS — requires :full image)",
+    "builtin_unavailable": "Not available in this build (use a :full image variant)",
+    "defaultVoice": "Default voice",
+    "model": "Model",
+    "emotion": "Emotion",
+    "speed": "Speed",
+    "clonedVoices": "Cloned voices",
+    "uploadReference": "Upload reference audio",
+    "uploadHint": "WAV, 3–5 seconds, ≤ 5 MB",
+    "refText": "Reference transcription (required)",
+    "name": "Voice name",
+    "delete": "Delete",
+    "noClonedVoices": "No cloned voices yet."
   },
   "autoModes": {
     "off": "Off",

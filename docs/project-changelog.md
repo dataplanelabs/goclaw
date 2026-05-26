@@ -4,6 +4,59 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ---
 
+## 2026-05-26 — VieNeu Vietnamese TTS provider
+
+### feat(tts): add VieNeu Vietnamese TTS with voice cloning
+
+New TTS provider tailored for Vietnamese, bundled into the `goclaw:-full`
+image (same edge-tts deployment pattern). Apache-2.0 licensed; CPU-only,
+no API key.
+
+**Capabilities:**
+- 6 preset voices + zero-shot per-tenant voice cloning (3–5s WAV reference)
+- Two model modes: `standard` (higher quality) and `turbo` (faster)
+- Format enum: mp3 / opus / m4a / wav — Telegram + Zalo Personal voice
+  bubbles work out of the box via existing channel send paths
+- LLM tool fallback for default voice/model honors `system_configs[tts.vieneu.*]`
+  (matches PR #172 contract)
+
+**Architecture:**
+- Python FastAPI daemon at `internal/audio/vieneu-sidecar/`, supervised by
+  goclaw on startup (subprocess on loopback `127.0.0.1:7333` — not a
+  separate Pod)
+- Go provider at `internal/audio/vieneu/` implementing TTSProvider +
+  VoiceListProvider + DescribableProvider
+- New tenant-scoped file store `internal/audio/vieneu/refstore/` for ref
+  audio (path-traversal guarded)
+- Provider registers on a `/healthz` probe at gateway boot; absent daemon
+  in non-`:full` images → `slog.Info("audio.tts: vieneu skipped")`, no errors
+
+**HTTP endpoints (Phase 04 cloning):**
+- `POST /v1/tts/vieneu/voices` — multipart upload (audio + ref_text + name)
+- `GET /v1/tts/vieneu/voices` — list tenant's cloned voices
+- `DELETE /v1/tts/vieneu/voices/{voiceID}` — soft-delete + ref-file removal
+- 5 MB body cap, 10-voice/tenant quota, daemon-side `/clone-preview`
+  validation before persistence
+
+**Database:**
+- PG migration `000077_vieneu_cloned_voices.up.sql` (RequiredSchemaVersion
+  bumped 76 → 77)
+- SQLite migration `46 → 47` mirrored in `schema.sql` + `schema.go`
+
+**Dashboard:**
+- `vieneu` added to TTS provider catalog (web + desktop)
+- 6 new locale files updated (EN / VI / ZH × web + desktop)
+- Status badge "Built-in (Vietnamese TTS)" replaces operator-editable
+  endpoint URL field (loopback only)
+
+**Operator note:** ENABLE_FULL_SKILLS=true at image build time bakes the
+ONNX model weights via `RUN python -c "from vieneu import Vieneu; Vieneu()"`.
+First cold-start without baked weights downloads from HF Hub.
+
+Branch: `feat/vieneu-tts-integration`. Plan: `plans/260526-0749-vieneu-tts-integration/`.
+
+---
+
 ## 2026-05-25 (early morning — renderer list grouping)
 
 ### Zalo Personal: fix `1.` restart bug in numbered lists
