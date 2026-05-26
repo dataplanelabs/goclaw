@@ -99,13 +99,16 @@ RUN set -eux; \
     fi; \
     if [ "$ENABLE_FULL_SKILLS" = "true" ]; then \
         apt-get install -y --no-install-recommends nodejs npm pandoc poppler-utils ffmpeg libsndfile1 git \
-            build-essential cmake pkg-config rustc cargo; \
+            build-essential cmake pkg-config; \
         wget -qO- https://github.com/cli/cli/releases/download/v2.65.0/gh_2.65.0_linux_amd64.tar.gz \
             | tar -xz -C /tmp && mv /tmp/gh_*/bin/gh /usr/local/bin/gh && rm -rf /tmp/gh_*; \
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.83.0 --profile minimal; \
+        export PATH="/root/.cargo/bin:$PATH"; \
         pip3 install --no-cache-dir --break-system-packages \
             --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu \
             -r /tmp/requirements-base.txt -r /tmp/requirements-skills.txt; \
-        apt-get purge -y --auto-remove build-essential cmake pkg-config rustc cargo; \
+        /root/.cargo/bin/rustup self uninstall -y; \
+        apt-get purge -y --auto-remove build-essential cmake pkg-config; \
         npm install -g --cache /tmp/npm-cache docx@^9.6.1 pptxgenjs@^4.0.1; \
         rm -rf /tmp/npm-cache /root/.cache; \
     else \
