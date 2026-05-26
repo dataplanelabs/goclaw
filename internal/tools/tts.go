@@ -67,21 +67,20 @@ func (t *TtsTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"text": map[string]any{
 				"type": "string",
-				"description": "Text to synthesize. Edge TTS (free, default): keep under ~1500 chars per call to stay below the typical 120s timeout. " +
-					"For longer content, split into multiple sequential tts calls and stitch the audio, or summarize first. " +
-					"Commercial providers (OpenAI/ElevenLabs/MiniMax) tolerate longer text but may have their own caps.",
+				"description": "Text to synthesize. Keep under ~1500 chars per call to stay below the typical 120s timeout. " +
+					"For longer content, split into multiple sequential tts calls and stitch the audio, or summarize first.",
 			},
 			"voice": map[string]any{
 				"type":        "string",
-				"description": "Voice ID (provider-specific). Optional — uses default if omitted.",
+				"description": "Voice ID (provider-specific). Optional — uses tenant default if omitted.",
 			},
 			"model": map[string]any{
 				"type":        "string",
-				"description": "Model ID (provider-specific, e.g. eleven_v3). Optional — uses default if omitted.",
+				"description": "Model ID (provider-specific, e.g. eleven_v3). Optional — uses tenant default if omitted.",
 			},
 			"provider": map[string]any{
 				"type":        "string",
-				"description": "TTS provider: openai, elevenlabs, edge, minimax. Optional — uses primary if omitted.",
+				"description": "DO NOT PASS unless the user explicitly named a different provider. The tenant-configured primary provider is used automatically and will override any value you pass here.",
 			},
 		},
 		"required": []string{"text"},
@@ -170,22 +169,38 @@ func (t *TtsTool) resolveVoiceAndModel(ctx context.Context, providerName, argVoi
 	return voice, model
 }
 
-// resolvePrimary returns the effective primary provider name for the request.
-// Checks tenant override via BuiltinToolSettingsFromCtx first.
+// tenantPrimaryProvider returns the tenant-configured primary provider name
+// when set in builtin tool settings, else "". Used to decide whether an
+// LLM-supplied provider should be honored or overridden.
+func (t *TtsTool) tenantPrimaryProvider(ctx context.Context, mgr *tts.Manager) string {
+	settings := BuiltinToolSettingsFromCtx(ctx)
+	if settings == nil {
+		return ""
+	}
+	raw, ok := settings["tts"]
+	if !ok || len(raw) == 0 {
+		return ""
+	}
+	var override ttsOverride
+	if err := json.Unmarshal(raw, &override); err != nil {
+		slog.Warn("tts: failed to parse tenant override", "error", err)
+		return ""
+	}
+	if override.Primary == "" {
+		return ""
+	}
+	if _, exists := mgr.GetProvider(override.Primary); !exists {
+		slog.Warn("tts: tenant override references unknown provider", "primary", override.Primary)
+		return ""
+	}
+	return override.Primary
+}
+
+// resolvePrimary returns the effective primary provider when the LLM did not
+// supply one. Tenant override wins over manager default.
 func (t *TtsTool) resolvePrimary(ctx context.Context, mgr *tts.Manager) string {
-	if settings := BuiltinToolSettingsFromCtx(ctx); settings != nil {
-		if raw, ok := settings["tts"]; ok && len(raw) > 0 {
-			var override ttsOverride
-			if err := json.Unmarshal(raw, &override); err != nil {
-				slog.Warn("tts: failed to parse tenant override, using defaults", "error", err)
-			} else if override.Primary != "" {
-				// Verify the provider exists in the manager
-				if _, exists := mgr.GetProvider(override.Primary); exists {
-					return override.Primary
-				}
-				slog.Warn("tts: tenant override references unknown provider", "primary", override.Primary)
-			}
-		}
+	if p := t.tenantPrimaryProvider(ctx, mgr); p != "" {
+		return p
 	}
 	return mgr.PrimaryProvider()
 }
@@ -241,6 +256,12 @@ func (t *TtsTool) Execute(ctx context.Context, args map[string]any) *Result {
 	t.mu.RLock()
 	mgr := t.manager
 	t.mu.RUnlock()
+
+	if tenantPrimary := t.tenantPrimaryProvider(ctx, mgr); tenantPrimary != "" && providerName != "" && providerName != tenantPrimary {
+		slog.Warn("tts: ignoring llm-supplied provider, tenant primary takes precedence",
+			"llm_provider", providerName, "tenant_primary", tenantPrimary)
+		providerName = ""
+	}
 
 	effectiveProvider := providerName
 	if effectiveProvider == "" {

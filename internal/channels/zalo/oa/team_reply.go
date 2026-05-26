@@ -62,8 +62,15 @@ func (c *Channel) startTeamReplyWorker() {
 		}
 		c.teamReplyTenantID = tid.String()
 	}
+	// Log the underlying Access() error so operators see "transient network
+	// blip" vs "Zalo invalid_grant (re-consent)" — previously every failure
+	// looked the same in poll worker logs.
 	tokenSrc := func() string {
-		tok, _ := c.tokens.Access(context.Background())
+		tok, err := c.tokens.Access(context.Background())
+		if err != nil {
+			slog.Warn("zalo_oa.team_reply.access_token_unavailable",
+				"instance", c.Name(), "error", err)
+		}
 		return tok
 	}
 	onBehalf := NewOnBehalfClient(c.client, tokenSrc)
