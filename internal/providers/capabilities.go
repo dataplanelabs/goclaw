@@ -12,6 +12,7 @@ type ProviderCapabilities struct {
 	Vision           bool   // supports image inputs
 	CacheControl     bool   // supports cache_control blocks (Anthropic)
 	ImageGeneration  bool   // supports native image_generation tool (Codex/OpenAI Responses API)
+	ImageRefs        bool   // image-gen wire path passes reference_images (image-to-image edits)
 	MaxContextWindow int    // default context window for default model
 	TokenizerID      string // for tokencount package mapping
 }
@@ -20,6 +21,22 @@ type ProviderCapabilities struct {
 // Pipeline checks this to choose code path.
 type CapabilitiesAware interface {
 	Capabilities() ProviderCapabilities
+}
+
+// ProviderTypeEmitsImageRefs returns true when a given DB provider_type maps
+// to a wire path in create_image.go::callProvider that passes reference_images
+// through (vs. silently dropping them). Single source of truth — must stay
+// aligned with the type switch in callProvider().
+//
+// Codex and the ChatGPTOAuth routers are intentionally NOT listed here; they
+// declare ImageRefs directly on their own Capabilities() (one-provider-one-type).
+// This helper only covers the multi-type providers backed by OpenAIProvider.
+func ProviderTypeEmitsImageRefs(providerType string) bool {
+	switch providerType {
+	case "openai", "gemini_native", "openrouter", "minimax", "minimax_native":
+		return true
+	}
+	return false
 }
 
 // ProviderAdapter transforms between internal wire format and provider-specific format.

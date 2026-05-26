@@ -197,7 +197,8 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 		forLLM += formatRefPartialResolveNote(unresolvedRefIDs, MediaImageRefsFromCtx(ctx))
 	}
 	if degradedReason != "" {
-		forLLM += formatRefsDroppedNote(degradedReason, requestedRefIDs)
+		forLLM += formatRefsDroppedNote(degradedReason, requestedRefIDs,
+			refsCapableProviderNamesInRegistry(ctx, t.registry))
 	}
 	out := &Result{ForLLM: forLLM}
 	out.MediaPrompts = map[int]string{0: prompt}
@@ -213,32 +214,24 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 	return out
 }
 
-// providerSupportsRefs reports whether the given provider type genuinely
-// passes reference_images through to its wire body. Sources:
-//   - gemini: inline_data parts (create_image.go::callGeminiNativeImageGen)
-//   - openrouter: image_url parts in chat-completions (callImageGenAPI)
-//   - openai: /v1/images/edits multipart (callOpenAIImageEdit)
-//   - minimax: subject_reference (callMinimaxImageGen, capped at 1, char only)
-//   - codex / chatgpt_oauth_router: Responses API input_image (codex_native_image.go)
-//   - dashscope, byteplus: refs explicitly dropped (warnIfRefsDropped, Phase 04 deferred)
-func providerSupportsRefs(providerType string) bool {
-	switch providerType {
-	case "gemini", "openrouter", "openai", "minimax", "codex", "chatgpt_oauth_router":
-		return true
-	default:
-		return false
-	}
-}
-
-// filterChainForRefs returns chain entries whose provider type supports
-// reference images. Caller falls back to text-only when the filtered chain
-// is empty.
-func filterChainForRefs(chain []MediaProviderEntry) []MediaProviderEntry {
+// filterChainForRefs returns chain entries whose underlying provider self-reports
+// ImageRefs capability via providers.CapabilitiesAware. Operator-configured order
+// is preserved. Caller falls back to text-only when the filtered chain is empty.
+//
+// Sole source of truth = each provider's Capabilities().ImageRefs. No name-pattern
+// inference — operators decide capability by picking the right provider+type.
+func filterChainForRefs(ctx context.Context, chain []MediaProviderEntry, registry *providers.Registry) []MediaProviderEntry {
 	out := make([]MediaProviderEntry, 0, len(chain))
 	for _, entry := range chain {
-		// providerTypeFromName is the same inference used by callProvider when
-		// _provider_type isn't set yet (chain is pre-execute here).
-		if providerSupportsRefs(providerTypeFromName(entry.Provider)) {
+		p, err := registry.Get(ctx, entry.Provider)
+		if err != nil {
+			continue
+		}
+		ca, ok := p.(providers.CapabilitiesAware)
+		if !ok {
+			continue
+		}
+		if ca.Capabilities().ImageRefs {
 			out = append(out, entry)
 		}
 	}
@@ -270,7 +263,7 @@ func runImageGenChain(
 	refImages []providers.ImageContent,
 ) (*ChainResult, string, error) {
 	if len(refImages) > 0 {
-		refsChain := filterChainForRefs(chain)
+		refsChain := filterChainForRefs(ctx, chain, t.registry)
 		if len(refsChain) > 0 {
 			injectImageGenParams(refsChain, prompt, aspectRatio, refImages)
 			if res, err := ExecuteWithChain(ctx, refsChain, t.registry, t.callProvider); err == nil {
@@ -295,21 +288,47 @@ func runImageGenChain(
 }
 
 // formatRefsDroppedNote returns an explicit LLM-facing note explaining why
-// the user's reference photo wasn't applied. Surfaced so the LLM tells the
-// user instead of silently producing a generic image.
-func formatRefsDroppedNote(reason string, refIDs []string) string {
+// the user's reference photo wasn't applied. When availableRefsCapable is
+// non-empty, the note suggests reordering by listing actual tenant providers
+// that DO support refs — concrete operator-actionable hint vs generic advice.
+func formatRefsDroppedNote(reason string, refIDs, availableRefsCapable []string) string {
 	switch reason {
 	case "refs_failed":
 		return fmt.Sprintf(
 			"\n\n⚠️ NOTE TO ASSISTANT: Reference image(s) %v could not be applied — refs-capable providers in the chain all failed. Generated from prompt only. **Tell the user explicitly** that their attached photo could not be used and the result is based on the description alone.",
 			refIDs)
 	case "no_refs_capable_provider":
+		suggestion := "add Gemini, OpenAI (gpt-image-*), OpenRouter, or MiniMax to the Create Image provider chain"
+		if len(availableRefsCapable) > 0 {
+			suggestion = fmt.Sprintf("reorder or add one of these refs-capable providers already enabled in your tenant: %v", availableRefsCapable)
+		}
 		return fmt.Sprintf(
-			"\n\n⚠️ NOTE TO ASSISTANT: Reference image(s) %v dropped — no configured image provider supports image-to-image edits. Generated from prompt only. **Tell the user explicitly** that the system can't apply their photo as a reference with the current provider setup, and suggest the operator add Gemini or OpenAI (gpt-image-*) to the Create Image provider chain.",
-			refIDs)
+			"\n\n⚠️ NOTE TO ASSISTANT: Reference image(s) %v dropped — no configured provider in the Create Image chain supports image-to-image edits. Generated from prompt only. **Tell the user explicitly** that the system can't apply their photo as a reference with the current chain order, and suggest the operator %s.",
+			refIDs, suggestion)
 	default:
 		return ""
 	}
+}
+
+// refsCapableProviderNamesInRegistry returns names of providers in the registry
+// whose Capabilities().ImageRefs is true. Used to enrich the dropped-refs note
+// with operator-actionable provider names from the current tenant.
+func refsCapableProviderNamesInRegistry(ctx context.Context, registry *providers.Registry) []string {
+	if registry == nil {
+		return nil
+	}
+	names := registry.List(ctx)
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		p, err := registry.Get(ctx, name)
+		if err != nil {
+			continue
+		}
+		if ca, ok := p.(providers.CapabilitiesAware); ok && ca.Capabilities().ImageRefs {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // embedPromptIntoPNG wraps agent.EmbedPNGPrompt for the tools package.
