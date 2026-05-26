@@ -229,6 +229,63 @@ func TestPollWorker_PropagatesTenantContext(t *testing.T) {
 	}
 }
 
+func TestExtractCustomerNameFromBatch(t *testing.T) {
+	cases := []struct {
+		name string
+		uid  string
+		msgs []ConversationMessage
+		want string
+	}{
+		{
+			name: "customer message carries display name",
+			uid:  "u1",
+			msgs: []ConversationMessage{
+				{SrcID: "oa-self", DisplayName: "Shop"},
+				{SrcID: "u1", DisplayName: "Bùi Bình"},
+			},
+			want: "Bùi Bình",
+		},
+		{
+			name: "no customer messages in batch",
+			uid:  "u1",
+			msgs: []ConversationMessage{
+				{SrcID: "oa-self", DisplayName: "Shop"},
+				{SrcID: "oa-self", DisplayName: "Shop"},
+			},
+			want: "",
+		},
+		{
+			name: "customer message has empty DisplayName",
+			uid:  "u1",
+			msgs: []ConversationMessage{
+				{SrcID: "u1", DisplayName: ""},
+			},
+			want: "",
+		},
+		{
+			name: "first-customer-with-name wins",
+			uid:  "u1",
+			msgs: []ConversationMessage{
+				{SrcID: "u1", DisplayName: ""},
+				{SrcID: "u1", DisplayName: "First"},
+				{SrcID: "u1", DisplayName: "Second"},
+			},
+			want: "First",
+		},
+		{
+			name: "empty batch",
+			uid:  "u1",
+			msgs: nil,
+			want: "",
+		},
+	}
+	for _, c := range cases {
+		if got := extractCustomerNameFromBatch(c.uid, c.msgs); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestPollWorker_CursorDoesNotAdvancePastFailedMessage(t *testing.T) {
 	tenantID := uuid.NewString()
 	instID := uuid.New()

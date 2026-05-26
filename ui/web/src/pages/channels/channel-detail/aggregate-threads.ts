@@ -1,5 +1,16 @@
 import type { TeamReplyEvaluation } from "./team-reply-types";
 
+// Terminal judge errors that retry can never resolve without the underlying
+// capture changing. Add new permanent classes here as backend introduces them.
+const PERMANENT_JUDGE_ERROR_CLASSES = new Set<string>([
+  "empty_team_reply",
+]);
+
+export function isPermanentJudgeError(err: string | null | undefined): boolean {
+  if (!err) return false;
+  return PERMANENT_JUDGE_ERROR_CLASSES.has(err);
+}
+
 export interface ThreadGroup {
   thread_key: string;
   customer_name: string; // empty when contact has no display_name; UI falls back to truncated thread_key
@@ -10,7 +21,7 @@ export interface ThreadGroup {
 }
 
 function isGradable(c: TeamReplyEvaluation): boolean {
-  if (c.judge_error === "empty_team_reply") return false;
+  if (isPermanentJudgeError(c.judge_error)) return false;
   if (!c.team_reply || c.team_reply.trim() === "") return false;
   return true;
 }
@@ -63,6 +74,6 @@ export function scoreBgClass(score: number | null): string {
 }
 
 export function truncateThreadKey(key: string): string {
-  if (key.length <= 20) return key;
-  return key.slice(0, 12) + "…" + key.slice(-6);
+  if (key.length <= 35) return key;
+  return key.slice(0, 18) + "…" + key.slice(-12);
 }

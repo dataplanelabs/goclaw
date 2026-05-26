@@ -83,6 +83,7 @@ type Channel struct {
 	teamReplySessions store.SessionStore
 	teamReplyEvals    store.TeamReplyEvalStore
 	teamReplyAtomic   store.AtomicTeamReplyWriter
+	teamReplyContacts *store.ContactCollector
 	teamReplyWorker   *PollWorker
 	teamReplyTenantID string
 	judgeResolver JudgeAgentResolver

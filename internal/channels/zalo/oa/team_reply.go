@@ -21,12 +21,13 @@ const teamReplyCustomerContextChars = 4000
 // SetTeamReplyDeps wires Phase 4 dependencies into the channel. Called by
 // FactoryWithDeps before Start(). Idempotent — last writer wins.
 func (c *Channel) SetTeamReplyDeps(bus eventbus.DomainEventBus, sessions store.SessionStore,
-	evals store.TeamReplyEvalStore, atomic store.AtomicTeamReplyWriter, tenantID string,
-	judgeResolver JudgeAgentResolver) {
+	evals store.TeamReplyEvalStore, atomic store.AtomicTeamReplyWriter, contacts *store.ContactCollector,
+	tenantID string, judgeResolver JudgeAgentResolver) {
 	c.teamReplyBus = bus
 	c.teamReplySessions = sessions
 	c.teamReplyEvals = evals
 	c.teamReplyAtomic = atomic
+	c.teamReplyContacts = contacts
 	c.teamReplyTenantID = tenantID
 	c.judgeResolver = judgeResolver
 }
@@ -76,6 +77,7 @@ func (c *Channel) startTeamReplyWorker() {
 		Evals:        c.teamReplyEvals,
 		Atomic:       c.teamReplyAtomic,
 		Bus:          c.teamReplyBus,
+		Contacts:     c.teamReplyContacts,
 		CustomerLast: customerLast,
 		JudgeMode:    c.cfg.JudgeEvaluationMode,
 		AgentKey:     c.AgentID(),

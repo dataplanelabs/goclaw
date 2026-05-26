@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { aggregateThreads, scoreColorClass, truncateThreadKey } from "./aggregate-threads";
+import { aggregateThreads, isPermanentJudgeError, scoreColorClass, truncateThreadKey } from "./aggregate-threads";
 import type { TeamReplyEvaluation } from "./team-reply-types";
 
 const row = (over: Partial<TeamReplyEvaluation>): TeamReplyEvaluation => ({
@@ -122,10 +122,33 @@ describe("truncateThreadKey", () => {
   it("short keys pass through", () => {
     expect(truncateThreadKey("direct:123")).toBe("direct:123");
   });
-  it("long keys ellipsize in the middle", () => {
-    const long = "direct:5886292414955702584";
+  it("25-char direct: keys now pass through (≤35)", () => {
+    const key = "direct:2482926535298449405";
+    expect(truncateThreadKey(key)).toBe(key);
+  });
+  it("very long keys ellipsize 18+12", () => {
+    const long = "a".repeat(50);
     const out = truncateThreadKey(long);
     expect(out).toContain("…");
-    expect(out.length).toBeLessThan(long.length);
+    expect(out.length).toBe(31);
+    expect(out).toBe("a".repeat(18) + "…" + "a".repeat(12));
+  });
+});
+
+describe("isPermanentJudgeError", () => {
+  it("empty_team_reply → true", () => {
+    expect(isPermanentJudgeError("empty_team_reply")).toBe(true);
+  });
+  it("transient 429 → false", () => {
+    expect(isPermanentJudgeError("openai 429 rate limit")).toBe(false);
+  });
+  it("undefined → false", () => {
+    expect(isPermanentJudgeError(undefined)).toBe(false);
+  });
+  it("null → false", () => {
+    expect(isPermanentJudgeError(null)).toBe(false);
+  });
+  it("empty string → false", () => {
+    expect(isPermanentJudgeError("")).toBe(false);
   });
 });
