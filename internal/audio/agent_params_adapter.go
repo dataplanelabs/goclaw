@@ -84,6 +84,13 @@ func AdaptAgentParams(generic map[string]any, provider string) map[string]any {
 		}
 	case "gemini":
 		// No compatible generic keys — Gemini uses audio tags in prompt text.
+	case "vieneu":
+		if v, ok := generic["speed"]; ok {
+			out["speed"] = v
+		}
+		if v, ok := generic["emotion"]; ok {
+			out["emotion"] = v
+		}
 	default:
 		// Unknown provider — return empty map. Log at Info for observability.
 		slog.Info("tts.agent.params.dropped", "provider", provider, "reason", "unknown provider")
@@ -106,6 +113,8 @@ func AdaptAgentParams(generic map[string]any, provider string) map[string]any {
 				case "elevenlabs":
 					found = k == "speed" || k == "style"
 				case "minimax":
+					found = k == "speed" || k == "emotion"
+				case "vieneu":
 					found = k == "speed" || k == "emotion"
 				}
 				if !found {

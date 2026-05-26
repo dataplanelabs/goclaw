@@ -305,6 +305,11 @@ func (h *TTSHandler) resolveTenantProvider(ctx context.Context, explicitProvider
 		req.ModelID, _ = h.systemConfigs.Get(ctx, "tts.gemini.model")
 		req.Params = loadParamsBlob(ctx, h.systemConfigs, "tts.gemini.params")
 
+	case "vieneu":
+		req.VoiceID, _ = h.systemConfigs.Get(ctx, "tts.vieneu.voice")
+		req.ModelID, _ = h.systemConfigs.Get(ctx, "tts.vieneu.model")
+		req.Params = loadParamsBlob(ctx, h.systemConfigs, "tts.vieneu.params")
+
 	default:
 		return nil, "", nil, fmt.Errorf("unsupported provider: %s", providerName)
 	}
