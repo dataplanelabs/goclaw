@@ -14,7 +14,9 @@ import (
 )
 
 // refreshMargin: refresh when the access token expires within this window.
-const refreshMargin = 5 * time.Minute
+// Generous margin so a transient refresh failure has multiple retries before
+// the cached AT actually expires (1h TTL).
+const refreshMargin = 15 * time.Minute
 
 // refreshHTTPTimeout caps the refresh HTTP roundtrip independent of the
 // caller ctx so a misconfigured caller can't park the singleflighted
@@ -113,9 +115,13 @@ func (ts *tokenSource) doRefresh(ctx context.Context) error {
 
 	snapshot := *cur
 	snapshot.WithTokens(tok)
-	if err := Persist(ctx, ts.store, ts.instanceID, &snapshot); err != nil {
-		slog.Error("zalo_oa.persist_failed", "instance_id", ts.instanceID, "oa_id", cur.OAID, "error", err)
-		// Commit in memory: the new pair is the only valid one until restart.
+	if err := persistWithRetry(ctx, ts.store, ts.instanceID, &snapshot); err != nil {
+		// Zalo already rotated the RT upstream; old one is dead. Commit
+		// the new pair in memory so this process keeps working until
+		// restart, but pod restart with stale DB = re-consent required.
+		slog.Error("zalo_oa.persist_failed",
+			"instance_id", ts.instanceID, "oa_id", cur.OAID, "error", err,
+			"risk", "pod restart will load stale RT; operator must re-consent if that happens")
 		ts.creds.Store(&snapshot)
 		return err
 	}
@@ -127,4 +133,34 @@ func (ts *tokenSource) doRefresh(ctx context.Context) error {
 		"refresh_expires_at", snapshot.RefreshTokenExpiresAt,
 	)
 	return nil
+}
+
+// persistWithRetry writes the rotated tokens to DB with exponential backoff.
+// Zalo has already burned the old RT upstream by the time we get here, so a
+// failed write means data loss on the next pod restart. Three attempts over
+// ~10s catches the common transient PG failures (connection blip, briefly
+// unavailable, election). Uses context.WithoutCancel so a caller timeout
+// can't abort mid-retry and lose the new RT.
+func persistWithRetry(parent context.Context, s store.ChannelInstanceStore, id uuid.UUID, c *ChannelCreds) error {
+	ctx := context.WithoutCancel(parent)
+	backoffs := []time.Duration{0, 2 * time.Second, 5 * time.Second}
+	var lastErr error
+	for attempt, delay := range backoffs {
+		if delay > 0 {
+			select {
+			case <-time.After(delay):
+			case <-parent.Done():
+			}
+		}
+		err := Persist(ctx, s, id, c)
+		if err == nil {
+			if attempt > 0 {
+				slog.Warn("zalo_oa.persist_succeeded_on_retry", "instance_id", id, "attempt", attempt+1)
+			}
+			return nil
+		}
+		lastErr = err
+		slog.Warn("zalo_oa.persist_retry", "instance_id", id, "attempt", attempt+1, "error", err)
+	}
+	return lastErr
 }
