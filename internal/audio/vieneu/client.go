@@ -15,9 +15,13 @@ type client struct {
 	endpoint   string
 }
 
-func newClient(endpoint string, timeoutMs int) *client {
+// newClient creates an HTTP client without a request-wide Timeout so ctx fully
+// controls the deadline. The vieneu daemon's standard mode takes 50-75s for
+// 200-char Vietnamese on CPU, so a fixed client.Timeout would bite before the
+// per-tenant tts.timeout_ms could apply via ctx.
+func newClient(endpoint string, _ int) *client {
 	return &client{
-		httpClient: &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
+		httpClient: &http.Client{},
 		endpoint:   endpoint,
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -244,6 +245,22 @@ func (t *TtsTool) Execute(ctx context.Context, args map[string]any) *Result {
 	text, _ := args["text"].(string)
 	if text == "" {
 		return &Result{ForLLM: "error: text is required", IsError: true}
+	}
+
+	// Default 180s — CPU vieneu synthesis can take 50-75s for ~200 chars, plus
+	// fallback chain on failure. Tenant tts.timeout_ms overrides via system_configs.
+	timeoutMs := 180000
+	if t.systemConfigs != nil {
+		if v, err := t.systemConfigs.Get(ctx, "tts.timeout_ms"); err == nil && v != "" {
+			if n, perr := strconv.Atoi(v); perr == nil && n > 0 {
+				timeoutMs = n
+			}
+		}
+	}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+		defer cancel()
 	}
 
 	argVoice, _ := args["voice"].(string)

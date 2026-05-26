@@ -11,7 +11,7 @@ const (
 	defaultVoiceID   = "Ly"
 	defaultModel     = "standard"
 	defaultEmotion   = "natural"
-	defaultTimeoutMs = 30000
+	defaultTimeoutMs = 300000
 )
 
 // ClonedVoiceLookup resolves a "cloned:<id>" voice to its on-disk reference
