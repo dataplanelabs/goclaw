@@ -444,6 +444,7 @@ func (l *Loader) BuildSummary(ctx context.Context, allowList []string) string {
 	for _, s := range filtered {
 		lines = append(lines, "  <skill>")
 		lines = append(lines, fmt.Sprintf("    <name>%s</name>", escapeXML(s.Name)))
+		lines = append(lines, fmt.Sprintf("    <slug>%s</slug>", escapeXML(s.Slug)))
 		desc := s.Description
 		if len([]rune(desc)) > skillDescMaxLen {
 			desc = string([]rune(desc)[:skillDescMaxLen]) + "…"
