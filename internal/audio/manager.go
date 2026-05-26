@@ -318,7 +318,13 @@ func (m *Manager) SynthesizeWithFallbackAdapted(ctx context.Context, text string
 		if name == m.primary {
 			continue
 		}
-		attemptOpts := m.withAdaptedParams(opts, name, genericAgentParams)
+		// Drop voice/model from fallback attempts — they are provider-specific
+		// (e.g. vieneu "Doan" is invalid for edge). Each fallback provider falls
+		// back to its own configured default voice/model.
+		fallbackOpts := opts
+		fallbackOpts.Voice = ""
+		fallbackOpts.Model = ""
+		attemptOpts := m.withAdaptedParams(fallbackOpts, name, genericAgentParams)
 		result, err := p.Synthesize(ctx, text, attemptOpts)
 		if err == nil {
 			slog.Info("tts fallback succeeded", "provider", name)
