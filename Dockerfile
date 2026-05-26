@@ -133,17 +133,10 @@ COPY --from=builder /src/migrations/ /app/migrations/
 COPY --from=builder /src/skills/ /app/bundled-skills/
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
-# VieNeu Vietnamese TTS: in-pod daemon source + baked ONNX weights, ENABLE_FULL_SKILLS only.
-# The `vieneu` SDK is installed via requirements-skills.txt above; here we copy the FastAPI
-# wrapper into the image and warm-load Vieneu() once so the model weights land in a layer.
-COPY internal/audio/vieneu-sidecar/ /app/vieneu-sidecar/
-RUN set -eux; \
-    if [ "$ENABLE_FULL_SKILLS" = "true" ]; then \
-        python3 -c "from vieneu import Vieneu; Vieneu()" || \
-            echo "vieneu-tts: warm-load failed; weights will download on first request"; \
-    else \
-        rm -rf /app/vieneu-sidecar; \
-    fi
+# VieNeu Vietnamese TTS daemon source — kept in repo for the future Debian-based
+# image variant. NOT installed/warm-loaded in the Alpine :full image because
+# onnxruntime has no musl wheel. Go provider at internal/audio/vieneu/ gracefully
+# skips registration when daemon isn't reachable on 127.0.0.1:7333.
 
 # B3-01 Phase 5: bake the gws-cli Python wrapper when ENABLE_FULL_SKILLS=true.
 # The image already has python3 from the full-skills layer. We copy the package

@@ -20,11 +20,9 @@ lxml~=6.0.2
 # AI SDK — relaxed to allow minor updates (fast-moving SDK)
 anthropic>=0.88.0,<2.0.0
 
-# Vietnamese TTS (VieNeu) — CPU-only ONNX, bundled into :full image. Loaded at
-# goclaw startup by the supervised Python daemon at internal/audio/vieneu-sidecar/.
-vieneu~=2.7.0
-fastapi~=0.115.0
-uvicorn[standard]~=0.32.0
-python-multipart~=0.0.9
-python-json-logger~=2.0.7
-soundfile~=0.12.0
+# Vietnamese TTS (VieNeu) — DEFERRED from :full image bundling.
+# vieneu pulls onnxruntime which has no Alpine/musl wheel; pip fails at build.
+# The Go provider at internal/audio/vieneu/ stays in code — it gracefully
+# skips registration when the daemon isn't reachable on 127.0.0.1:7333.
+# Follow-up: bundle into a Debian-based image variant or run as a separate
+# Pod (revisit plans/260526-0749-vieneu-tts-integration/decisions.md).
