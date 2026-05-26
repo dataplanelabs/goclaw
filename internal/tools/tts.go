@@ -67,21 +67,20 @@ func (t *TtsTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"text": map[string]any{
 				"type": "string",
-				"description": "Text to synthesize. Edge TTS (free, default): keep under ~1500 chars per call to stay below the typical 120s timeout. " +
-					"For longer content, split into multiple sequential tts calls and stitch the audio, or summarize first. " +
-					"Commercial providers (OpenAI/ElevenLabs/MiniMax) tolerate longer text but may have their own caps.",
+				"description": "Text to synthesize. Keep under ~1500 chars per call to stay below the typical 120s timeout. " +
+					"For longer content, split into multiple sequential tts calls and stitch the audio, or summarize first.",
 			},
 			"voice": map[string]any{
 				"type":        "string",
-				"description": "Voice ID (provider-specific). Optional — uses default if omitted.",
+				"description": "Voice ID (provider-specific). Optional — uses tenant default if omitted.",
 			},
 			"model": map[string]any{
 				"type":        "string",
-				"description": "Model ID (provider-specific, e.g. eleven_v3). Optional — uses default if omitted.",
+				"description": "Model ID (provider-specific, e.g. eleven_v3). Optional — uses tenant default if omitted.",
 			},
 			"provider": map[string]any{
 				"type":        "string",
-				"description": "TTS provider: openai, elevenlabs, edge, minimax. Optional — uses primary if omitted.",
+				"description": "TTS provider: openai, elevenlabs, edge, minimax, gemini, vieneu. OMIT this field to use the tenant-configured primary provider (set on the dashboard). Only pass explicitly when overriding for a specific need.",
 			},
 		},
 		"required": []string{"text"},
