@@ -57,7 +57,8 @@ func (t *TtsTool) UpdateManager(mgr *tts.Manager) {
 func (t *TtsTool) Name() string { return "tts" }
 
 func (t *TtsTool) Description() string {
-	return "Convert text to speech audio. Returns a MEDIA: path to the generated audio file."
+	return "Convert text to speech audio. Returns a MEDIA: path to the generated audio file. " +
+		"Long text may time out — see 'text' description for length guidance."
 }
 
 func (t *TtsTool) Parameters() map[string]any {
@@ -65,8 +66,10 @@ func (t *TtsTool) Parameters() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"text": map[string]any{
-				"type":        "string",
-				"description": "The text to convert to speech",
+				"type": "string",
+				"description": "Text to synthesize. Edge TTS (free, default): keep under ~1500 chars per call to stay below the typical 120s timeout. " +
+					"For longer content, split into multiple sequential tts calls and stitch the audio, or summarize first. " +
+					"Commercial providers (OpenAI/ElevenLabs/MiniMax) tolerate longer text but may have their own caps.",
 			},
 			"voice": map[string]any{
 				"type":        "string",
