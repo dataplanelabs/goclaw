@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"log/slog"
+	"net/http"
+	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/audio/elevenlabs"
 	geminiaudio "github.com/nextlevelbuilder/goclaw/internal/audio/gemini"
@@ -308,11 +310,47 @@ func setupTTS(cfg *config.Config) *tts.Manager {
 		}))
 	}
 
+	// VieNeu daemon ships inside the `:full` image; probe healthz and register
+	// on success. In non-full builds the probe fails-fast and we skip silently.
+	registerVieNeuIfHealthy(mgr, ttsCfg)
+
 	if !mgr.HasProviders() {
 		return nil
 	}
 
 	return mgr
+}
+
+func registerVieNeuIfHealthy(mgr *tts.Manager, ttsCfg config.TtsConfig) {
+	endpoint := ttsCfg.VieNeu.Endpoint
+	if endpoint == "" {
+		endpoint = "http://127.0.0.1:7333"
+	}
+	probeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, endpoint+"/healthz", nil)
+	if err != nil {
+		slog.Info("audio.tts: vieneu skipped — request build failed", "err", err)
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Info("audio.tts: vieneu skipped — daemon unreachable", "endpoint", endpoint)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		slog.Info("audio.tts: vieneu skipped — healthz non-200", "status", resp.StatusCode)
+		return
+	}
+	mgr.RegisterProvider(tts.NewVieNeuProvider(tts.VieNeuConfig{
+		Endpoint:  endpoint,
+		VoiceID:   ttsCfg.VieNeu.Voice,
+		Model:     ttsCfg.VieNeu.Model,
+		Emotion:   ttsCfg.VieNeu.Emotion,
+		TimeoutMs: ttsCfg.TimeoutMs,
+	}))
+	slog.Info("audio.tts: vieneu registered", "endpoint", endpoint)
 }
 
 // setupAudioExtras wires Music and SFX providers into the audio Manager.

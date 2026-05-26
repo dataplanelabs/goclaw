@@ -553,7 +553,7 @@ type SessionsConfig struct {
 // TtsConfig configures text-to-speech.
 // Matching TS src/config/types.tts.ts.
 type TtsConfig struct {
-	Provider   string              `json:"provider,omitempty"`   // "openai", "elevenlabs", "edge", "minimax", "gemini"
+	Provider   string              `json:"provider,omitempty"`   // "openai", "elevenlabs", "edge", "minimax", "gemini", "vieneu"
 	Auto       string              `json:"auto,omitempty"`       // "off" (default), "always", "inbound", "tagged"
 	Mode       string              `json:"mode,omitempty"`       // "final" (default), "all"
 	MaxLength  int                 `json:"max_length,omitempty"` // max text length before truncation (default 1500)
@@ -563,6 +563,7 @@ type TtsConfig struct {
 	Edge       TtsEdgeConfig       `json:"edge"`
 	MiniMax    TtsMiniMaxConfig    `json:"minimax"`
 	Gemini     TtsGeminiConfig     `json:"gemini"`
+	VieNeu     TtsVieNeuConfig     `json:"vieneu"`
 }
 
 // TtsGeminiConfig configures the Google Gemini TTS provider.
@@ -604,6 +605,17 @@ type TtsMiniMaxConfig struct {
 	APIBase string `json:"api_base,omitempty"` // default "https://api.minimax.io/v1"
 	Model   string `json:"model,omitempty"`    // default "speech-02-hd"
 	VoiceID string `json:"voice_id,omitempty"` // default "Wise_Woman"
+}
+
+// TtsVieNeuConfig configures the in-pod VieNeu Vietnamese TTS daemon. The
+// daemon ships inside the goclaw `:full` image; the endpoint defaults to
+// loopback (`http://127.0.0.1:7333`) and is NOT operator-configurable in
+// normal use — the field is kept only for tests / local-dev override.
+type TtsVieNeuConfig struct {
+	Endpoint string `json:"endpoint,omitempty"` // in-pod daemon URL; default "http://127.0.0.1:7333"
+	Voice    string `json:"voice,omitempty"`    // default "truc_ly"
+	Model    string `json:"model,omitempty"`    // "standard" or "turbo" — default "standard"
+	Emotion  string `json:"emotion,omitempty"`  // "natural" or "storytelling" — default "natural"
 }
 
 // MergeChannelGroupQuotas merges per-group quota overrides from channel configs
