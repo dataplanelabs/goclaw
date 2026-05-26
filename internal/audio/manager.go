@@ -318,9 +318,6 @@ func (m *Manager) SynthesizeWithFallbackAdapted(ctx context.Context, text string
 		if name == m.primary {
 			continue
 		}
-		// Drop voice/model from fallback attempts — they are provider-specific
-		// (e.g. vieneu "Doan" is invalid for edge). Each fallback provider falls
-		// back to its own configured default voice/model.
 		fallbackOpts := opts
 		fallbackOpts.Voice = ""
 		fallbackOpts.Model = ""

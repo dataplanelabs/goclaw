@@ -247,8 +247,6 @@ func (t *TtsTool) Execute(ctx context.Context, args map[string]any) *Result {
 		return &Result{ForLLM: "error: text is required", IsError: true}
 	}
 
-	// Default 180s — CPU vieneu synthesis can take 50-75s for ~200 chars, plus
-	// fallback chain on failure. Tenant tts.timeout_ms overrides via system_configs.
 	timeoutMs := 180000
 	if t.systemConfigs != nil {
 		if v, err := t.systemConfigs.Get(ctx, "tts.timeout_ms"); err == nil && v != "" {
@@ -280,12 +278,7 @@ func (t *TtsTool) Execute(ctx context.Context, args map[string]any) *Result {
 		slog.Warn("tts: ignoring llm-supplied provider, tenant primary takes precedence",
 			"llm_provider", providerName, "tenant_primary", tenantPrimary,
 			"dropped_voice", argVoice, "dropped_model", argModel)
-		// Drop voice/model too — they were chosen for the LLM-supplied provider
-		// (e.g. edge voice "vi-VN-HoaiMyNeural") and won't be valid for the
-		// tenant primary. Provider-specific defaults will be re-resolved below.
-		providerName = ""
-		argVoice = ""
-		argModel = ""
+		providerName, argVoice, argModel = "", "", ""
 	}
 
 	effectiveProvider := providerName
