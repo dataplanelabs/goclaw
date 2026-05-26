@@ -214,6 +214,17 @@ func init() {
 		MsgTtsParamUnknownKey:     "TTS param %q is not supported by this provider",
 		MsgTtsMiniMaxVoicesFailed: "failed to fetch MiniMax voices: %s",
 
+		// VieNeu
+		MsgTtsVieneuSynthesisFailed:   "VieNeu synthesis failed: %s",
+		MsgTtsVieneuVoicesFailed:      "failed to fetch VieNeu voices: %s",
+		MsgTtsVieneuRefAudioInvalid:   "reference audio invalid: %s",
+		MsgTtsVieneuDaemonUnreachable: "VieNeu daemon unreachable; ensure goclaw is built with ENABLE_FULL_SKILLS",
+		MsgVieneuRefAudioTooShort:     "reference audio too short: %s",
+		MsgVieneuRefAudioTooLong:      "reference audio too long: %s",
+		MsgVieneuRefTextRequired:      "ref_text required for voice cloning",
+		MsgVieneuMaxClonedVoices:      "max cloned voices per tenant reached (%d)",
+		MsgVieneuClonedVoiceNotFound:  "cloned voice not found: %s",
+
 		// STT
 		MsgSTTAllProvidersFailed:     "All STT providers failed",
 		MsgSTTLegacyConfigDeprecated: "Legacy STT config deprecated; migrate to builtin_tools[stt]",

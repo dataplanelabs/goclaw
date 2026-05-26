@@ -42,6 +42,7 @@ function getVoiceId(draft: TtsConfig): string {
     case "edge": return draft.edge.voice ?? "";
     case "minimax": return draft.minimax.voice_id ?? "";
     case "gemini": return draft.gemini.voice ?? "";
+    case "vieneu": return draft.vieneu.voice ?? "";
     default: return "";
   }
 }
@@ -52,11 +53,12 @@ function getModelId(draft: TtsConfig): string {
     case "elevenlabs": return draft.elevenlabs.model_id ?? "";
     case "minimax": return draft.minimax.model ?? "";
     case "gemini": return draft.gemini.model ?? "";
+    case "vieneu": return draft.vieneu.model ?? "";
     default: return "";
   }
 }
 
-type ProviderKey = keyof Pick<TtsConfig, "openai" | "elevenlabs" | "edge" | "minimax" | "gemini">;
+type ProviderKey = keyof Pick<TtsConfig, "openai" | "elevenlabs" | "edge" | "minimax" | "gemini" | "vieneu">;
 
 function voicePatch(provider: string, value: string): [ProviderKey, Partial<TtsProviderConfig>] | null {
   switch (provider) {
@@ -65,6 +67,7 @@ function voicePatch(provider: string, value: string): [ProviderKey, Partial<TtsP
     case "edge": return ["edge", { voice: value }];
     case "minimax": return ["minimax", { voice_id: value }];
     case "gemini": return ["gemini", { voice: value }];
+    case "vieneu": return ["vieneu", { voice: value }];
     default: return null;
   }
 }
@@ -75,12 +78,15 @@ function modelPatch(provider: string, value: string): [ProviderKey, Partial<TtsP
     case "elevenlabs": return ["elevenlabs", { model_id: value }];
     case "minimax": return ["minimax", { model: value }];
     case "gemini": return ["gemini", { model: value }];
+    case "vieneu": return ["vieneu", { model: value }];
     default: return null;
   }
 }
 
 function isCredentialsSaved(provider: string, tts: TtsConfig): boolean {
-  if (provider === "edge") return true;
+  // No-credential providers: edge ships an always-on CLI; vieneu's daemon is
+  // in-pod (no operator config needed).
+  if (provider === "edge" || provider === "vieneu") return true;
   const cfg = tts[provider as ProviderKey];
   return !!cfg?.api_key;
 }

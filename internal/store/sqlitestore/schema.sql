@@ -1919,3 +1919,22 @@ CREATE TABLE IF NOT EXISTS trace_retry_locks (
     locked_by  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_retry_locks_expiry ON trace_retry_locks(locked_at);
+
+-- ============================================================
+-- vieneu_cloned_voices (mirrors PG migration 000077)
+-- Per-tenant cloned-voice registry; the `id` column doubles as the on-disk
+-- filename under <data_dir>/vieneu-refs/{tenant_id}/{id}.wav. voice_id is
+-- "cloned:<id>" — the opaque handle the LLM / dashboard uses to invoke it.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS vieneu_cloned_voices (
+    id          TEXT PRIMARY KEY,
+    tenant_id   TEXT NOT NULL,
+    voice_id    TEXT NOT NULL,
+    ref_text    TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    deleted_at  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vieneu_voices_tenant_voice
+    ON vieneu_cloned_voices (tenant_id, voice_id);

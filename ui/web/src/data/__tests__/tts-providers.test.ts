@@ -7,9 +7,9 @@ import {
 } from "../tts-providers";
 
 describe("TTS_PROVIDERS catalog (reduced shape)", () => {
-  const ids: TtsProviderId[] = ["openai", "elevenlabs", "edge", "minimax", "gemini"];
+  const ids: TtsProviderId[] = ["openai", "elevenlabs", "edge", "minimax", "gemini", "vieneu"];
 
-  it("has 5 provider entries matching known IDs", () => {
+  it("has 6 provider entries matching known IDs", () => {
     expect(Object.keys(TTS_PROVIDERS).sort()).toEqual([...ids].sort());
   });
 

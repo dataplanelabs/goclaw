@@ -18,6 +18,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/audio/elevenlabs"
 	"github.com/nextlevelbuilder/goclaw/internal/audio/minimax"
 	"github.com/nextlevelbuilder/goclaw/internal/audio/openai"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu"
 )
 
 // --- Types (15) ---
@@ -37,6 +38,8 @@ type MiniMaxConfig = minimax.Config
 type MiniMaxProvider = minimax.Provider
 type OpenAIConfig = openai.Config
 type OpenAIProvider = openai.Provider
+type VieNeuConfig = vieneu.Config
+type VieNeuProvider = vieneu.Provider
 
 // --- Constants (6) ---
 
@@ -57,6 +60,7 @@ var (
 	NewElevenLabsProvider = elevenlabs.NewTTSProvider
 	NewMiniMaxProvider    = minimax.NewProvider
 	NewOpenAIProvider     = openai.NewProvider
+	NewVieNeuProvider     = vieneu.NewProvider
 )
 
 // --- Compile-time signature guards (5) ---
@@ -71,4 +75,5 @@ var (
 	_ func(elevenlabs.Config) *elevenlabs.TTSProvider = NewElevenLabsProvider
 	_ func(minimax.Config) *minimax.Provider          = NewMiniMaxProvider
 	_ func(openai.Config) *openai.Provider            = NewOpenAIProvider
+	_ func(vieneu.Config) *vieneu.Provider            = NewVieNeuProvider
 )

@@ -56,7 +56,7 @@ var (
 	_ = tts.ModeAll
 )
 
-// --- Constructors (5) ---
+// --- Constructors (6) ---
 
 var (
 	_ = tts.NewManager
@@ -64,6 +64,7 @@ var (
 	_ = tts.NewElevenLabsProvider
 	_ = tts.NewMiniMaxProvider
 	_ = tts.NewOpenAIProvider
+	_ = tts.NewVieNeuProvider
 )
 
 // TestAliasIdentity proves at runtime that alias targets resolve to the

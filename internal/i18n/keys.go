@@ -248,6 +248,17 @@ const (
 	MsgTtsParamUnknownKey       = "error.tts_param_unknown_key"       // "TTS param %q is not supported by this provider"
 	MsgTtsMiniMaxVoicesFailed   = "error.tts_minimax_voices_failed"   // "failed to fetch MiniMax voices: %s"
 
+	// --- VieNeu (Vietnamese TTS) ---
+	MsgTtsVieneuSynthesisFailed   = "error.tts_vieneu_synthesis_failed"   // "VieNeu synthesis failed: %s"
+	MsgTtsVieneuVoicesFailed      = "error.tts_vieneu_voices_failed"      // "failed to fetch VieNeu voices: %s"
+	MsgTtsVieneuRefAudioInvalid   = "error.tts_vieneu_ref_audio_invalid"  // "reference audio invalid: %s"
+	MsgTtsVieneuDaemonUnreachable = "error.tts_vieneu_daemon_unreachable" // "VieNeu daemon unreachable; ensure goclaw is built with ENABLE_FULL_SKILLS"
+	MsgVieneuRefAudioTooShort     = "error.vieneu_ref_audio_too_short"   // "reference audio too short: %s"
+	MsgVieneuRefAudioTooLong      = "error.vieneu_ref_audio_too_long"    // "reference audio too long: %s"
+	MsgVieneuRefTextRequired      = "error.vieneu_ref_text_required"     // "ref_text required for voice cloning"
+	MsgVieneuMaxClonedVoices      = "error.vieneu_max_cloned_voices"     // "max cloned voices per tenant reached: %d"
+	MsgVieneuClonedVoiceNotFound  = "error.vieneu_cloned_voice_not_found" // "cloned voice not found: %s"
+
 	// --- STT ---
 	MsgSTTAllProvidersFailed     = "error.stt_all_providers_failed"    // "All STT providers failed"
 	MsgSTTLegacyConfigDeprecated = "warn.stt_legacy_config_deprecated" // "Legacy STT config deprecated; migrate to builtin_tools[stt]"

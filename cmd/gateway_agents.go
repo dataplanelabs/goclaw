@@ -3,10 +3,16 @@ package cmd
 import (
 	"context"
 	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/audio/elevenlabs"
 	geminiaudio "github.com/nextlevelbuilder/goclaw/internal/audio/gemini"
 	minimaxaudio "github.com/nextlevelbuilder/goclaw/internal/audio/minimax"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu/refstore"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/memory"
@@ -308,11 +314,93 @@ func setupTTS(cfg *config.Config) *tts.Manager {
 		}))
 	}
 
+	// VieNeu daemon ships inside the `:full` image; probe healthz and register
+	// on success. In non-full builds the probe fails-fast and we skip silently.
+	registerVieNeuIfHealthy(mgr, ttsCfg)
+
 	if !mgr.HasProviders() {
 		return nil
 	}
 
 	return mgr
+}
+
+func registerVieNeuIfHealthy(mgr *tts.Manager, ttsCfg config.TtsConfig) {
+	registerVieNeuIfHealthyWith(mgr, ttsCfg, nil, nil)
+}
+
+// registerVieNeuIfHealthyWith is the cloning-aware variant. clonedStore + refStore
+// may be nil (preset voices only).
+func registerVieNeuIfHealthyWith(mgr *tts.Manager, ttsCfg config.TtsConfig, clonedStore store.VieneuClonedVoicesStore, refStore *refstore.Store) string {
+	endpoint := ttsCfg.VieNeu.Endpoint
+	if endpoint == "" {
+		endpoint = "http://127.0.0.1:7333"
+	}
+	probeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, endpoint+"/healthz", nil)
+	if err != nil {
+		slog.Info("audio.tts: vieneu skipped — request build failed", "err", err)
+		return ""
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Info("audio.tts: vieneu skipped — daemon unreachable", "endpoint", endpoint)
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		slog.Info("audio.tts: vieneu skipped — healthz non-200", "status", resp.StatusCode)
+		return ""
+	}
+
+	cfg := tts.VieNeuConfig{
+		Endpoint:  endpoint,
+		VoiceID:   ttsCfg.VieNeu.Voice,
+		Model:     ttsCfg.VieNeu.Model,
+		Emotion:   ttsCfg.VieNeu.Emotion,
+		TimeoutMs: ttsCfg.TimeoutMs,
+	}
+	if clonedStore != nil && refStore != nil {
+		cfg.ClonedVoices = &vieneuClonedAdapter{store: clonedStore, refStore: refStore}
+	}
+	mgr.RegisterProvider(tts.NewVieNeuProvider(cfg))
+	slog.Info("audio.tts: vieneu registered", "endpoint", endpoint, "cloning", cfg.ClonedVoices != nil)
+	return endpoint
+}
+
+// vieneuClonedAdapter bridges store.VieneuClonedVoicesStore + refstore.Store to
+// the audio/vieneu provider's ClonedVoiceLookup interface.
+type vieneuClonedAdapter struct {
+	store    store.VieneuClonedVoicesStore
+	refStore *refstore.Store
+}
+
+func (a *vieneuClonedAdapter) Get(ctx context.Context, tenantID uuid.UUID, voiceID string) (string, string, string, bool, error) {
+	row, err := a.store.Get(ctx, tenantID, voiceID)
+	if err != nil {
+		return "", "", "", false, err
+	}
+	if row == nil {
+		return "", "", "", false, nil
+	}
+	path, err := a.refStore.PathFor(tenantID, row.ID.String())
+	if err != nil {
+		return "", "", "", false, err
+	}
+	return path, row.RefText, row.Name, true, nil
+}
+
+func (a *vieneuClonedAdapter) List(ctx context.Context, tenantID uuid.UUID) ([]vieneu.ClonedVoiceListItem, error) {
+	rows, err := a.store.List(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]vieneu.ClonedVoiceListItem, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, vieneu.ClonedVoiceListItem{VoiceID: r.VoiceID, Name: r.Name})
+	}
+	return out, nil
 }
 
 // setupAudioExtras wires Music and SFX providers into the audio Manager.

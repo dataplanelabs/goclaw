@@ -214,6 +214,17 @@ func init() {
 		MsgTtsParamUnknownKey:     "TTS 参数 %q 不受此提供商支持",
 		MsgTtsMiniMaxVoicesFailed: "获取 MiniMax 声音列表失败：%s",
 
+		// VieNeu
+		MsgTtsVieneuSynthesisFailed:   "VieNeu 语音合成失败：%s",
+		MsgTtsVieneuVoicesFailed:      "获取 VieNeu 声音列表失败：%s",
+		MsgTtsVieneuRefAudioInvalid:   "参考音频无效：%s",
+		MsgTtsVieneuDaemonUnreachable: "VieNeu 守护进程不可达；请使用启用 ENABLE_FULL_SKILLS 的 goclaw 镜像",
+		MsgVieneuRefAudioTooShort:     "参考音频过短：%s",
+		MsgVieneuRefAudioTooLong:      "参考音频过长：%s",
+		MsgVieneuRefTextRequired:      "声音克隆需要 ref_text",
+		MsgVieneuMaxClonedVoices:      "已达每租户克隆声音上限（%d）",
+		MsgVieneuClonedVoiceNotFound:  "未找到克隆声音：%s",
+
 		// STT
 		MsgSTTAllProvidersFailed:     "所有 STT 提供商均失败",
 		MsgSTTLegacyConfigDeprecated: "旧版 STT 配置已弃用；请迁移至 builtin_tools[stt]",
