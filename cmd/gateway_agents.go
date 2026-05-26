@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/exec"
 	"time"
 
 	"github.com/google/uuid"
@@ -314,15 +316,41 @@ func setupTTS(cfg *config.Config) *tts.Manager {
 		}))
 	}
 
-	// VieNeu daemon ships inside the `:full` image; probe healthz and register
-	// on success. In non-full builds the probe fails-fast and we skip silently.
-	registerVieNeuIfHealthy(mgr, ttsCfg)
+	if spawnVieNeuDaemonIfPresent() {
+		go registerVieNeuIfHealthy(mgr, ttsCfg)
+	}
 
 	if !mgr.HasProviders() {
 		return nil
 	}
 
 	return mgr
+}
+
+// spawnVieNeuDaemonIfPresent launches the bundled uvicorn daemon as a child
+// process when /app/vieneu-sidecar exists (only in :full images). Skips silently
+// otherwise. Daemon binds 127.0.0.1:7333; logs go to goclaw's stdout/stderr.
+func spawnVieNeuDaemonIfPresent() bool {
+	const dir = "/app/vieneu-sidecar"
+	if _, err := os.Stat(dir + "/app/main.py"); err != nil {
+		return false
+	}
+	cmd := exec.Command("python3", "-m", "uvicorn", "app.main:app",
+		"--host", "127.0.0.1", "--port", "7333", "--workers", "1")
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		slog.Warn("vieneu.daemon: spawn failed", "err", err)
+		return false
+	}
+	slog.Info("vieneu.daemon: spawn ok", "pid", cmd.Process.Pid)
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			slog.Warn("vieneu.daemon: exited", "err", err)
+		}
+	}()
+	return true
 }
 
 func registerVieNeuIfHealthy(mgr *tts.Manager, ttsCfg config.TtsConfig) {
@@ -336,21 +364,32 @@ func registerVieNeuIfHealthyWith(mgr *tts.Manager, ttsCfg config.TtsConfig, clon
 	if endpoint == "" {
 		endpoint = "http://127.0.0.1:7333"
 	}
-	probeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, endpoint+"/healthz", nil)
-	if err != nil {
-		slog.Info("audio.tts: vieneu skipped — request build failed", "err", err)
-		return ""
+	// Daemon may still be loading the ONNX model (~30s on CPU). Retry up to 45s.
+	deadline := time.Now().Add(45 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		probeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, endpoint+"/healthz", nil)
+		if err != nil {
+			cancel()
+			slog.Info("audio.tts: vieneu skipped — request build failed", "err", err)
+			return ""
+		}
+		resp, err := http.DefaultClient.Do(req)
+		cancel()
+		if err == nil && resp.StatusCode == http.StatusOK {
+			_ = resp.Body.Close()
+			lastErr = nil
+			break
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		lastErr = err
+		time.Sleep(3 * time.Second)
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		slog.Info("audio.tts: vieneu skipped — daemon unreachable", "endpoint", endpoint)
-		return ""
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		slog.Info("audio.tts: vieneu skipped — healthz non-200", "status", resp.StatusCode)
+	if lastErr != nil {
+		slog.Info("audio.tts: vieneu skipped — daemon unreachable", "endpoint", endpoint, "err", lastErr)
 		return ""
 	}
 
