@@ -51,14 +51,26 @@ func CheckSkillDeps(m *SkillManifest) (bool, []string) {
 }
 
 // checkPythonPackages checks which Python import names are importable.
-// Sets PYTHONPATH=scriptsDir so local modules resolve natively (no false positives).
-// Returns missing deps as "pip:<pip-package-name>".
+// Probes twice: with the inherited PYTHONPATH overlay (catches agent-installed packages
+// in /app/data/.runtime/pip), then without (catches system site-packages that the overlay
+// may shadow with ABI-incompatible stale .so files). Missing only when BOTH probes fail.
 func checkPythonPackages(importNames []string, scriptsDir string) []string {
 	if len(importNames) == 0 {
 		return nil
 	}
+	missing := pythonProbeMissing(importNames, scriptsDir, true)
+	if len(missing) == 0 {
+		return nil
+	}
+	missing = pythonProbeMissing(missing, scriptsDir, false)
+	out := make([]string, 0, len(missing))
+	for _, name := range missing {
+		out = append(out, "pip:"+importToPipName(name))
+	}
+	return out
+}
 
-	// Build a script that tries each import and prints failures
+func pythonProbeMissing(importNames []string, scriptsDir string, includeOverlay bool) []string {
 	var sb strings.Builder
 	for _, name := range importNames {
 		sb.WriteString(fmt.Sprintf("try:\n import %s\nexcept ImportError:\n print(%q)\n", name, name))
@@ -68,30 +80,35 @@ func checkPythonPackages(importNames []string, scriptsDir string) []string {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "python3", "-c", sb.String())
-	// PYTHONPATH lets Python find local modules in scriptsDir — stdlib and local dirs
-	// resolve natively, so only truly missing pip packages produce ImportError.
-	// We filter the existing PYTHONPATH from os.Environ() to avoid duplicate-key issues
-	// (on Linux, getenv() returns the first match, so appending would be silently ignored).
+
+	baseEnv := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "PYTHONPATH=") {
+			baseEnv = append(baseEnv, e)
+		}
+	}
+	var pythonpath string
+	if includeOverlay {
+		pythonpath = os.Getenv("PYTHONPATH")
+	}
 	if scriptsDir != "" {
-		pythonpath := scriptsDir
-		if existing := os.Getenv("PYTHONPATH"); existing != "" {
-			pythonpath = existing + ":" + scriptsDir
+		if pythonpath != "" {
+			pythonpath += ":" + scriptsDir
+		} else {
+			pythonpath = scriptsDir
 		}
-		baseEnv := make([]string, 0, len(os.Environ()))
-		for _, e := range os.Environ() {
-			if !strings.HasPrefix(e, "PYTHONPATH=") {
-				baseEnv = append(baseEnv, e)
-			}
-		}
+	}
+	if pythonpath != "" {
 		cmd.Env = append(baseEnv, "PYTHONPATH="+pythonpath)
+	} else {
+		cmd.Env = baseEnv
 	}
 
 	out, err := cmd.Output()
 	if err != nil {
-		// Python itself failed — all packages are missing
 		var missing []string
 		for _, name := range importNames {
-			missing = append(missing, "pip:"+importToPipName(name))
+			missing = append(missing, name)
 		}
 		return missing
 	}
@@ -100,7 +117,7 @@ func checkPythonPackages(importNames []string, scriptsDir string) []string {
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
-			missing = append(missing, "pip:"+importToPipName(line))
+			missing = append(missing, line)
 		}
 	}
 	return missing
