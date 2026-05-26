@@ -219,6 +219,11 @@ func init() {
 		MsgTtsVieneuVoicesFailed:      "không tải được danh sách giọng đọc VieNeu: %s",
 		MsgTtsVieneuRefAudioInvalid:   "âm thanh tham chiếu không hợp lệ: %s",
 		MsgTtsVieneuDaemonUnreachable: "không kết nối được tới VieNeu; vui lòng dùng image goclaw với ENABLE_FULL_SKILLS",
+		MsgVieneuRefAudioTooShort:     "âm thanh tham chiếu quá ngắn: %s",
+		MsgVieneuRefAudioTooLong:      "âm thanh tham chiếu quá dài: %s",
+		MsgVieneuRefTextRequired:      "cần có ref_text khi nhân bản giọng",
+		MsgVieneuMaxClonedVoices:      "đã đạt giới hạn giọng nhân bản cho mỗi tenant (%d)",
+		MsgVieneuClonedVoiceNotFound:  "không tìm thấy giọng nhân bản: %s",
 
 		// STT
 		MsgSTTAllProvidersFailed:     "Tất cả nhà cung cấp STT đều thất bại",

@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 46
+const SchemaVersion = 47
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -824,6 +824,17 @@ ALTER TABLE traces ADD COLUMN outbound_emitted INTEGER NOT NULL DEFAULT 0;`,
 	// Lets gcplane detect drift in write-only Agent fields (contextFiles,
 	// toolsConfig, etc.) without those fields appearing in the list API.
 	45: `ALTER TABLE agents ADD COLUMN write_only_hash TEXT NOT NULL DEFAULT '';`,
+	// Version 46 → 47: VieNeu cloned-voice registry (mirrors PG migration 000077).
+	46: `CREATE TABLE vieneu_cloned_voices (
+    id          TEXT PRIMARY KEY,
+    tenant_id   TEXT NOT NULL,
+    voice_id    TEXT NOT NULL,
+    ref_text    TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    deleted_at  TEXT
+);
+CREATE UNIQUE INDEX idx_vieneu_voices_tenant_voice ON vieneu_cloned_voices (tenant_id, voice_id);`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.

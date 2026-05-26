@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/nextlevelbuilder/goclaw/internal/audio"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 // Provider implements audio.TTSProvider + audio.VoiceListProvider + audio.DescribableProvider
@@ -26,6 +27,12 @@ func NewProvider(cfg Config) *Provider {
 		cfg:    cfg,
 		client: newClient(cfg.Endpoint, cfg.TimeoutMs),
 	}
+}
+
+// SetClonedVoices wires the cloned-voice lookup AFTER construction. Used at
+// gateway boot when pgStores are available later in the wiring pass. Idempotent.
+func (p *Provider) SetClonedVoices(lookup ClonedVoiceLookup) {
+	p.cfg.ClonedVoices = lookup
 }
 
 func (p *Provider) Name() string { return "vieneu" }
@@ -82,6 +89,20 @@ func (p *Provider) Synthesize(ctx context.Context, text string, opts audio.TTSOp
 			}
 		}
 	}
+
+	if strings.HasPrefix(voice, "cloned:") && p.cfg.ClonedVoices != nil {
+		tenantID := store.TenantIDFromContext(ctx)
+		path, text, _, found, err := p.cfg.ClonedVoices.Get(ctx, tenantID, voice)
+		if err != nil {
+			return nil, fmt.Errorf("%w: clone lookup: %v", ErrRefAudioInvalid, err)
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: %s", ErrRefAudioInvalid, voice)
+		}
+		refAudioPath, refText = path, text
+		voice = ""
+	}
+
 	if refAudioPath != "" && refText == "" {
 		return nil, fmt.Errorf("%w: ref_text required when ref_audio_path set", ErrRefAudioInvalid)
 	}

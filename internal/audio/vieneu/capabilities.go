@@ -32,6 +32,19 @@ var vieneuParams = []audio.ParamSchema{
 		},
 		AgentOverridableAs: "emotion",
 	},
+	{
+		Key:         "format",
+		Type:        audio.ParamTypeEnum,
+		Label:       "Output format",
+		Description: "Audio container. opus (ogg) is preferred for Telegram voice bubble; mp3 is the safe default.",
+		Default:     "mp3",
+		Enum: []audio.EnumOption{
+			{Value: "mp3", Label: "MP3"},
+			{Value: "opus", Label: "Opus (OGG)"},
+			{Value: "m4a", Label: "M4A"},
+			{Value: "wav", Label: "WAV (no transcode)"},
+		},
+	},
 }
 
 func (p *Provider) Capabilities() audio.ProviderCapabilities {

@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/audio"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu/refstore"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway/methods"
@@ -360,6 +363,34 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	// Per-tenant TTS config endpoint — allows tenant admins to configure TTS.
 	if d.pgStores.SystemConfigs != nil && d.pgStores.ConfigSecrets != nil {
 		d.server.SetTTSConfigHandler(httpapi.NewTTSConfigHandler(d.pgStores.SystemConfigs, d.pgStores.ConfigSecrets, d.pgStores.Tenants))
+	}
+
+	// VieNeu cloned-voice support — initialize refstore + attach lookup to the
+	// registered Provider (if any), then wire the HTTP CRUD handler.
+	if d.pgStores.VieneuClonedVoices != nil && d.audioMgr != nil {
+		if rs, err := refstore.New(filepath.Join(d.dataDir, "vieneu-refs")); err != nil {
+			slog.Warn("vieneu refstore init failed", "err", err)
+		} else {
+			d.vieneuRefStore = rs
+			if p, ok := d.audioMgr.GetProvider("vieneu"); ok {
+				if vp, ok := p.(*vieneu.Provider); ok {
+					vp.SetClonedVoices(&vieneuClonedAdapter{
+						store:    d.pgStores.VieneuClonedVoices,
+						refStore: rs,
+					})
+					d.vieneuDaemonURL = "http://127.0.0.1:7333"
+					if e := d.cfg.Tts.VieNeu.Endpoint; e != "" {
+						d.vieneuDaemonURL = e
+					}
+				}
+			}
+			d.server.SetTTSVieneuVoicesHandler(httpapi.NewTTSVieneuVoicesHandler(
+				d.pgStores.VieneuClonedVoices,
+				rs,
+				d.vieneuDaemonURL,
+				d.pgStores.Tenants,
+			))
+		}
 	}
 
 	// Workstations API — Standard edition only.

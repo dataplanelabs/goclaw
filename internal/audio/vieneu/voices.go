@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/nextlevelbuilder/goclaw/internal/audio"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 type voiceDTO struct {
@@ -55,5 +57,26 @@ func (p *Provider) ListVoices(ctx context.Context) ([]audio.Voice, error) {
 	p.voicesMu.Lock()
 	p.voices = out
 	p.voicesMu.Unlock()
+
+	// Cloned voices are tenant-scoped — merge on each call, do NOT cache.
+	if p.cfg.ClonedVoices != nil {
+		tenantID := store.TenantIDFromContext(ctx)
+		cloned, err := p.cfg.ClonedVoices.List(ctx, tenantID)
+		if err != nil {
+			slog.Warn("vieneu: cloned voices list failed", "err", err)
+		} else {
+			merged := make([]audio.Voice, 0, len(out)+len(cloned))
+			merged = append(merged, out...)
+			for _, c := range cloned {
+				merged = append(merged, audio.Voice{
+					ID:       c.VoiceID,
+					Name:     c.Name,
+					Labels:   map[string]string{"language": "vi"},
+					Category: "cloned",
+				})
+			}
+			return merged, nil
+		}
+	}
 	return out, nil
 }

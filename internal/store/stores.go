@@ -43,6 +43,7 @@ type Stores struct {
 	EvolutionSuggestions   EvolutionSuggestionStore
 	TeamReplyEvals         TeamReplyEvalStore
 	TeamReplyAtomicWriter  AtomicTeamReplyWriter
+	VieneuClonedVoices     VieneuClonedVoicesStore
 	// Hooks is hooks.HookStore — typed as any to avoid import cycle
 	// (hooks package imports store for context helpers).
 	// Callers: type-assert to hooks.HookStore before use.
