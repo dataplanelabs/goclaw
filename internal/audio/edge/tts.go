@@ -38,7 +38,7 @@ func NewProvider(cfg Config) *Provider {
 		p.voice = "en-US-MichelleNeural"
 	}
 	if p.timeoutMs <= 0 {
-		p.timeoutMs = 30000
+		p.timeoutMs = 120000
 	}
 	return p
 }
