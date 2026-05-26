@@ -14,6 +14,22 @@ var edgeDefaultVoices = []audio.VoiceOption{
 	{VoiceID: "zh-CN-YunxiNeural", Name: "Yunxi", Language: "zh-CN", Gender: "Male"},
 }
 
+// Edge CLI takes the full VoiceID; UI may save the Name. Pass-through unknowns.
+func resolveVoiceID(v string) string {
+	if v == "" {
+		return v
+	}
+	for _, opt := range edgeDefaultVoices {
+		if opt.VoiceID == v {
+			return v
+		}
+		if opt.Name == v {
+			return opt.VoiceID
+		}
+	}
+	return v
+}
+
 var (
 	rateMin    = -50.0
 	rateMax    = 100.0

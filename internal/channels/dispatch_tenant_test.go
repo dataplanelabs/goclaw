@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,24 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 )
+
+// syncBuffer is a bytes.Buffer safe for concurrent slog writes + test reads.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 type tenantStubChannel struct {
 	*BaseChannel
@@ -38,9 +57,9 @@ func newTenantStubChannel(name string, tenantID uuid.UUID) *tenantStubChannel {
 	}
 }
 
-func captureLogs(t *testing.T) (*bytes.Buffer, func()) {
+func captureLogs(t *testing.T) (*syncBuffer, func()) {
 	t.Helper()
-	buf := &bytes.Buffer{}
+	buf := &syncBuffer{}
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	return buf, func() { slog.SetDefault(prev) }

@@ -1,8 +1,12 @@
 package protocol
 
 import (
+	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -33,6 +37,32 @@ func TestOpenChunkedUpload_ChunkCount(t *testing.T) {
 			}
 			if c.totalSize != tc.size {
 				t.Errorf("totalSize=%d, want %d", c.totalSize, tc.size)
+			}
+		})
+	}
+}
+
+func TestIsRetryableNetErr(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"ctx canceled", context.Canceled, false},
+		{"ctx deadline", context.DeadlineExceeded, false},
+		{"ENETUNREACH", syscall.ENETUNREACH, true},
+		{"EHOSTUNREACH", syscall.EHOSTUNREACH, true},
+		{"ECONNREFUSED", syscall.ECONNREFUSED, true},
+		{"ECONNRESET", syscall.ECONNRESET, true},
+		{"io.EOF", io.EOF, true},
+		{"io.ErrUnexpectedEOF", io.ErrUnexpectedEOF, true},
+		{"plain error", errors.New("nope"), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isRetryableNetErr(c.err); got != c.want {
+				t.Errorf("isRetryableNetErr(%v) = %v, want %v", c.err, got, c.want)
 			}
 		})
 	}

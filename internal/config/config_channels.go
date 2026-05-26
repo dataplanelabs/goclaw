@@ -236,6 +236,7 @@ type ZaloPersonalConfig struct {
 	EnableNativeStyles      *bool `json:"enable_native_styles,omitempty"`        // default false; opt-in for textProperties native styling
 	DisablePolls        bool                `json:"disable_polls,omitempty"`         // kill switch for the 5 poll tools
 	DisableReactions    bool                `json:"disable_reactions,omitempty"`     // kill switch for the inbound reaction feedback path
+	DisableVoiceSend    bool                `json:"disable_voice_send,omitempty"`    // kill switch for native voice-bubble; routes audio via share.file instead
 	ListenSelfReactions bool                `json:"listen_self_reactions,omitempty"` // opt-in: surface reactions to the bot's own messages
 	// Outbound deterministic reactions on user messages (thinking/done/error).
 	// off (default), minimal (terminal only), full (intermediate + terminal).

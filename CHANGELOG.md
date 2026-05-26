@@ -4,6 +4,32 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ## Unreleased
 
+### Fixed
+
+- **Zalo Personal file upload no longer fails on IPv6 dial** — trace
+  `019e601a-…` showed a TTS audio that never reached the chat: the Session
+  HTTP client used Go's default transport, happy-eyeballs raced v6 and v4
+  for `tt-files-wpa.chat.zalo.me`, picked the AAAA address, and the K3S pod
+  (no IPv6 egress) instant-failed with `connect: network is unreachable`.
+  `Session.Client` now uses an explicit `*http.Transport` with a dialer
+  that promotes `tcp` / `tcp6` to `tcp4`, sidestepping the dual-stack
+  resolution entirely. Covers every Zalo Personal outbound (file upload,
+  message send, group ops, reactions) since they all share the session
+  client. Regression test verifies the network-string rewrite.
+
+- **Chunked upload retries transient network errors** — defense-in-depth on
+  top of the IPv4 force. `postChunkWithRetry` retries each chunk POST up to
+  3 times on `ENETUNREACH` / `EHOSTUNREACH` / `ECONNREFUSED` / `ECONNRESET` /
+  `io.EOF` / timeouts with `200ms × attempt²` backoff. Body rebuilt per
+  attempt (multipart `bytes.Buffer` is one-shot). Context cancellation and
+  deadline are NOT retried. Classifier covered by `TestIsRetryableNetErr`.
+
+- **Edge TTS voice name resolution** — trace `019e601e-…` configured
+  `voice: HoaiMy` in the UI but got a different voice in output because the
+  edge-tts CLI requires the full VoiceID (`vi-VN-HoaiMyNeural`).
+  `resolveVoiceID` now maps display Name → VoiceID before invoking the CLI.
+  Unknown values pass through unchanged so custom voice IDs still work.
+
 ### Changed (BREAKING for LLM behavior — see below)
 
 - **Media generation tools no longer auto-deliver** —
@@ -37,6 +63,27 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   rows so the chat context isn't lost; 3 new i18n keys (en/vi/zh).
 
 ### Added
+
+- **Zalo Personal — TTS audio now arrives as native voice bubble** — agents
+  calling `tts` (or any of the audio-producing tools) then `send_file(path=*.mp3)`
+  targeting a `zalo_personal` chat now produce a native voice-bubble in the
+  recipient's Zalo app (playable inline with waveform/duration), not a file
+  attachment. Matches the Telegram `sendVoice` UX. Implementation: (1) new
+  `internal/media/audio_normalize.go` re-encodes the source to M4A (mono, 16 kHz,
+  AAC-LC) via `ffmpeg` — added to the Docker image under `ENABLE_FULL_SKILLS=true`.
+  (2) New `internal/channels/zalo/personal/protocol/send_voice.go` reuses the
+  existing chunked `UploadFile` path (returns a Zalo CDN URL via WS callback),
+  then POSTs to `/api/message/forward` (or `/api/group/forward`) with `msgType=3`
+  + `msgInfo={voiceUrl, m4aUrl, fileSize}` — matches zca-js's `sendVoice` wire
+  shape exactly. (3) Channel-level `sendMediaBestEffort` now detects audio
+  extensions (`.mp3` / `.m4a` / `.ogg` / `.opus` / `.wav` / `.aac`) and routes
+  through voice-send BEFORE the image / file branches; on any failure (ffmpeg
+  missing, upload error, voice-endpoint reject) the channel falls back to
+  `share.file` so the message is never dropped. (4) New `disable_voice_send`
+  per-channel kill switch (default off) routes audio straight to `share.file`
+  when set. `ZALO_PERSONAL_ADDENDUM.md` updated so the LLM knows audio is
+  auto-routed to voice bubble. ZCA-JS protocol verified live during the spike
+  phase against `RFS-ADRENO/zca-js` source.
 
 - **Configurable trace replay retention** — new `trace.replay_retention_days`
   system_config (default 7 via `config.DefaultReplayRetentionDays`). Replaces

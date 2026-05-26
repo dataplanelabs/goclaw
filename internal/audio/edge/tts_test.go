@@ -33,6 +33,7 @@ func (p *Provider) synthesizeWithFactory(
 	if opts.Voice != "" {
 		voice = opts.Voice
 	}
+	voice = resolveVoiceID(voice)
 
 	// Mirror the params resolution in Synthesize.
 	rateStr := resolveEdgeParam(opts.Params, "rate", sliderToRateString, p.rate)
@@ -86,6 +87,42 @@ func TestSynthesize_HonorsOptsVoice(t *testing.T) {
 	}
 	if voiceVal != "vi-VN-HoaiMyNeural" {
 		t.Errorf("--voice arg = %q, want %q (opts.Voice should override construction-time voice)", voiceVal, "vi-VN-HoaiMyNeural")
+	}
+}
+
+// Trace 019e601e — UI saved display name "HoaiMy"; CLI must receive full VoiceID.
+func TestSynthesize_ResolvesDisplayNameToVoiceID(t *testing.T) {
+	p := NewProvider(Config{})
+	fakeFactory := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.Command("true")
+	}
+	allArgs, err := p.synthesizeWithFactory(context.Background(), "xin chao", audio.TTSOptions{Voice: "HoaiMy"}, fakeFactory)
+	if err != nil {
+		t.Fatalf("synthesizeWithFactory: %v", err)
+	}
+	for i, a := range allArgs {
+		if a == "--voice" && i+1 < len(allArgs) {
+			if got := allArgs[i+1]; got != "vi-VN-HoaiMyNeural" {
+				t.Errorf("--voice = %q, want vi-VN-HoaiMyNeural", got)
+			}
+			return
+		}
+	}
+	t.Fatal("--voice flag not found in args")
+}
+
+func TestResolveVoiceID(t *testing.T) {
+	cases := map[string]string{
+		"":                     "",
+		"HoaiMy":               "vi-VN-HoaiMyNeural",
+		"vi-VN-HoaiMyNeural":   "vi-VN-HoaiMyNeural",
+		"en-US-CustomNeural":   "en-US-CustomNeural",
+		"unknown-passthrough":  "unknown-passthrough",
+	}
+	for in, want := range cases {
+		if got := resolveVoiceID(in); got != want {
+			t.Errorf("resolveVoiceID(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

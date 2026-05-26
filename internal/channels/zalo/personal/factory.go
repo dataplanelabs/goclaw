@@ -32,6 +32,7 @@ type zaloInstanceConfig struct {
 	EnableNativeStyles      *bool `json:"enable_native_styles,omitempty"`
 	DisablePolls        bool     `json:"disable_polls,omitempty"`
 	DisableReactions    bool     `json:"disable_reactions,omitempty"`
+	DisableVoiceSend    bool     `json:"disable_voice_send,omitempty"`
 	ListenSelfReactions bool     `json:"listen_self_reactions,omitempty"`
 	ReactionsMode       string   `json:"reactions_mode,omitempty"`
 
@@ -78,6 +79,7 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 		EnableNativeStyles:      ic.EnableNativeStyles,
 		DisablePolls:        ic.DisablePolls,
 		DisableReactions:    ic.DisableReactions,
+		DisableVoiceSend:    ic.DisableVoiceSend,
 		ListenSelfReactions: ic.ListenSelfReactions,
 		ReactionsMode:       ic.ReactionsMode,
 
@@ -141,6 +143,7 @@ func FactoryWithPendingStore(pendingStore store.PendingMessageStore, episodicSto
 			EnableNativeStyles:         ic.EnableNativeStyles,
 			DisablePolls:               ic.DisablePolls,
 			DisableReactions:           ic.DisableReactions,
+			DisableVoiceSend:           ic.DisableVoiceSend,
 			ListenSelfReactions:        ic.ListenSelfReactions,
 			ReactionsMode:              ic.ReactionsMode,
 			ReactionLevel:              ic.ReactionLevel,

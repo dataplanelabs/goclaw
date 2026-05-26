@@ -113,7 +113,9 @@ NOT auto-deliver.** They generate the file and return its path. To share
 it with the user you MUST call `send_file(path=<path-from-tool>)` in the
 same turn — copy the path verbatim from the tool output (no date-format
 "normalization"). Skip `send_file` and the file will exist on disk but
-never reach the chat.
+never reach the chat. Audio files (.mp3 / .m4a / .ogg / .wav) arrive as
+native voice bubbles on Zalo Personal (auto-routed by the channel); on
+voice-upload failure the channel falls back to a regular file attachment.
 <!-- END_PLAIN_TEXT -->
 
 <!-- BEGIN_NATIVE_STYLES -->
@@ -187,5 +189,7 @@ NOT auto-deliver.** They generate the file and return its path. To share
 it with the user you MUST call `send_file(path=<path-from-tool>)` in the
 same turn — copy the path verbatim from the tool output (no date-format
 "normalization"). Skip `send_file` and the file will exist on disk but
-never reach the chat.
+never reach the chat. Audio files (.mp3 / .m4a / .ogg / .wav) arrive as
+native voice bubbles on Zalo Personal (auto-routed by the channel); on
+voice-upload failure the channel falls back to a regular file attachment.
 <!-- END_NATIVE_STYLES -->
