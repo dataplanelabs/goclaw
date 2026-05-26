@@ -133,11 +133,6 @@ COPY --from=builder /src/migrations/ /app/migrations/
 COPY --from=builder /src/skills/ /app/bundled-skills/
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
-# VieNeu Vietnamese TTS daemon source — kept in repo for the future Debian-based
-# image variant. NOT installed/warm-loaded in the Alpine :full image because
-# onnxruntime has no musl wheel. Go provider at internal/audio/vieneu/ gracefully
-# skips registration when daemon isn't reachable on 127.0.0.1:7333.
-
 # B3-01 Phase 5: bake the gws-cli Python wrapper when ENABLE_FULL_SKILLS=true.
 # The image already has python3 from the full-skills layer. We copy the package
 # from the published gws-cli image to /app/gws-cli/ and symlink /usr/local/bin/gws
