@@ -170,30 +170,32 @@ func (t *TtsTool) resolveVoiceAndModel(ctx context.Context, providerName, argVoi
 }
 
 // tenantPrimaryProvider returns the tenant-configured primary provider name
-// when set in builtin tool settings, else "". Used to decide whether an
-// LLM-supplied provider should be honored or overridden.
+// when set, else "". Checks builtin_tool_tenant_configs first (tools UI), then
+// falls back to system_configs.tts.provider (dashboard /tts page) since users
+// configure the primary on the dashboard, not the tools UI.
 func (t *TtsTool) tenantPrimaryProvider(ctx context.Context, mgr *tts.Manager) string {
-	settings := BuiltinToolSettingsFromCtx(ctx)
-	if settings == nil {
-		return ""
+	if settings := BuiltinToolSettingsFromCtx(ctx); settings != nil {
+		if raw, ok := settings["tts"]; ok && len(raw) > 0 {
+			var override ttsOverride
+			if err := json.Unmarshal(raw, &override); err != nil {
+				slog.Warn("tts: failed to parse tenant override", "error", err)
+			} else if override.Primary != "" {
+				if _, exists := mgr.GetProvider(override.Primary); exists {
+					return override.Primary
+				}
+				slog.Warn("tts: tenant override references unknown provider", "primary", override.Primary)
+			}
+		}
 	}
-	raw, ok := settings["tts"]
-	if !ok || len(raw) == 0 {
-		return ""
+	if t.systemConfigs != nil {
+		if v, err := t.systemConfigs.Get(ctx, "tts.provider"); err == nil && v != "" {
+			if _, exists := mgr.GetProvider(v); exists {
+				return v
+			}
+			slog.Warn("tts: dashboard primary references unknown provider", "primary", v)
+		}
 	}
-	var override ttsOverride
-	if err := json.Unmarshal(raw, &override); err != nil {
-		slog.Warn("tts: failed to parse tenant override", "error", err)
-		return ""
-	}
-	if override.Primary == "" {
-		return ""
-	}
-	if _, exists := mgr.GetProvider(override.Primary); !exists {
-		slog.Warn("tts: tenant override references unknown provider", "primary", override.Primary)
-		return ""
-	}
-	return override.Primary
+	return ""
 }
 
 // resolvePrimary returns the effective primary provider when the LLM did not
