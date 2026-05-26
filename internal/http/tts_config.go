@@ -517,6 +517,10 @@ func NewTenantTTSResolver(sc store.SystemConfigStore, cs store.ConfigSecretsStor
 			req.VoiceID, _ = sc.Get(ctx, "tts.gemini.voice")
 			req.ModelID, _ = sc.Get(ctx, "tts.gemini.model")
 
+		case "vieneu":
+			req.VoiceID, _ = sc.Get(ctx, "tts.vieneu.voice")
+			req.ModelID, _ = sc.Get(ctx, "tts.vieneu.model")
+
 		default:
 			return nil, "", "", fmt.Errorf("unsupported provider: %s", providerName)
 		}

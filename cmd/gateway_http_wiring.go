@@ -327,6 +327,7 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	// TTL 1h + LRU cap 1000 tenants.
 	{
 		voiceCache := audio.NewVoiceCache(1*time.Hour, 1000)
+		d.voiceCache = voiceCache
 		var secretStore store.ConfigSecretsStore
 		if d.pgStores != nil && d.pgStores.ConfigSecrets != nil {
 			secretStore = d.pgStores.ConfigSecrets
@@ -389,6 +390,7 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 				rs,
 				d.vieneuDaemonURL,
 				d.pgStores.Tenants,
+				d.voiceCache,
 			))
 		}
 	}

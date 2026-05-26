@@ -40,4 +40,5 @@ type gatewayDeps struct {
 	ttsHandler       *httpapi.TTSHandler // nil if TTS not configured; for hot-reload
 	vieneuRefStore   *refstore.Store     // nil if voice cloning is disabled
 	vieneuDaemonURL  string              // base URL for the in-pod VieNeu daemon ("" = disabled)
+	voiceCache       *audio.VoiceCache   // shared by GET /v1/voices + cloned-voice CRUD invalidation
 }

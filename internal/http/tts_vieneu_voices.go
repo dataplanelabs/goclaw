@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nextlevelbuilder/goclaw/internal/audio"
 	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu/refstore"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
@@ -31,14 +32,22 @@ type TTSVieneuVoicesHandler struct {
 	refStore      *refstore.Store
 	daemonBaseURL string
 	tenants       store.TenantStore
+	voiceCache    *audio.VoiceCache
 }
 
-func NewTTSVieneuVoicesHandler(s store.VieneuClonedVoicesStore, rs *refstore.Store, daemonBaseURL string, tenants store.TenantStore) *TTSVieneuVoicesHandler {
+func NewTTSVieneuVoicesHandler(s store.VieneuClonedVoicesStore, rs *refstore.Store, daemonBaseURL string, tenants store.TenantStore, voiceCache *audio.VoiceCache) *TTSVieneuVoicesHandler {
 	return &TTSVieneuVoicesHandler{
 		clonedVoices:  s,
 		refStore:      rs,
 		daemonBaseURL: daemonBaseURL,
 		tenants:       tenants,
+		voiceCache:    voiceCache,
+	}
+}
+
+func (h *TTSVieneuVoicesHandler) invalidateCache(tenantID uuid.UUID) {
+	if h.voiceCache != nil {
+		h.voiceCache.Invalidate(tenantID)
 	}
 }
 
@@ -179,6 +188,7 @@ func (h *TTSVieneuVoicesHandler) handleUpload(w http.ResponseWriter, r *http.Req
 		http.Error(w, `{"error":"insert failed"}`, http.StatusInternalServerError)
 		return
 	}
+	h.invalidateCache(tid)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(vieneuVoiceResponse{
@@ -221,6 +231,7 @@ func (h *TTSVieneuVoicesHandler) handleDelete(w http.ResponseWriter, r *http.Req
 		return
 	}
 	_ = h.refStore.Delete(tid, row.ID.String())
+	h.invalidateCache(tid)
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/audio/minimax"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -137,6 +138,9 @@ func (h *VoicesHandler) resolveProvider(r *http.Request, tenantID uuid.UUID) (au
 			return nil, fmt.Errorf("ElevenLabs API key not found for tenant %s", tenantID)
 		}
 		return elevenlabs.NewTTSProvider(elevenlabs.Config{APIKey: apiKey}), nil
+
+	case "vieneu":
+		return vieneu.NewProvider(vieneu.Config{}), nil
 
 	default:
 		return nil, fmt.Errorf("unsupported voice provider: %s", providerName)
