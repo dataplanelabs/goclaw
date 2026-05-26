@@ -108,18 +108,30 @@ export function TtsPage() {
   const [speakers, setSpeakers] = useState<SpeakerVoice[]>([]);
 
   useEffect(() => {
+    // Don't clobber in-progress edits when a background refetch lands.
+    if (dirty) return;
     setDraft(tts);
-    setDirty(false);
-    // Initialize params from saved blob when provider changes
     if (tts.provider) {
       const key = tts.provider as ProviderKey;
       const saved = tts[key]?.params ?? {};
       setParamsState(saved as Record<string, ParamValue>);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tts]);
 
   const update = (patch: Partial<TtsConfig>) => {
-    setDraft((prev) => ({ ...prev, ...patch }));
+    setDraft((prev) => {
+      const next = { ...prev, ...patch };
+      // Provider switch: reload paramsState from the new provider's saved blob
+      // so per-provider keys (e.g. edge "rate") don't bleed into a provider
+      // whose schema rejects them.
+      if (patch.provider !== undefined && patch.provider !== prev.provider) {
+        const newKey = patch.provider as ProviderKey;
+        const saved = next[newKey]?.params ?? {};
+        setParamsState(saved as Record<string, ParamValue>);
+      }
+      return next;
+    });
     setDirty(true);
   };
 
