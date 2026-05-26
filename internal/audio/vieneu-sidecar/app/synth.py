@@ -1,15 +1,29 @@
 import asyncio
+import io
 import logging
 import os
 import time
 from pathlib import Path
 from typing import Any, Optional
 
+import numpy as np
+import soundfile as sf
+
 from .schemas import Emotion, Mode, SynthesizeRequest
 from .transcode import OutputFormat, transcode_wav
-from .voices import get_voice
+from .voices import get_voice, reload_from_sdk
 
 logger = logging.getLogger("vieneu_sidecar")
+
+
+def _encode_wav(samples: Any, sample_rate: int) -> bytes:
+    """SDK returns a float waveform ndarray; transcode_wav needs WAV bytes."""
+    arr = np.asarray(samples)
+    if arr.ndim > 1:
+        arr = arr.squeeze()
+    buf = io.BytesIO()
+    sf.write(buf, arr, sample_rate, format="WAV", subtype="PCM_16")
+    return buf.getvalue()
 
 
 class RefAudioPathInvalid(ValueError):
@@ -44,6 +58,7 @@ class _Engine:
 
         # Vieneu() is CPU-bound and blocking; offload to a thread.
         self._tts = await asyncio.to_thread(Vieneu, mode=self._mode)
+        reload_from_sdk(self._tts)
         self._loaded.set()
         logger.info("vieneu_sidecar: model loaded", extra={"mode": self._mode})
 
@@ -69,18 +84,19 @@ class _Engine:
                 kwargs["ref_audio"] = ref_audio_path
                 kwargs["ref_text"] = ref_text
             elif voice_id:
-                preset = get_voice(voice_id)
-                if preset is None:
+                if get_voice(voice_id) is None:
                     raise SynthesisError(f"unknown voice_id: {voice_id}")
                 try:
-                    kwargs["voice"] = self._tts.get_preset_voice(preset.id)
+                    kwargs["voice"] = self._tts.get_preset_voice(voice_id)
                 except (ValueError, KeyError) as exc:
-                    raise SynthesisError(f"vieneu preset lookup failed for {preset.id!r}: {exc}") from exc
+                    raise SynthesisError(f"vieneu preset lookup failed for {voice_id!r}: {exc}") from exc
 
             try:
-                wav = await asyncio.to_thread(self._tts.infer, **kwargs)
+                samples = await asyncio.to_thread(self._tts.infer, **kwargs)
             except Exception as exc:
                 raise SynthesisError(f"vieneu infer failed: {exc}") from exc
+
+            wav = _encode_wav(samples, getattr(self._tts, "sample_rate", 24000))
 
             synth_ms = int((time.monotonic() - t0) * 1000)
             logger.info(
