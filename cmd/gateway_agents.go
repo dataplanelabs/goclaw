@@ -397,8 +397,8 @@ func registerVieNeuIfHealthyWith(mgr *tts.Manager, ttsCfg config.TtsConfig, clon
 	if endpoint == "" {
 		endpoint = "http://127.0.0.1:7333"
 	}
-	// Daemon may still be loading the ONNX model (~30s on CPU). Retry up to 45s.
-	deadline := time.Now().Add(45 * time.Second)
+	// First start downloads ~600 MB GGUF + ONNX codec (~60-120s); warm restarts ~30s.
+	deadline := time.Now().Add(5 * time.Minute)
 	var lastErr error
 	for time.Now().Before(deadline) {
 		probeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
