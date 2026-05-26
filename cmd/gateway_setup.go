@@ -281,6 +281,11 @@ func setupToolRegistry(
 			t.DenyPaths(internalDenyPaths...)
 		}
 	}
+	if ri, ok := toolsReg.Get("read_image"); ok {
+		if t, ok := ri.(*tools.ReadImageTool); ok {
+			t.DenyPaths(readFileDenyPaths...)
+		}
+	}
 
 	return
 }
@@ -520,7 +525,8 @@ func setupSkillsSystem(
 	skillsLoader := skills.NewLoader(workspace, globalSkillsDir, builtinSkillsDir)
 	skillSearchTool := tools.NewSkillSearchTool(skillsLoader)
 	toolsReg.Register(skillSearchTool)
-	toolsReg.Register(tools.NewUseSkillTool())
+	useSkillTool := tools.NewUseSkillTool(skillsLoader)
+	toolsReg.Register(useSkillTool)
 	slog.Info("skill_search tool registered", "skills", len(skillsLoader.ListSkills(context.Background())))
 
 	// Wire skills-store directory into filesystem loader so agents
@@ -602,6 +608,7 @@ func setupSkillsSystem(
 	if pgStores.Skills != nil {
 		if sas, ok := pgStores.Skills.(store.SkillAccessStore); ok {
 			skillSearchTool.SetSkillAccessStore(sas)
+			useSkillTool.SetSkillAccessStore(sas)
 		}
 		if pgSkills, ok := pgStores.Skills.(*pg.PGSkillStore); ok {
 			if embProvider := resolveEmbeddingProvider(pgStores.Providers, providerRegistry, pgStores.SystemConfigs); embProvider != nil {

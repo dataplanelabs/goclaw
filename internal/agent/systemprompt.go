@@ -640,34 +640,33 @@ func buildSkillsSection(skillsSummary string, hasSkillSearch, hasSkillManage boo
 	var lines []string
 
 	if skillsSummary != "" {
-		// Inline mode: skills XML is in the prompt (like TS).
-		// Agent scans <available_skills> descriptions directly.
+		// Inline mode: skills XML is in the prompt with name + slug + path.
+		// Agent activates a relevant skill via use_skill — the tool returns
+		// SKILL.md content directly, no separate read_file step needed.
 		lines = append(lines,
 			"## Skills (mandatory)",
 			"",
 			"Before replying, scan `<available_skills>` below.",
-			"If a skill clearly applies, read its SKILL.md at the `<location>` path with `read_file`, then follow it.",
-			"If multiple could apply, choose the most specific one. Never read more than one skill up front.",
+			"If a skill clearly applies, call `use_skill` with its `<slug>` — the tool returns the full SKILL.md content + bundled asset paths in one call.",
+			"If multiple could apply, choose the most specific one. Activate only one skill up front.",
 			"If none apply, proceed normally.",
 			"",
 			skillsSummary,
 			"",
 		)
 	} else if hasSkillSearch {
-		// Search mode: too many skills to inline, agent uses skill_search tool.
+		// Search mode: too many skills to inline, agent uses skill_search.
 		lines = append(lines,
 			"## Skills (mandatory)",
 			"",
 			"Before replying, check if a skill applies:",
-			"1. Run `skill_search` with **English keywords** describing the domain (e.g. \"weather\", \"translate\", \"github\").",
-			"   Even if the user writes in another language, always search in English.",
-			"2. If a match is found, read its SKILL.md at the returned `location` with `read_file`, then follow it.",
-			"3. If multiple skills match, choose the most specific one. Never read more than one skill up front.",
-			"4. If no match, proceed normally.",
+			"1. Run `skill_search` with keywords describing the domain (e.g. \"weather\", \"translate\", \"github\"). Vietnamese works too — the index folds diacritics.",
+			"2. If a match is found, call `use_skill` with its returned `slug` (or `name`) — it returns SKILL.md content inline. **Do not** chain a separate `read_file` on the location.",
+			"3. If multiple skills match, choose the most specific one. Activate only one up front.",
+			"4. If no match (and you have granted skills), `skill_search` will list them as a floor — pick the closest. Otherwise, proceed normally.",
 			"",
 			"Constraints:",
 			"- Prefer `skill_search` over `browser` or `web_search` when the domain might have a skill.",
-			"- If skill_search returns no results, fall back to other tools freely.",
 			"",
 		)
 	}

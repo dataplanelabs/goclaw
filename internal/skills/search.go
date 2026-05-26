@@ -56,6 +56,17 @@ type Index struct {
 }
 
 // NewIndex creates a new empty skill search index.
+// slugExactBonus is added when the query's hyphenated form equals a doc's
+// slug (after diacritics fold + lowercase), or when a single query token
+// equals the slug. Set well above realistic BM25 scores so a slug match
+// outranks coincidental description matches.
+const slugExactBonus = 100.0
+
+// slugSubsetBonus is added when the query's tokens are a superset of the
+// slug's hyphen components — e.g. "design poster annhien" matches
+// "design-annhien". Lower than exact bonus so true-exact still wins.
+const slugSubsetBonus = 25.0
+
 func NewIndex() *Index {
 	return &Index{
 		df: make(map[string]int),
@@ -84,9 +95,12 @@ func (idx *Index) Build(skills []Info) {
 	totalTokens := 0
 
 	for _, s := range skills {
-		// Build searchable text from name + description
+		// Build searchable text from name + description; merge slug-aware
+		// tokens (whole slug + components) so a query containing the slug or
+		// its hyphen parts always hits the matching doc.
 		searchText := s.Name + " " + s.Description
 		tokens := tokenize(searchText)
+		tokens = append(tokens, tokenizeSlug(s.Slug)...)
 
 		idx.docs = append(idx.docs, skillDoc{
 			info:   s,
@@ -146,6 +160,13 @@ func (idx *Index) Search(query string, maxResults int) []SkillSearchResult {
 
 	N := float64(len(idx.docs))
 
+	// Build a hyphenated form of the query for slug-exact comparison.
+	queryHyphen := strings.Join(queryTokens, "-")
+	queryTokenSet := make(map[string]struct{}, len(queryTokens))
+	for _, qt := range queryTokens {
+		queryTokenSet[qt] = struct{}{}
+	}
+
 	var results []scored
 
 	for _, doc := range idx.docs {
@@ -172,6 +193,31 @@ func (idx *Index) Search(query string, maxResults int) []SkillSearchResult {
 			numerator := termFreq * (idx.k1 + 1)
 			denominator := termFreq + idx.k1*(1-idx.b+idx.b*dl/idx.avgDL)
 			score += idf * numerator / denominator
+		}
+
+		// Slug bonuses — guarantee slug-matching queries rank above
+		// description-coincidence hits. Folded-lowercase slug is the
+		// authoritative comparison.
+		slugFolded := normalizeForSearch(doc.info.Slug)
+		if slugFolded != "" {
+			if slugFolded == queryHyphen {
+				score += slugExactBonus
+			} else if _, ok := queryTokenSet[slugFolded]; ok {
+				score += slugExactBonus
+			} else {
+				slugParts := strings.FieldsFunc(slugFolded, func(r rune) bool {
+					return r == '-' || r == '_' || r == '/'
+				})
+				matched := 0
+				for _, p := range slugParts {
+					if _, ok := queryTokenSet[p]; ok {
+						matched++
+					}
+				}
+				if len(slugParts) > 1 && matched == len(slugParts) {
+					score += slugSubsetBonus
+				}
+			}
 		}
 
 		if score > 0 {
@@ -202,25 +248,48 @@ func (idx *Index) Search(query string, maxResults int) []SkillSearchResult {
 	return out
 }
 
-// tokenize splits text into lowercase tokens, removing punctuation.
+// tokenize splits text into lowercase, diacritic-folded tokens with punctuation
+// removed. Used for both index Build and query Search so romanized queries
+// like "annhien" match Vietnamese descriptions containing "An Nhiên".
 func tokenize(text string) []string {
-	lower := strings.ToLower(text)
+	normalized := normalizeForSearch(text)
 
-	// Replace non-alphanumeric with spaces
 	cleaned := strings.Map(func(r rune) rune {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			return r
 		}
 		return ' '
-	}, lower)
+	}, normalized)
 
 	fields := strings.Fields(cleaned)
 
-	// Filter out very short tokens (1 char)
 	var tokens []string
 	for _, f := range fields {
 		if len(f) > 1 {
 			tokens = append(tokens, f)
+		}
+	}
+	return tokens
+}
+
+// tokenizeSlug emits both the whole slug as a single token AND its hyphen
+// components, so a query of `"design-annhien"` matches the whole token at
+// full weight while `"design annhien"` matches both components. Diacritics
+// folded for parity with tokenize.
+func tokenizeSlug(slug string) []string {
+	normalized := normalizeForSearch(slug)
+	if normalized == "" {
+		return nil
+	}
+	tokens := []string{normalized}
+	if strings.ContainsAny(normalized, "-_/") {
+		parts := strings.FieldsFunc(normalized, func(r rune) bool {
+			return r == '-' || r == '_' || r == '/'
+		})
+		for _, p := range parts {
+			if len(p) > 1 && p != normalized {
+				tokens = append(tokens, p)
+			}
 		}
 	}
 	return tokens

@@ -82,11 +82,28 @@ var visionModelDefaults = map[string]string{
 
 // ReadImageTool uses a vision-capable provider to describe images attached to the current message.
 type ReadImageTool struct {
-	registry *providers.Registry
+	registry        *providers.Registry
+	allowedPrefixes []string // extra allowed path prefixes (e.g. skills-store dirs)
+	deniedPrefixes  []string // path prefixes the tool must reject (e.g. memory.db)
 }
 
 func NewReadImageTool(registry *providers.Registry) *ReadImageTool {
 	return &ReadImageTool{registry: registry}
+}
+
+// AllowPaths registers extra read-allowed path prefixes (PathAllowable interface).
+// Wired at startup with system/builtin skill dirs alongside read_file and send_file.
+// Per-session activated skills flow through ctx automatically — no AllowPaths needed.
+func (t *ReadImageTool) AllowPaths(prefixes ...string) {
+	t.allowedPrefixes = append(t.allowedPrefixes, prefixes...)
+}
+
+// DenyPaths registers path prefixes the tool must reject even when they fall
+// inside an allowed scope (e.g. memory.db, config.json). Wired alongside the
+// other filesystem tools so read_image cannot be used to exfiltrate sensitive
+// in-workspace files via vision-model API roundtrip.
+func (t *ReadImageTool) DenyPaths(prefixes ...string) {
+	t.deniedPrefixes = append(t.deniedPrefixes, prefixes...)
 }
 
 func (t *ReadImageTool) Name() string { return "read_image" }
@@ -233,11 +250,11 @@ func (t *ReadImageTool) loadImageFromPath(ctx context.Context, path string) ([]p
 	}
 
 	workspace := ToolWorkspaceFromCtx(ctx)
-	resolved, err := resolvePathWithAllowed(path, workspace, effectiveRestrict(ctx, true), allowedWithTeamWorkspace(ctx, nil))
+	resolved, err := resolvePathWithAllowed(path, workspace, effectiveRestrict(ctx, true), allowedWithTeamWorkspace(ctx, t.allowedPrefixes))
 	if err != nil {
 		return nil, fmt.Errorf("invalid image path: %w", err)
 	}
-	if err := checkDeniedPath(resolved, workspace, nil); err != nil {
+	if err := checkDeniedPath(resolved, workspace, t.deniedPrefixes); err != nil {
 		return nil, err
 	}
 

@@ -120,8 +120,24 @@ func (t *SkillSearchTool) Execute(ctx context.Context, args map[string]any) *Res
 	// to skills accessible to the calling agent.
 	results = t.filterByAccess(ctx, results)
 
-	slog.Info("skill_search executed", "query", query, "results", len(results),
-		"hybrid", t.embSearcher != nil)
+	// Granted-skills floor: if keyword search returned nothing AND the agent
+	// has granted skills, surface those rather than reply "no skills found".
+	// Closes the trace 019e62ff failure mode where the agent fell back to
+	// guessing a path after skill_search came up empty.
+	floorApplied := false
+	if len(results) == 0 {
+		if floor := t.grantedSkillsFloor(ctx, maxResults); len(floor) > 0 {
+			results = floor
+			floorApplied = true
+		}
+	}
+
+	slog.Info("skill_search executed",
+		"query", query,
+		"results", len(results),
+		"hybrid", t.embSearcher != nil,
+		"floor_applied", floorApplied,
+	)
 
 	if len(results) == 0 {
 		return NewResult(fmt.Sprintf("No skills found matching: %s", query))
@@ -133,12 +149,52 @@ func (t *SkillSearchTool) Execute(ctx context.Context, args map[string]any) *Res
 	}, "", "  ")
 
 	// Include explicit next-step instruction in the result so the model follows through.
+	intro := ""
+	if floorApplied {
+		intro = "\n\nNo exact keyword match — showing the skills granted to you. Pick the closest and activate it."
+	}
 	instruction := fmt.Sprintf(
-		"\n\nACTION REQUIRED: Call use_skill with name \"%s\", then read_file with path \"%s\" to read the skill instructions, then follow them.",
-		results[0].Name, results[0].Location,
+		"%s\n\nACTION REQUIRED: Call use_skill with name \"%s\" — it returns the full SKILL.md content directly, no separate read_file needed.",
+		intro, results[0].Name,
 	)
 
 	return NewResult(string(data) + instruction)
+}
+
+// grantedSkillsFloor returns the agent's granted skills as a fallback when
+// keyword search misses. Only fires when SkillAccessStore is wired AND the
+// agent has at least one accessible skill. Returns up to maxResults entries.
+func (t *SkillSearchTool) grantedSkillsFloor(ctx context.Context, maxResults int) []skills.SkillSearchResult {
+	if t.skillAccess == nil {
+		return nil
+	}
+	agentID := store.AgentIDFromContext(ctx)
+	if agentID == uuid.Nil {
+		return nil
+	}
+	accessible, err := t.skillAccess.ListAccessible(ctx, agentID, store.UserIDFromContext(ctx))
+	if err != nil || len(accessible) == 0 {
+		return nil
+	}
+	if maxResults <= 0 {
+		maxResults = 5
+	}
+	if len(accessible) > maxResults {
+		accessible = accessible[:maxResults]
+	}
+	out := make([]skills.SkillSearchResult, 0, len(accessible))
+	for _, s := range accessible {
+		out = append(out, skills.SkillSearchResult{
+			Name:        s.Name,
+			Slug:        s.Slug,
+			Description: s.Description,
+			Location:    s.Path,
+			BaseDir:     s.BaseDir,
+			Source:      s.Source,
+			Score:       0,
+		})
+	}
+	return out
 }
 
 // filterByAccess filters search results to only include skills accessible to the calling agent.
