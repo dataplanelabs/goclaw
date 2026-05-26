@@ -278,8 +278,14 @@ func (t *TtsTool) Execute(ctx context.Context, args map[string]any) *Result {
 
 	if tenantPrimary := t.tenantPrimaryProvider(ctx, mgr); tenantPrimary != "" && providerName != "" && providerName != tenantPrimary {
 		slog.Warn("tts: ignoring llm-supplied provider, tenant primary takes precedence",
-			"llm_provider", providerName, "tenant_primary", tenantPrimary)
+			"llm_provider", providerName, "tenant_primary", tenantPrimary,
+			"dropped_voice", argVoice, "dropped_model", argModel)
+		// Drop voice/model too — they were chosen for the LLM-supplied provider
+		// (e.g. edge voice "vi-VN-HoaiMyNeural") and won't be valid for the
+		// tenant primary. Provider-specific defaults will be re-resolved below.
 		providerName = ""
+		argVoice = ""
+		argModel = ""
 	}
 
 	effectiveProvider := providerName
