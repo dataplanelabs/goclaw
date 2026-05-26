@@ -68,6 +68,14 @@ func (t *UseSkillTool) Execute(ctx context.Context, args map[string]any) *Result
 		return ErrorResult(err.Error())
 	}
 
+	// Register the skill in the session context (if one is attached) so
+	// downstream filesystem tools accept paths under this skill's BaseDir
+	// without per-tool wiring (Phase 3).
+	cached := false
+	if sc := skills.SkillContextFromContext(ctx); sc != nil {
+		cached = sc.Activate(skills.ActivatedSkillFromPayload(payload))
+	}
+
 	out, marshalErr := json.Marshal(payload)
 	if marshalErr != nil {
 		return ErrorResult(fmt.Sprintf("marshal activation payload: %v", marshalErr))
@@ -80,6 +88,7 @@ func (t *UseSkillTool) Execute(ctx context.Context, args map[string]any) *Result
 		"assets", len(payload.AssetPaths),
 		"scripts", len(payload.ScriptPaths),
 		"inline_md", payload.SkillMDContent != "",
+		"session_cache_hit", cached,
 	)
 	return NewResult(string(out))
 }

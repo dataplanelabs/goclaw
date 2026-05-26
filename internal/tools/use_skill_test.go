@@ -235,3 +235,22 @@ func TestUseSkill_ManagedSkill_GrantCheckDBError_FailsClosed(t *testing.T) {
 		t.Errorf("DB error should fail closed with skill_grant_check_failed, got: %+v", result)
 	}
 }
+
+func TestUseSkill_RegistersInSessionContext(t *testing.T) {
+	loader := newLoaderWithSkill(t, "test-skill", skillBody, true)
+	tool := NewUseSkillTool(loader)
+	sc := skills.NewSkillContext()
+	ctx := skills.WithSkillContext(context.Background(), sc)
+
+	result := tool.Execute(ctx, map[string]any{"name": "test-skill"})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if !sc.IsActivated("test-skill") {
+		t.Errorf("expected session context to record test-skill activation")
+	}
+	prefixes := sc.AllowedPrefixes()
+	if len(prefixes) != 1 || !strings.Contains(prefixes[0], "test-skill") {
+		t.Errorf("AllowedPrefixes: got %v, want one path ending in test-skill", prefixes)
+	}
+}
