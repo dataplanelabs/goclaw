@@ -70,6 +70,40 @@ export function buildTree(files: TreeInput[]): TreeNode[] {
   const root: TreeNode[] = [];
   const dirMap = new Map<string, TreeNode>();
 
+  const attachNode = (node: TreeNode) => {
+    const parentPath = node.path.includes("/")
+      ? node.path.slice(0, node.path.lastIndexOf("/"))
+      : "";
+
+    if (parentPath) {
+      const parent = ensureDir(parentPath);
+      if (!parent.children.some((child) => child.path === node.path)) {
+        parent.children.push(node);
+      }
+      return;
+    }
+
+    if (!root.some((child) => child.path === node.path)) {
+      root.push(node);
+    }
+  };
+
+  const ensureDir = (path: string): TreeNode => {
+    const existing = dirMap.get(path);
+    if (existing) return existing;
+
+    const node: TreeNode = {
+      name: path.split("/").pop() ?? path,
+      path,
+      isDir: true,
+      size: 0,
+      children: [],
+    };
+    dirMap.set(path, node);
+    attachNode(node);
+    return node;
+  };
+
   const sorted = [...files].sort((a, b) => {
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
     return a.path.localeCompare(b.path);
@@ -90,15 +124,7 @@ export function buildTree(files: TreeInput[]): TreeNode[] {
       dirMap.set(f.path, node);
     }
 
-    const parentPath = f.path.includes("/")
-      ? f.path.slice(0, f.path.lastIndexOf("/"))
-      : "";
-
-    if (parentPath && dirMap.has(parentPath)) {
-      dirMap.get(parentPath)!.children.push(node);
-    } else {
-      root.push(node);
-    }
+    attachNode(node);
   }
 
   const sortChildren = (nodes: TreeNode[]) => {

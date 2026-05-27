@@ -12,6 +12,7 @@
     "source": "Nguồn",
     "author": "Tác giả",
     "agents": "Agents",
+    "managedBy": "Quản lý bởi",
     "visibility": "Hiển thị",
     "status": "Trạng thái",
     "actions": "Thao tác",
@@ -120,6 +121,9 @@
   "agents": {
     "creator": "Agent tạo",
     "managers": "Agent quản lý"
+  },
+  "access": {
+    "managers": "Quản lý quyền"
   },
   "detail": {
     "title": "Chi tiết skill",

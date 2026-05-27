@@ -12,6 +12,7 @@
     "source": "Source",
     "author": "Author",
     "agents": "Agents",
+    "managedBy": "Managed By",
     "owner": "Owner",
     "visibility": "Visibility",
     "status": "Status",
@@ -158,6 +159,9 @@
   "agents": {
     "creator": "Creator",
     "managers": "Managers"
+  },
+  "access": {
+    "managers": "Access managers"
   },
   "detail": {
     "title": "Skill Detail",

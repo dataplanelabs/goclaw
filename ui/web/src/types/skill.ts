@@ -14,6 +14,7 @@ export interface SkillInfo {
   author?: string;
   creator_agent?: SkillAgentRef;
   manager_agents?: SkillAgentRef[];
+  managed_by?: SkillManagedBy;
   missing_deps?: string[];
 }
 
@@ -21,6 +22,13 @@ export interface SkillAgentRef {
   id?: string;
   agent_key?: string;
   display_name?: string;
+}
+
+export interface SkillManagedBy {
+  type: "system" | "service" | "agent" | "user" | "unknown" | string;
+  id?: string;
+  label: string;
+  source?: string;
 }
 
 export interface SkillFile {
