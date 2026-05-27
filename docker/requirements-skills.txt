@@ -2,7 +2,7 @@
 # Installed on top of requirements-base.txt.
 # Uses compatible release (~=) to allow patch updates within the same minor version.
 #
-# Last reviewed: 2026-04-03
+# Last reviewed: 2026-05-27
 
 # Document processing
 pypdf~=6.9.2
@@ -17,6 +17,9 @@ markitdown<0.2.0
 pandas~=3.0.2
 defusedxml~=0.7.1
 lxml~=6.0.2
+
+# S3-compatible object storage
+boto3==1.43.15
 
 # AI SDK — relaxed to allow minor updates (fast-moving SDK)
 anthropic>=0.88.0,<2.0.0
