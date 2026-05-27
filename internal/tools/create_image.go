@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/skills"
 )
 
 // credentialProvider is a narrow interface for providers that expose API credentials.
@@ -53,8 +55,8 @@ func (t *CreateImageTool) Name() string { return "create_image" }
 
 func (t *CreateImageTool) Description() string {
 	return "Generate an image from a text description using an image generation model. " +
-		"Optionally pass reference_image_ids (IDs from <media:image id='...'> tags) to use attached photos " +
-		"as reference for face / composition / style preservation. Returns a MEDIA: path to the generated image file."
+		"Optionally pass reference_image_ids (IDs from <media:image id='...'> tags or skill asset paths returned by use_skill) " +
+		"to use attached photos or exact logos as reference for face / composition / style preservation. Returns a MEDIA: path to the generated image file."
 }
 
 func (t *CreateImageTool) Parameters() map[string]any {
@@ -76,7 +78,7 @@ func (t *CreateImageTool) Parameters() map[string]any {
 			"reference_image_ids": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Optional. Reference images for face/composition/style preservation. Accepts media IDs from <media:image id='...'> tags, file paths from path='...' attrs, or the bare filename (basename of the path). Looks across the current turn AND user-uploaded history. First entry is the primary reference. Max 4 (provider-aware: Gemini 4, OpenRouter 4, OpenAI gpt-image-* 4, MiniMax 1 — character only). DashScope and BytePlus drop refs silently. Animated GIFs and SVG not supported.",
+				"description": "Optional. Reference images for face/composition/style preservation and exact logos. Accepts media IDs from <media:image id='...'> tags, file paths from path='...' attrs, skill asset paths returned by use_skill, or the bare filename (basename of the path). Looks across the current turn, user-uploaded history, and activated skill assets. First entry is the primary reference. Max 4 (provider-aware: Gemini 4, OpenRouter 4, OpenAI gpt-image-* 4, MiniMax 1 — character only). DashScope and BytePlus drop refs silently. Animated GIFs and SVG not supported.",
 			},
 		},
 		"required": []string{"prompt"},
@@ -106,10 +108,11 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 	var refImages []providers.ImageContent
 	var unresolvedRefIDs []string
 	var requestedRefIDs []string
+	availableRefs := availableImageRefs(ctx)
+	_, explicitRefIDs := args["reference_image_ids"]
 	if idsAny, ok := args["reference_image_ids"]; ok {
 		ids := toStringSlice(idsAny)
 		if len(ids) > 0 {
-			availableRefs := MediaImageRefsFromCtx(ctx)
 			refImages, unresolvedRefIDs = resolveRefImageIDsDetailed(ctx, ids, availableRefs, maxRefImages)
 			requestedRefIDs = ids
 			slog.Info("create_image: reference images resolved",
@@ -118,6 +121,12 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 			if len(refImages) == 0 {
 				return ErrorResult(formatRefResolveError(ids, availableRefs))
 			}
+		}
+	}
+
+	if len(refImages) == 0 && !explicitRefIDs {
+		if skillRefs := skillAssetImageRefsFromCtx(ctx); len(skillRefs) > 0 && promptAppearsToRequireImageRef(prompt) {
+			return ErrorResult(formatMissingSkillAssetRefsError(skillRefs))
 		}
 	}
 
@@ -813,6 +822,84 @@ func toStringSlice(v any) []string {
 	return nil
 }
 
+func availableImageRefs(ctx context.Context) []providers.MediaRef {
+	skillRefs := skillAssetImageRefsFromCtx(ctx)
+	mediaRefs := MediaImageRefsFromCtx(ctx)
+	if len(skillRefs) == 0 {
+		return mediaRefs
+	}
+	if len(mediaRefs) == 0 {
+		return skillRefs
+	}
+	out := make([]providers.MediaRef, 0, len(skillRefs)+len(mediaRefs))
+	// Put skill refs first so user-uploaded refs win basename collisions in
+	// resolveRefImageIDsDetailed's lookup maps.
+	out = append(out, skillRefs...)
+	out = append(out, mediaRefs...)
+	return out
+}
+
+func skillAssetImageRefsFromCtx(ctx context.Context) []providers.MediaRef {
+	sc := skills.SkillContextFromContext(ctx)
+	if sc == nil {
+		return nil
+	}
+	snapshot := sc.Snapshot()
+	if len(snapshot) == 0 {
+		return nil
+	}
+	var refs []providers.MediaRef
+	for slug, activated := range snapshot {
+		for _, path := range activated.AssetPaths {
+			mimeType := imageMIMEFromPath(path)
+			if !allowedRefMIMEs[mimeType] {
+				continue
+			}
+			refs = append(refs, providers.MediaRef{
+				ID:       "skill:" + slug + ":" + filepath.Base(path),
+				MimeType: mimeType,
+				Kind:     "image",
+				Path:     path,
+			})
+		}
+	}
+	return refs
+}
+
+func imageMIMEFromPath(path string) string {
+	mimeType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
+	switch mimeType {
+	case "image/jpeg", "image/jpg", "image/png", "image/webp":
+		return mimeType
+	default:
+		return ""
+	}
+}
+
+func promptAppearsToRequireImageRef(prompt string) bool {
+	p := strings.ToLower(prompt)
+	if strings.Contains(p, "without logo") ||
+		strings.Contains(p, "no logo") ||
+		strings.Contains(p, "không logo") ||
+		strings.Contains(p, "khong logo") ||
+		strings.Contains(p, "bỏ logo") ||
+		strings.Contains(p, "bo logo") {
+		return false
+	}
+	return strings.Contains(p, "logo") || strings.Contains(p, "reference image") || strings.Contains(p, "ảnh reference")
+}
+
+func formatMissingSkillAssetRefsError(skillRefs []providers.MediaRef) string {
+	lines := make([]string, 0, len(skillRefs))
+	for _, r := range skillRefs {
+		lines = append(lines, fmt.Sprintf("  - id=%q path=%q basename=%q mime=%s",
+			r.ID, r.Path, filepath.Base(r.Path), r.MimeType))
+	}
+	return fmt.Sprintf(
+		"reference_image_ids is required because the prompt asks for a logo/reference image and activated skill assets are available:\n%s\nRetry create_image with reference_image_ids containing the asset path or id above. If the user explicitly asked for no logo/reference, retry with reference_image_ids: [] and remove logo/reference wording from the prompt.",
+		strings.Join(lines, "\n"))
+}
+
 func resolveRefImageIDs(ctx context.Context, ids []string, refs []providers.MediaRef, maxRefs int) []providers.ImageContent {
 	out, _ := resolveRefImageIDsDetailed(ctx, ids, refs, maxRefs)
 	return out
@@ -903,7 +990,7 @@ func resolveRefImageIDsDetailed(_ context.Context, ids []string, refs []provider
 func formatRefResolveError(requested []string, available []providers.MediaRef) string {
 	if len(available) == 0 {
 		return fmt.Sprintf(
-			"reference_image_ids %v could not be resolved — no user-uploaded images are visible in this conversation. Ask the user to attach the image and retry. Do NOT pass sandbox paths (e.g. /tmp/foo.png) or paths from your code-exec tools — only IDs/paths from <media:image id='...' path='...'> tags will resolve.",
+			"reference_image_ids %v could not be resolved — no user-uploaded images or activated skill image assets are visible in this conversation. Ask the user to attach the image, or call use_skill if the reference should come from a skill asset, then retry. Do NOT pass sandbox paths (e.g. /tmp/foo.png) or paths from your code-exec tools — only IDs/paths from <media:image id='...' path='...'> tags or use_skill asset_paths will resolve.",
 			requested)
 	}
 	lines := make([]string, 0, len(available))
@@ -912,7 +999,7 @@ func formatRefResolveError(requested []string, available []providers.MediaRef) s
 			r.ID, r.Path, filepath.Base(r.Path), r.MimeType))
 	}
 	return fmt.Sprintf(
-		"reference_image_ids %v could not be resolved (looked up by id, path, basename). Available user-uploaded refs in this conversation:\n%s\nRetry with one of the id/path/basename values above — do NOT pass sandbox paths (e.g. /tmp/...) or paths from your code-exec tools.",
+		"reference_image_ids %v could not be resolved (looked up by id, path, basename). Available user-uploaded refs and activated skill image assets in this conversation:\n%s\nRetry with one of the id/path/basename values above — do NOT pass sandbox paths (e.g. /tmp/...) or paths from your code-exec tools.",
 		requested, strings.Join(lines, "\n"))
 }
 

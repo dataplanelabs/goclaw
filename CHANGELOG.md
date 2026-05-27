@@ -6,6 +6,14 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Skill image assets now work as `create_image` references** — activated
+  skill image assets returned by `use_skill` are exposed as resolvable
+  `reference_image_ids`, so brand logos can be passed directly from a skill
+  without requiring a separate chat upload. `create_image` now asks the
+  assistant to retry with the available skill asset refs when a logo/reference
+  is requested but omitted. `read_image` also recovers the common generated-file
+  timestamp typo where the model swaps `-` and `_` in the output path.
+
 - **Zalo Personal file upload no longer fails on IPv6 dial** — trace
   `019e601a-…` showed a TTS audio that never reached the chat: the Session
   HTTP client used Go's default transport, happy-eyeballs raced v6 and v4

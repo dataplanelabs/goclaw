@@ -258,7 +258,7 @@ func (t *ReadImageTool) loadImageFromPath(ctx context.Context, path string) ([]p
 		return nil, err
 	}
 
-	fi, err := os.Stat(resolved)
+	resolved, fi, err := statImagePathWithSiblingFallback(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat image file: %w", err)
 	}
@@ -292,4 +292,52 @@ func (t *ReadImageTool) loadImageFromPath(ctx context.Context, path string) ([]p
 		MimeType: mime,
 		Data:     base64.StdEncoding.EncodeToString(data),
 	}}, nil
+}
+
+func statImagePathWithSiblingFallback(path string) (string, os.FileInfo, error) {
+	fi, err := os.Stat(path)
+	if err == nil || !os.IsNotExist(err) {
+		return path, fi, err
+	}
+
+	alt, ok := findNormalizedSiblingImage(path)
+	if !ok {
+		return path, nil, err
+	}
+	altFI, altErr := os.Stat(alt)
+	if altErr != nil {
+		return path, nil, err
+	}
+	slog.Warn("read_image: corrected missing image path to generated sibling",
+		"requested", path,
+		"resolved", alt)
+	return alt, altFI, nil
+}
+
+func findNormalizedSiblingImage(path string) (string, bool) {
+	dir := filepath.Dir(path)
+	target := normalizedGeneratedImageName(filepath.Base(path))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false
+	}
+	var matches []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.EqualFold(filepath.Ext(name), filepath.Ext(path)) &&
+			normalizedGeneratedImageName(name) == target {
+			matches = append(matches, filepath.Join(dir, name))
+		}
+	}
+	if len(matches) != 1 {
+		return "", false
+	}
+	return matches[0], true
+}
+
+func normalizedGeneratedImageName(name string) string {
+	return strings.ReplaceAll(strings.ToLower(name), "-", "_")
 }
