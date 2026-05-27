@@ -26,6 +26,7 @@ type SkillInfo struct {
 	Author        string          `json:"author,omitempty" db:"author"`
 	CreatorAgent  *SkillAgentRef  `json:"creator_agent,omitempty" db:"-"`
 	ManagerAgents []SkillAgentRef `json:"manager_agents,omitempty" db:"-"`
+	ManagedBy     *SkillManagedBy `json:"managed_by,omitempty" db:"-"`
 	MissingDeps   []string        `json:"missing_deps,omitempty" db:"missing_deps"`
 }
 
@@ -34,6 +35,63 @@ type SkillAgentRef struct {
 	ID          string `json:"id,omitempty" db:"id"`
 	AgentKey    string `json:"agent_key,omitempty" db:"agent_key"`
 	DisplayName string `json:"display_name,omitempty" db:"display_name"`
+}
+
+// SkillManagedBy is the dashboard/API provenance projection for a skill.
+// It answers "who owns this skill's source of truth?", which is distinct from
+// agent grants/access.
+type SkillManagedBy struct {
+	Type   string `json:"type"`             // system | service | agent | user | unknown
+	ID     string `json:"id,omitempty"`     // stable actor/source identifier when known
+	Label  string `json:"label"`            // display label
+	Source string `json:"source,omitempty"` // raw skills.source value, for diagnostics
+}
+
+// DeriveSkillManagedBy returns the best provenance display from current skill
+// metadata without exposing raw owner_id as a top-level field.
+func DeriveSkillManagedBy(info SkillInfo) *SkillManagedBy {
+	source := info.Source
+	switch source {
+	case "bundled":
+		return &SkillManagedBy{Type: "system", ID: "bundled", Label: "System bundle", Source: source}
+	case "gcplane":
+		return &SkillManagedBy{Type: "service", ID: "gcplane", Label: "gcplane reconciliation", Source: source}
+	case "evolution":
+		return &SkillManagedBy{Type: "service", ID: "self-evolution", Label: "Self-evolution", Source: source}
+	}
+	if info.IsSystem {
+		return &SkillManagedBy{Type: "system", ID: "system", Label: "System", Source: source}
+	}
+	if info.CreatorAgent != nil {
+		label := info.CreatorAgent.DisplayName
+		if label == "" {
+			label = info.CreatorAgent.AgentKey
+		}
+		if label == "" {
+			label = info.CreatorAgent.ID
+		}
+		if label != "" {
+			id := info.CreatorAgent.ID
+			if id == "" {
+				id = info.CreatorAgent.AgentKey
+			}
+			return &SkillManagedBy{Type: "agent", ID: id, Label: label, Source: source}
+		}
+	}
+	if info.Author != "" {
+		return &SkillManagedBy{Type: "user", Label: info.Author, Source: source}
+	}
+	if info.OwnerID != "" {
+		return &SkillManagedBy{Type: "user", ID: info.OwnerID, Label: info.OwnerID, Source: source}
+	}
+	return &SkillManagedBy{Type: "unknown", Label: "Unknown", Source: source}
+}
+
+// ApplySkillManagedBy derives ManagedBy for each skill in-place.
+func ApplySkillManagedBy(skills []SkillInfo) {
+	for i := range skills {
+		skills[i].ManagedBy = DeriveSkillManagedBy(skills[i])
+	}
 }
 
 // SkillSearchResult is a scored skill returned from embedding search.

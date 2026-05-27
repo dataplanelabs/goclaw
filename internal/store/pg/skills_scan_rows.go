@@ -20,6 +20,7 @@ type skillInfoRow struct {
 	Desc       *string        `db:"description"`
 	Visibility string         `db:"visibility"`
 	OwnerID    string         `db:"owner_id"`
+	Source     string         `db:"source"`
 	Tags       pq.StringArray `db:"tags"`
 	Version    int            `db:"version"`
 	IsSystem   bool           `db:"is_system"`
@@ -41,6 +42,7 @@ func (r *skillInfoRow) toSkillInfo(baseDir string) store.SkillInfo {
 	info.TenantID = r.TenantID.String()
 	info.Visibility = r.Visibility
 	info.OwnerID = r.OwnerID
+	info.Source = r.Source
 	info.Tags = []string(r.Tags)
 	info.IsSystem = r.IsSystem
 	info.Status = r.Status

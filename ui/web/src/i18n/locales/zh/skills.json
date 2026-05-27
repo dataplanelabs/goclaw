@@ -12,6 +12,7 @@
     "source": "来源",
     "author": "作者",
     "agents": "Agent",
+    "managedBy": "管理方",
     "visibility": "可见性",
     "status": "状态",
     "actions": "操作",
@@ -120,6 +121,9 @@
   "agents": {
     "creator": "创建 Agent",
     "managers": "管理 Agent"
+  },
+  "access": {
+    "managers": "权限管理员"
   },
   "detail": {
     "title": "Skill详情",

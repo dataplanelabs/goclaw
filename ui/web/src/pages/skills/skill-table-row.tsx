@@ -13,6 +13,14 @@ const visibilityColor: Record<string, string> = {
   private: "outline",
 };
 
+const managedByTone: Record<string, string> = {
+  system: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-300",
+  service: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+  agent: "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-300",
+  user: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300",
+  unknown: "border-muted bg-muted/30 text-muted-foreground",
+};
+
 interface SkillTableRowProps {
   skill: SkillInfo;
   tab: "core" | "custom";
@@ -40,6 +48,9 @@ export function SkillTableRow({
   const isArchived = skill.status === "archived";
   const isDisabled = skill.enabled === false;
   const hasMissing = (skill.missing_deps?.length ?? 0) > 0;
+  const managedBy = skill.managed_by;
+  const managedByLabel = managedBy?.label || skill.author || skill.creator_agent?.display_name || skill.creator_agent?.agent_key || skill.source || t("unknownOwner");
+  const managedByType = managedBy?.type || (skill.source ? "service" : "unknown");
 
   return (
     <tr className={cn("border-b last:border-0 hover:bg-muted/30", selected && "bg-primary/5", (isArchived || isDisabled) && "opacity-60")}>
@@ -77,19 +88,18 @@ export function SkillTableRow({
       </td>
       {tab === "custom" && (
         <td className="px-4 py-3 text-sm text-muted-foreground">
-          <div className="flex max-w-[220px] flex-col gap-1">
-            {skill.author && <span className="truncate">{skill.author}</span>}
-            {skill.creator_agent && (
-              <span className="truncate text-2xs">
-                {t("agents.creator")}: {skill.creator_agent.display_name || skill.creator_agent.agent_key || skill.creator_agent.id}
-              </span>
-            )}
+          <div className="flex max-w-[240px] flex-col gap-1">
+            <Badge
+              variant="outline"
+              className={cn("w-fit max-w-full truncate text-2xs", managedByTone[managedByType] ?? managedByTone.unknown)}
+              title={managedBy?.source ? `${managedByLabel} (${managedBy.source})` : managedByLabel}
+            >
+              <span className="truncate">{managedByLabel}</span>
+            </Badge>
             {skill.manager_agents && skill.manager_agents.length > 0 ? (
-              <span className="truncate text-2xs">
-                {t("agents.managers")}: {skill.manager_agents.map((agent) => agent.display_name || agent.agent_key || agent.id).join(", ")}
+              <span className="truncate text-2xs text-muted-foreground">
+                {t("access.managers")}: {skill.manager_agents.map((agent) => agent.display_name || agent.agent_key || agent.id).join(", ")}
               </span>
-            ) : !skill.author && !skill.creator_agent ? (
-              <span>—</span>
             ) : null}
           </div>
         </td>
