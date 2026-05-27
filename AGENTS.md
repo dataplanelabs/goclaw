@@ -14,6 +14,14 @@ Always respond in the same language as the user's prompt. If the user writes in 
 **Desktop App:** Wails v2 (`//go:build sqliteonly`). Located in `ui/desktop/`. Embeds gateway + React frontend in single binary.
 **Database:** PostgreSQL 18 with pgvector (standard). SQLite via `modernc.org/sqlite` (desktop/lite). Raw SQL with `$1, $2` (PG) or `?` (SQLite) positional params. Nullable columns: `*string`, `*time.Time`, etc.
 
+## Related Projects
+
+Use these aliases when cross-referencing nearby projects while working in this repository. Paths are relative to this repository root:
+
+- **agent-config:** `../../../goclaw-config`
+- **reconciliation-config:** `../../../gcplane`
+- **infra:** `../../../infra`
+
 ## Project Structure
 
 ```
