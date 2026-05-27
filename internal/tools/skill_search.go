@@ -155,7 +155,7 @@ func (t *SkillSearchTool) Execute(ctx context.Context, args map[string]any) *Res
 	}
 	instruction := fmt.Sprintf(
 		"%s\n\nACTION REQUIRED: Call use_skill with name \"%s\" — it returns the full SKILL.md content directly, no separate read_file needed.",
-		intro, results[0].Name,
+		intro, results[0].Slug,
 	)
 
 	return NewResult(string(data) + instruction)

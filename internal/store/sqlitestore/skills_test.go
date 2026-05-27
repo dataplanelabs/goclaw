@@ -216,6 +216,39 @@ func TestSQLiteSkillStore_RevokeFromAgentDoesNotDemoteCrossTenantSkill(t *testin
 	}
 }
 
+func TestSQLiteSkillStore_ListAccessibleTenantVisibilityWithGrant(t *testing.T) {
+	_, skillStore, db := newTestSQLiteSkillStoreWithDB(t)
+	tenantID, agentID := seedSQLiteTenantAgent(t, db)
+	ctx := store.WithTenantID(context.Background(), tenantID)
+
+	slug := "tenant-visible-grant-" + tenantID.String()[:8]
+	skillID, err := skillStore.CreateSkillManaged(ctx, store.SkillCreateParams{
+		Name:       "Tenant Visible Grant",
+		Slug:       slug,
+		OwnerID:    "user-1",
+		Visibility: "tenant",
+		Status:     "active",
+		FilePath:   filepath.Join(t.TempDir(), slug, "1"),
+	})
+	if err != nil {
+		t.Fatalf("CreateSkillManaged error: %v", err)
+	}
+	if err := skillStore.GrantToAgent(ctx, skillID, agentID, 1, "user-1"); err != nil {
+		t.Fatalf("GrantToAgent error: %v", err)
+	}
+
+	accessible, err := skillStore.ListAccessible(ctx, agentID, "user-1")
+	if err != nil {
+		t.Fatalf("ListAccessible error: %v", err)
+	}
+	for _, sk := range accessible {
+		if sk.Slug == slug {
+			return
+		}
+	}
+	t.Fatalf("tenant-visible granted skill %q not found in ListAccessible", slug)
+}
+
 func TestSQLiteSkillStore_ListWithGrantStatusIgnoresForeignTenantGrant(t *testing.T) {
 	_, skillStore, db := newTestSQLiteSkillStoreWithDB(t)
 	tenantA, _ := seedSQLiteTenantAgent(t, db)

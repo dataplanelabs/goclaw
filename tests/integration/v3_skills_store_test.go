@@ -346,6 +346,33 @@ func TestStoreSkill_GrantToAgent(t *testing.T) {
 	}
 }
 
+func TestStoreSkill_ListAccessibleTenantVisibilityWithGrant(t *testing.T) {
+	db := testDB(t)
+	tenantID, agentID := seedTenantAgent(t, db)
+	ctx := tenantCtx(tenantID)
+	s := newSkillStore(t)
+
+	slug := "tenant-visible-grant-" + tenantID.String()[:8]
+	skillID := seedSkill(t, s, ctx, slug, "Tenant Visible Grant")
+	if err := s.UpdateSkill(ctx, skillID, map[string]any{"visibility": "tenant"}); err != nil {
+		t.Fatalf("UpdateSkill: %v", err)
+	}
+	if err := s.GrantToAgent(ctx, skillID, agentID, 1, "test-owner"); err != nil {
+		t.Fatalf("GrantToAgent: %v", err)
+	}
+
+	accessible, err := s.ListAccessible(ctx, agentID, "test-owner")
+	if err != nil {
+		t.Fatalf("ListAccessible: %v", err)
+	}
+	for _, sk := range accessible {
+		if sk.Slug == slug {
+			return
+		}
+	}
+	t.Fatalf("tenant-visible granted skill %q not found in ListAccessible", slug)
+}
+
 func TestStoreSkill_GrantToAgentRejectsCrossTenantSkill(t *testing.T) {
 	db := testDB(t)
 	tenantA, agentA := seedTenantAgent(t, db)
