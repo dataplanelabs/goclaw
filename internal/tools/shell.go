@@ -267,6 +267,9 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 			// Package install commands: route through approval flow instead of hard deny.
 			// This lets agents "request permission" from admin to install packages.
 			if t.approvalMgr != nil && matchesAny(normalizedCommand, pkgInstallPatterns) {
+				if result := installedPipInstallResult(ctx, normalizedCommand); result != nil {
+					return result
+				}
 				slog.Info("exec: package install requires approval", "command", truncateCmd(command, 100), "agent", t.agentID)
 				decision, err := t.approvalMgr.RequestApproval(command, t.agentID, 2*time.Minute)
 				if err != nil {
