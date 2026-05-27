@@ -18,6 +18,7 @@ func TestNpmCommandEnvUsesRuntimePrefix(t *testing.T) {
 	wantPrefix := filepath.Join(runtimeDir, "npm-global")
 	wantBin := npmGlobalBinDir()
 	wantNodePath := filepath.Join(wantPrefix, "lib", "node_modules")
+	wantSystemNodePath := "/usr/local/lib/node_modules"
 
 	if !envContainsExact(env, "NPM_CONFIG_PREFIX="+wantPrefix) {
 		t.Fatalf("npmCommandEnv missing NPM_CONFIG_PREFIX=%q", wantPrefix)
@@ -27,6 +28,9 @@ func TestNpmCommandEnvUsesRuntimePrefix(t *testing.T) {
 	}
 	if !envContainsPrefixValue(env, "NODE_PATH=", wantNodePath) {
 		t.Fatalf("npmCommandEnv NODE_PATH does not start with %q", wantNodePath)
+	}
+	if !envContainsPathValue(env, "NODE_PATH=", wantSystemNodePath) {
+		t.Fatalf("npmCommandEnv NODE_PATH missing system global npm path %q", wantSystemNodePath)
 	}
 }
 
@@ -118,6 +122,20 @@ func envContainsPrefixValue(env []string, key, wantPrefix string) bool {
 	for _, item := range env {
 		if strings.HasPrefix(item, key) {
 			return strings.HasPrefix(strings.TrimPrefix(item, key), wantPrefix)
+		}
+	}
+	return false
+}
+
+func envContainsPathValue(env []string, key, want string) bool {
+	for _, item := range env {
+		if !strings.HasPrefix(item, key) {
+			continue
+		}
+		for _, part := range filepath.SplitList(strings.TrimPrefix(item, key)) {
+			if part == want {
+				return true
+			}
 		}
 	}
 	return false

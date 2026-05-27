@@ -99,6 +99,7 @@ RUN set -eux; \
     fi; \
     if [ "$ENABLE_FULL_SKILLS" = "true" ]; then \
         apt-get install -y --no-install-recommends nodejs npm pandoc poppler-utils ffmpeg libsndfile1 git \
+            libreoffice \
             build-essential cmake pkg-config; \
         wget -qO- https://github.com/cli/cli/releases/download/v2.65.0/gh_2.65.0_linux_amd64.tar.gz \
             | tar -xz -C /tmp && mv /tmp/gh_*/bin/gh /usr/local/bin/gh && rm -rf /tmp/gh_*; \
@@ -110,6 +111,12 @@ RUN set -eux; \
         /root/.cargo/bin/rustup self uninstall -y; \
         apt-get purge -y --auto-remove build-essential cmake pkg-config; \
         npm install -g --cache /tmp/npm-cache docx@^9.6.1 pptxgenjs@^4.0.1; \
+        python3 -c "import docx, openpyxl, pandas, pptx, pypdf, pdfplumber, pdf2image, markitdown, PIL"; \
+        NODE_PATH="$(npm root -g)" node -e "require.resolve('docx'); require.resolve('pptxgenjs')"; \
+        command -v soffice >/dev/null; \
+        command -v pandoc >/dev/null; \
+        command -v pdftoppm >/dev/null; \
+        command -v ffmpeg >/dev/null; \
         rm -rf /tmp/npm-cache /root/.cache; \
     else \
         if [ "$ENABLE_PYTHON" = "true" ]; then \
