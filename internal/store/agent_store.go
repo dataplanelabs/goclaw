@@ -320,6 +320,39 @@ func (a *AgentData) ParsePinnedSkills() []string {
 	return result
 }
 
+// ParseToolSkillRequirements returns per-tool skill activation requirements
+// from OtherConfig JSONB. Keys are tool names, values are required skill slugs.
+func (a *AgentData) ParseToolSkillRequirements() map[string]string {
+	if len(a.OtherConfig) == 0 {
+		return nil
+	}
+	var bag map[string]json.RawMessage
+	if json.Unmarshal(a.OtherConfig, &bag) != nil {
+		return nil
+	}
+	raw, ok := bag["tool_skill_requirements"]
+	if !ok {
+		return nil
+	}
+	var reqs map[string]string
+	if json.Unmarshal(raw, &reqs) != nil {
+		return nil
+	}
+	result := make(map[string]string, len(reqs))
+	for toolName, skillSlug := range reqs {
+		toolName = strings.TrimSpace(toolName)
+		skillSlug = strings.TrimSpace(skillSlug)
+		if toolName == "" || skillSlug == "" {
+			continue
+		}
+		result[toolName] = skillSlug
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 // ParseSkillNudgeInterval returns the tool-call interval for skill creation reminders.
 // Returns 15 (default) when column is 0 (unset).
 func (a *AgentData) ParseSkillNudgeInterval() int {
