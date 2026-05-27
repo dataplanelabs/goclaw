@@ -214,7 +214,8 @@ func (cs *Service) GetJob(jobID string) (*Job, bool) {
 
 	for i, job := range cs.store.Jobs {
 		if job.ID == jobID {
-			return &cs.store.Jobs[i], true
+			result := cs.store.Jobs[i] // copy; callers must not hold internal state past the lock
+			return &result, true
 		}
 	}
 	return nil, false

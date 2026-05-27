@@ -279,30 +279,83 @@ func TestService_JobFailure_Updates_LastError(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "cron.json")
 
+	ran := make(chan struct{}, 1)
 	handler := func(job *Job) (string, error) {
+		select {
+		case ran <- struct{}{}:
+		default:
+		}
 		return "", fmt.Errorf("intentional failure")
 	}
 
 	cs := NewService(storePath, handler)
 	cs.SetRetryConfig(RetryConfig{MaxRetries: 0}) // no retry
 
-	interval := int64(50)
+	interval := int64(time.Hour / time.Millisecond)
 	job, _ := cs.AddJob("failing", Schedule{Kind: "every", EveryMS: &interval}, "fail", false, "", "", "")
 
-	cs.Start()
-	time.Sleep(120 * time.Millisecond) // wait for several fast ticks
-	cs.Stop()
+	dueSoon := nowMS() + 10
+	cs.mu.Lock()
+	for i := range cs.store.Jobs {
+		if cs.store.Jobs[i].ID == job.ID {
+			cs.store.Jobs[i].State.NextRunAtMS = &dueSoon
+			break
+		}
+	}
+	if err := cs.saveUnsafe(); err != nil {
+		t.Fatalf("save due job: %v", err)
+	}
+	cs.mu.Unlock()
+
+	if err := cs.Start(); err != nil {
+		t.Fatalf("start service: %v", err)
+	}
+	defer cs.Stop()
+
+	select {
+	case <-ran:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for job execution")
+	}
 
 	// Check last error
-	found, ok := cs.GetJob(job.ID)
+	deadline := time.After(time.Second)
+	for {
+		found, ok := cs.GetJob(job.ID)
+		if !ok {
+			t.Fatal("job should exist")
+		}
+		if found.State.LastStatus == "error" && found.State.LastError != "" {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("expected last error to be recorded, got status=%q error=%q", found.State.LastStatus, found.State.LastError)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func TestService_GetJob_ReturnsCopy(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "cron.json")
+	cs := NewService(storePath, nil)
+
+	interval := int64(60000)
+	job, _ := cs.AddJob("copy-test", Schedule{Kind: "every", EveryMS: &interval}, "msg", false, "", "", "")
+
+	got, ok := cs.GetJob(job.ID)
 	if !ok {
 		t.Fatal("job should exist")
 	}
-	if found.State.LastStatus != "error" {
-		t.Fatalf("expected last status 'error', got %q", found.State.LastStatus)
+	got.State.LastStatus = "mutated"
+
+	again, ok := cs.GetJob(job.ID)
+	if !ok {
+		t.Fatal("job should still exist")
 	}
-	if found.State.LastError == "" {
-		t.Fatal("expected non-empty last error")
+	if again.State.LastStatus == "mutated" {
+		t.Fatal("GetJob returned internal mutable job state")
 	}
 }
 
