@@ -7,6 +7,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/pipeline"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
@@ -18,11 +19,11 @@ type stubExecutor struct{}
 func (s *stubExecutor) ExecuteWithContext(_ context.Context, _ string, _ map[string]any, _, _, _, _ string, _ tools.AsyncCallback) *tools.Result {
 	return &tools.Result{ForLLM: "ok", IsError: false}
 }
-func (s *stubExecutor) TryActivateDeferred(string) bool         { return false }
+func (s *stubExecutor) TryActivateDeferred(string) bool          { return false }
 func (s *stubExecutor) ProviderDefs() []providers.ToolDefinition { return nil }
-func (s *stubExecutor) Get(string) (tools.Tool, bool)             { return nil, false }
-func (s *stubExecutor) List() []string                            { return nil }
-func (s *stubExecutor) Aliases() map[string]string                { return nil }
+func (s *stubExecutor) Get(string) (tools.Tool, bool)            { return nil, false }
+func (s *stubExecutor) List() []string                           { return nil }
+func (s *stubExecutor) Aliases() map[string]string               { return nil }
 
 // eventCollector buffers AgentEvents for inspection in tests.
 // Safe for concurrent appends from parallel goroutines.
@@ -155,6 +156,51 @@ func TestMakeExecuteToolRaw_ConcurrentCallsEmitAllEvents(t *testing.T) {
 	calls := col.filter(protocol.AgentEventToolCall)
 	if len(calls) != n {
 		t.Fatalf("expected %d tool.call events, got %d", n, len(calls))
+	}
+}
+
+func TestMakeExecuteToolCall_BlocksToolUntilRequiredSkillActivated(t *testing.T) {
+	t.Parallel()
+	col := &eventCollector{}
+	l := newTestLoopForToolCallbacks(col.onEvent)
+	l.toolSkillRequirements = map[string]string{"create_image": "design-annhien"}
+
+	req := &RunRequest{RunID: "run-gated", SessionKey: "sess-gated", UserID: "u-1", Channel: "ws"}
+	state := &pipeline.RunState{RunID: "run-gated"}
+	tc := providers.ToolCall{ID: "tc-gated", Name: "create_image", Arguments: map[string]any{"prompt": "poster"}}
+	ctx := skills.WithSkillContext(context.Background(), skills.NewSkillContext())
+
+	msgs, err := l.makeExecuteToolCall(req, &runState{})(ctx, state, tc)
+	if err != nil {
+		t.Fatalf("makeExecuteToolCall returned error: %v", err)
+	}
+	if len(msgs) == 0 || !msgs[0].IsError {
+		t.Fatalf("expected blocked error tool message, got %#v", msgs)
+	}
+	if got := msgs[0].Content; got != `tool_skill_required: call use_skill with name "design-annhien" before create_image, then retry create_image using the skill instructions.` {
+		t.Fatalf("blocked message = %q", got)
+	}
+}
+
+func TestMakeExecuteToolCall_AllowsToolAfterRequiredSkillActivated(t *testing.T) {
+	t.Parallel()
+	col := &eventCollector{}
+	l := newTestLoopForToolCallbacks(col.onEvent)
+	l.toolSkillRequirements = map[string]string{"create_image": "design-annhien"}
+
+	req := &RunRequest{RunID: "run-allowed", SessionKey: "sess-allowed", UserID: "u-1", Channel: "ws"}
+	state := &pipeline.RunState{RunID: "run-allowed"}
+	tc := providers.ToolCall{ID: "tc-allowed", Name: "create_image", Arguments: map[string]any{"prompt": "poster"}}
+	sc := skills.NewSkillContext()
+	sc.Activate(&skills.ActivatedSkill{Slug: "design-annhien", BaseDir: "/skills/design-annhien"})
+	ctx := skills.WithSkillContext(context.Background(), sc)
+
+	msgs, err := l.makeExecuteToolCall(req, &runState{})(ctx, state, tc)
+	if err != nil {
+		t.Fatalf("makeExecuteToolCall returned error: %v", err)
+	}
+	if len(msgs) == 0 || msgs[0].IsError || msgs[0].Content != "ok" {
+		t.Fatalf("expected successful tool message, got %#v", msgs)
 	}
 }
 

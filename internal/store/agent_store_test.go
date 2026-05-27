@@ -440,6 +440,25 @@ func TestParseAllowImageGeneration_UnrelatedKeys_DefaultsTrue(t *testing.T) {
 	}
 }
 
+func TestParseToolSkillRequirements(t *testing.T) {
+	t.Parallel()
+	ag := &AgentData{OtherConfig: json.RawMessage(`{
+		"tool_skill_requirements": {
+			"create_image": "design-annhien",
+			" ": "ignored",
+			"read_file": ""
+		}
+	}`)}
+
+	got := ag.ParseToolSkillRequirements()
+	if got["create_image"] != "design-annhien" {
+		t.Fatalf("create_image requirement = %q, want design-annhien", got["create_image"])
+	}
+	if len(got) != 1 {
+		t.Fatalf("requirements = %#v, want one valid entry", got)
+	}
+}
+
 func TestParseToolsConfigWaitPolicy(t *testing.T) {
 	t.Parallel()
 	agent := AgentData{
