@@ -39,7 +39,7 @@ export function SkillsPage() {
     skills, loading, refresh, getSkill, uploadSkill, updateSkill, deleteSkill,
     listAgentGrants, grantSkillToAgent, grantSkillToAgents, revokeSkillFromAgent,
     deleteSkills, toggleSkills,
-    getSkillVersions, getSkillFiles, getSkillFileContent, rescanDeps, installDeps, installSingleDep, toggleSkill,
+    getSkillVersions, getSkillFiles, getSkillFileContent, getSkillFileBlob, rescanDeps, installDeps, installSingleDep, toggleSkill,
     setTenantConfig, deleteTenantConfig,
   } = useSkills();
   const [params, setParams] = useSearchParams();
@@ -396,6 +396,7 @@ export function SkillsPage() {
           getSkillVersions={getSkillVersions}
           getSkillFiles={getSkillFiles}
           getSkillFileContent={getSkillFileContent}
+          getSkillFileBlob={getSkillFileBlob}
         />
       )}
 

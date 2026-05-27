@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { MarkdownRenderer } from "@/components/shared/markdown-renderer";
+import { isTextFile } from "@/lib/file-helpers";
 import type { SkillInfo, SkillFile, SkillVersions } from "@/types/skill";
 import { buildTree } from "./skill-file-helpers";
 import { FileBrowser } from "./skill-file-browser";
@@ -31,6 +32,7 @@ interface SkillDetailDialogProps {
   getSkillVersions: (id: string) => Promise<SkillVersions>;
   getSkillFiles: (id: string, version?: number) => Promise<SkillFile[]>;
   getSkillFileContent: (id: string, path: string, version?: number) => Promise<{ content: string; path: string; size: number }>;
+  getSkillFileBlob: (id: string, path: string, version?: number) => Promise<Blob>;
 }
 
 export function SkillDetailDialog({
@@ -43,6 +45,7 @@ export function SkillDetailDialog({
   getSkillVersions,
   getSkillFiles,
   getSkillFileContent,
+  getSkillFileBlob,
 }: SkillDetailDialogProps) {
   const { t } = useTranslation("skills");
   const hasFiles = !!skill.id;
@@ -97,6 +100,12 @@ export function SkillDetailDialog({
   const loadFileContent = useCallback(async (path: string) => {
     if (!skill.id) return;
     setActivePath(path);
+    const selectedFile = files.find((file) => file.path === path);
+    if (selectedFile && !selectedFile.isDir && !isTextFile(path)) {
+      setFileContent({ content: "", path, size: selectedFile.size });
+      setContentLoading(false);
+      return;
+    }
     setContentLoading(true);
     try {
       const c = await getSkillFileContent(skill.id, path, selectedVersion ?? undefined);
@@ -104,7 +113,15 @@ export function SkillDetailDialog({
     } finally {
       setContentLoading(false);
     }
-  }, [skill.id, selectedVersion, getSkillFileContent]);
+  }, [skill.id, files, selectedVersion, getSkillFileContent]);
+
+  const fetchSkillFileBlob = useCallback(
+    (path: string) => {
+      if (!skill.id) return Promise.reject(new Error("skill id missing"));
+      return getSkillFileBlob(skill.id, path, selectedVersion ?? undefined);
+    },
+    [skill.id, selectedVersion, getSkillFileBlob],
+  );
 
   useEffect(() => {
     if (selectedVersion != null) {
@@ -163,8 +180,8 @@ export function SkillDetailDialog({
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
-      <DialogContent className="max-h-[85vh] md:min-h-[60vh] overflow-hidden flex flex-col sm:max-w-2xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl">
-        <DialogHeader>
+      <DialogContent className="h-dvh overflow-hidden flex flex-col gap-3 sm:h-[86dvh] sm:max-h-[900px] sm:max-w-2xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl">
+        <DialogHeader className="shrink-0">
           <div className="flex flex-col gap-2 pr-8 sm:flex-row sm:items-start sm:justify-between">
             <DialogTitle className="flex min-w-0 flex-wrap items-center gap-2">
               {skill.name}
@@ -199,7 +216,7 @@ export function SkillDetailDialog({
             ) : null}
           </div>
           {skill.description && (
-            <p className="text-sm text-muted-foreground">{skill.description}</p>
+            <p className="line-clamp-3 text-sm text-muted-foreground">{skill.description}</p>
           )}
           <div className="flex flex-wrap gap-1 pt-1 text-xs text-muted-foreground">
             {skill.author && <span>{t("columns.author")}: {skill.author}</span>}
@@ -244,6 +261,7 @@ export function SkillDetailDialog({
                 onSelect={handleFileSelect}
                 contentLoading={contentLoading}
                 fileContent={fileContent}
+                fetchBlob={fetchSkillFileBlob}
               />
             </TabsContent>
           )}
