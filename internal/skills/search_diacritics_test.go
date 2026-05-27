@@ -22,6 +22,14 @@ func TestFoldDiacritics(t *testing.T) {
 	}
 }
 
+func TestSlugify_FoldsVietnameseDiacritics(t *testing.T) {
+	got := Slugify("Poster Tuyển Dụng An Nhiên")
+	want := "poster-tuyen-dung-an-nhien"
+	if got != want {
+		t.Fatalf("Slugify() = %q, want %q", got, want)
+	}
+}
+
 func TestTokenize_DiacriticsFolded(t *testing.T) {
 	tokens := tokenize("Tạo poster cho An Nhiên Safety")
 	got := map[string]bool{}

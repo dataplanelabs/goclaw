@@ -133,6 +133,7 @@ func (l *Loader) ListSkills(_ context.Context) []Info {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	l.cache = make(map[string]*Info)
 	seen := make(map[string]bool)
 	var skills []Info
 
@@ -179,7 +180,7 @@ func (l *Loader) ListSkills(_ context.Context) []Info {
 			}
 			skills = append(skills, info)
 			seen[d.Name()] = true
-			l.cache[d.Name()] = &info
+			l.cacheSkillLocked(&info)
 		}
 	}
 
@@ -193,7 +194,7 @@ func (l *Loader) ListSkills(_ context.Context) []Info {
 			}
 			skills = append(skills, info)
 			seen[info.Slug] = true
-			l.cache[info.Slug] = &info
+			l.cacheSkillLocked(&info)
 		}
 	}
 
@@ -224,12 +225,30 @@ func (l *Loader) ListSkills(_ context.Context) []Info {
 				}
 				skills = append(skills, info)
 				seen[d.Name()] = true
-				l.cache[d.Name()] = &info
+				l.cacheSkillLocked(&info)
 			}
 		}
 	}
 
 	return skills
+}
+
+func (l *Loader) cacheSkillLocked(info *Info) {
+	for _, key := range []string{
+		info.Slug,
+		info.Name,
+		strings.ToLower(info.Name),
+		normalizeForSearch(info.Name),
+		Slugify(info.Name),
+	} {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, exists := l.cache[key]; !exists {
+			l.cache[key] = info
+		}
+	}
 }
 
 // listManagedSkills scans every configured managed dir for versioned skill directories.
@@ -521,8 +540,16 @@ func (l *Loader) GetSkill(ctx context.Context, name string) (*Info, bool) {
 
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	info, ok := l.cache[name]
-	return info, ok
+	for _, key := range []string{name, strings.ToLower(name), normalizeForSearch(name), Slugify(name)} {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if info, ok := l.cache[key]; ok {
+			return info, true
+		}
+	}
+	return nil, false
 }
 
 // ActivationPayload is the full skill bundle returned by use_skill activation.

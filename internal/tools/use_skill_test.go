@@ -203,6 +203,21 @@ func TestUseSkill_ManagedSkill_Granted(t *testing.T) {
 	}
 }
 
+func TestUseSkill_ManagedSkill_DisplayNameAlias(t *testing.T) {
+	body := "---\nname: Poster Tuyển Dụng An Nhiên\nslug: poster-tuy-n-d-ng-an-nhi-n\ndescription: Poster\n---\n\n# Body"
+	loader := makeManagedSkill(t, "poster-tuy-n-d-ng-an-nhi-n", body)
+	tool := NewUseSkillTool(loader)
+	tool.SetSkillAccessStore(&fakeSkillAccess{
+		skills: []store.SkillInfo{{Slug: "poster-tuy-n-d-ng-an-nhi-n"}},
+	})
+	ctx := store.WithAgentID(context.Background(), uuid.New())
+
+	result := tool.Execute(ctx, map[string]any{"name": "Poster Tuyển Dụng An Nhiên"})
+	if result.IsError {
+		t.Fatalf("display name alias should activate managed skill: %s", result.ForLLM)
+	}
+}
+
 func TestUseSkill_ManagedSkill_NotGranted(t *testing.T) {
 	loader := makeManagedSkill(t, "design-annhien", skillBody)
 	tool := NewUseSkillTool(loader)
@@ -211,6 +226,22 @@ func TestUseSkill_ManagedSkill_NotGranted(t *testing.T) {
 	result := tool.Execute(ctx, map[string]any{"name": "design-annhien"})
 	if !result.IsError || !strings.Contains(result.ForLLM, "skill_not_granted") {
 		t.Errorf("expected skill_not_granted, got: %+v", result)
+	}
+}
+
+func TestSkillSearchInstructionUsesSlug(t *testing.T) {
+	loader := newLoaderWithSkill(t, "poster-tuyen-dung-an-nhien", "---\nname: Poster Tuyển Dụng An Nhiên\ndescription: Poster tuyển dụng\n---\n\n# Body", false)
+	tool := NewSkillSearchTool(loader)
+
+	result := tool.Execute(context.Background(), map[string]any{"query": "poster tuyển dụng"})
+	if result.IsError {
+		t.Fatalf("skill_search should succeed: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, `Call use_skill with name "poster-tuyen-dung-an-nhien"`) {
+		t.Fatalf("skill_search should instruct canonical slug, got: %s", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, `Call use_skill with name "Poster Tuyển Dụng An Nhiên"`) {
+		t.Fatalf("skill_search instructed display name instead of slug: %s", result.ForLLM)
 	}
 }
 

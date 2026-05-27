@@ -342,7 +342,7 @@ func (s *PGSkillStore) RevokeFromUser(ctx context.Context, skillID uuid.UUID, us
 }
 
 // ListAccessible returns skills accessible to a given agent+user combination.
-// Access logic: public → all, private → owner only, internal → check grants.
+// Access logic: public → all, private → owner only, internal/tenant → check grants.
 // System skills (is_system=true) are always visible regardless of tenant.
 //
 // To preserve visibility across the ACTOR-vs-SCOPE split (#915), the query
@@ -384,7 +384,7 @@ func (s *PGSkillStore) ListAccessible(ctx context.Context, agentID uuid.UUID, us
 			s.is_system = true
 			OR s.visibility = 'public'
 			OR (s.visibility = 'private' AND (s.owner_id = $2 OR s.owner_id = $3))
-			OR (s.visibility = 'internal' AND (sag.id IS NOT NULL OR sug.id IS NOT NULL))
+			OR (s.visibility IN ('internal', 'tenant') AND (sag.id IS NOT NULL OR sug.id IS NOT NULL))
 		)
 		ORDER BY s.name`, append([]any{agentID, userID, actorID}, tcArgs...)...)
 	if err != nil {
