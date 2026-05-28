@@ -50,16 +50,55 @@ func TestNormalizeAudio_PassthroughSameFormat(t *testing.T) {
 
 func TestNormalizeAudio_StripsExtensionDot(t *testing.T) {
 	tmp := t.TempDir()
-	src := filepath.Join(tmp, "input.m4a")
+	// mp3 (non-MP4 container) passes through untouched, so this exercises the
+	// leading-dot stripping without invoking ffmpeg. m4a is intentionally not
+	// used here because m4a same-ext now triggers a faststart remux.
+	src := filepath.Join(tmp, "input.mp3")
 	if err := os.WriteFile(src, []byte("fake"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := NormalizeAudio(context.Background(), src, ".m4a")
+	got, err := NormalizeAudio(context.Background(), src, ".mp3")
 	if err != nil {
 		t.Fatalf("expected passthrough with leading-dot extension: %v", err)
 	}
 	if got != src {
 		t.Errorf("expected passthrough; got %q", got)
+	}
+}
+
+func TestFFmpegArgsFor_M4AHasFaststart(t *testing.T) {
+	joined := strings.Join(ffmpegArgsFor("m4a", "src", "dst"), " ")
+	if !strings.Contains(joined, "-movflags +faststart") {
+		t.Errorf("m4a args must include +faststart for Zalo mobile playback; got: %s", joined)
+	}
+	// ADTS .aac has no moov atom — movflags would error, so it must be absent.
+	if aac := strings.Join(ffmpegArgsFor("aac", "src", "dst"), " "); strings.Contains(aac, "movflags") {
+		t.Errorf("aac (ADTS) args must not include movflags; got: %s", aac)
+	}
+}
+
+func TestNormalizeAudio_M4APassthroughRemuxesFaststart(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed; skipping faststart remux test")
+	}
+	tmp := t.TempDir()
+	// Build a real (tiny) m4a so the -c copy remux succeeds.
+	src := filepath.Join(tmp, "input.m4a")
+	gen := exec.Command("ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+		"-i", "anullsrc=r=16000:cl=mono", "-t", "1", "-c:a", "aac", src)
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Skipf("could not synthesize test m4a: %v (%s)", err, out)
+	}
+	got, err := NormalizeAudio(context.Background(), src, "m4a")
+	if err != nil {
+		t.Fatalf("m4a passthrough remux: %v", err)
+	}
+	if got == src {
+		t.Fatal("m4a same-ext must remux (faststart), not return src unchanged")
+	}
+	defer os.Remove(got)
+	if _, err := os.Stat(got); err != nil {
+		t.Fatalf("remux output missing: %v", err)
 	}
 }
 
