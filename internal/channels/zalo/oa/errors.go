@@ -17,6 +17,10 @@ const (
 
 	// Refresh token dead → operator must re-consent.
 	codeInvalidGrant = -118
+	// OAuth refresh-token rejection observed from Zalo's token endpoint when
+	// the OA consent is no longer usable. Treat this like invalid_grant only
+	// in refresh-token paths; access-token retry remains handled separately.
+	codeInvalidRefreshToken = -14014
 
 	// Payload shape rejected (e.g. send endpoint requires template/media
 	// shape for images instead of plain attachment_id).
@@ -82,6 +86,12 @@ var catalog = map[int]CodeInfo{
 
 	// Auth — refresh token dead, operator must re-consent.
 	codeInvalidGrant: {
+		Family:    FamilyAuth,
+		Retryable: false,
+		LLMHint:   "Zalo refresh token has expired; the operator must re-authorize the OA before sending will resume.",
+		OpReason:  "MsgZaloOAErrRefreshExpired",
+	},
+	codeInvalidRefreshToken: {
 		Family:    FamilyAuth,
 		Retryable: false,
 		LLMHint:   "Zalo refresh token has expired; the operator must re-authorize the OA before sending will resume.",

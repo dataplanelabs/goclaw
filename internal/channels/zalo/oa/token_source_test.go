@@ -334,11 +334,12 @@ func TestClassifyRefreshError(t *testing.T) {
 		wantAuth bool
 	}{
 		{"invalid_grant envelope", &APIError{Code: -118, Message: "invalid_grant"}, true},
+		{"zalo refresh token rejected", &APIError{Code: -14014, Message: ""}, true},
 		{"transient 5xx", errors.New("http 503"), false},
 		{"transient timeout", errors.New("http: read timeout"), false},
 		{"nil", nil, false},
-		// Below: must NOT escalate. Only the language-independent -118 code
-		// signals refresh-token death. Localized server messages containing
+		// Below: must NOT escalate. Only language-independent OAuth refresh
+		// rejection codes signal refresh-token death. Localized server messages containing
 		// "expired" or "invalid" must stay transient — substring matching
 		// would falsely force re-consent on FamilyServer 10000 in Vietnamese.
 		{"server with localized expired", &APIError{Code: 10000, Message: "Hết hạn (expired)"}, false},

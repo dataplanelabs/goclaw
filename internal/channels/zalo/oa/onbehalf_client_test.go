@@ -88,6 +88,19 @@ func TestOnBehalfClient_EmptyToken(t *testing.T) {
 	}
 }
 
+func TestOnBehalfClient_TokenSourceError(t *testing.T) {
+	c := NewClient(5 * time.Second)
+	sourceErr := errors.New("refresh temporarily failed")
+	cl := NewOnBehalfClientWithError(c, func() (string, error) { return "", sourceErr })
+	_, err := cl.ListRecentChat(context.Background(), 0, 10)
+	if !errors.Is(err, sourceErr) {
+		t.Fatalf("expected token source error, got %v", err)
+	}
+	if errors.Is(err, ErrInvalidRefreshToken) {
+		t.Fatalf("transient token source error should not become ErrInvalidRefreshToken: %v", err)
+	}
+}
+
 func TestOnBehalfClient_GetConversationEmptyUID(t *testing.T) {
 	c := NewClient(5 * time.Second)
 	cl := NewOnBehalfClient(c, func() string { return "tok" })

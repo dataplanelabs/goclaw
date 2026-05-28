@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -50,6 +51,9 @@ type PollWorker struct {
 	stopOnce sync.Once
 	stopCh   chan struct{}
 	runWG    sync.WaitGroup
+	authDead atomic.Bool
+
+	onAuthFailed func(error)
 }
 
 // PollWorkerDeps groups required collaborators. Keeps the constructor
@@ -64,6 +68,7 @@ type PollWorkerDeps struct {
 	CustomerLast func(ctx context.Context, sessionKey string) string
 	JudgeMode    string // "per_event" (default) or "scheduled" — when scheduled, publish is suppressed; JudgeScheduler grades pending rows on cron tick
 	AgentKey     string // canonical agent identifier; "" falls back to legacy zalo_oa:<uid> session key
+	OnAuthFailed func(error)
 }
 
 func NewPollWorker(instanceID uuid.UUID, name, tenantID, channelType, selfUID string,
@@ -87,6 +92,7 @@ func NewPollWorker(instanceID uuid.UUID, name, tenantID, channelType, selfUID st
 		selfUID:      selfUID,
 		judgeMode:    deps.JudgeMode,
 		agentKey:     deps.AgentKey,
+		onAuthFailed: deps.OnAuthFailed,
 		cursors:      make(map[string]int64),
 		stopCh:       make(chan struct{}),
 	}
@@ -106,6 +112,10 @@ func (w *PollWorker) Run(ctx context.Context) {
 		"instance", w.instanceName, "interval", w.interval.String())
 	// First tick immediately to avoid 60s warmup window.
 	w.tick(ctx)
+	if w.authDead.Load() {
+		slog.Info("oa.poll_worker.auth_failed_stop", "instance", w.instanceName)
+		return
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -116,6 +126,10 @@ func (w *PollWorker) Run(ctx context.Context) {
 			return
 		case <-t.C:
 			w.tick(ctx)
+			if w.authDead.Load() {
+				slog.Info("oa.poll_worker.auth_failed_stop", "instance", w.instanceName)
+				return
+			}
 		}
 	}
 }
@@ -329,10 +343,15 @@ func (w *PollWorker) persistTeamReply(ctx context.Context, uid, threadKey, sessi
 }
 
 func (w *PollWorker) classifyErr(err error, op string) {
-	if errors.Is(err, ErrInvalidRefreshToken) {
+	if errors.Is(err, ErrInvalidRefreshToken) || errors.Is(err, ErrAuthExpired) {
 		slog.Error("oa.poll_worker.refresh_token_invalid",
 			"instance", w.instanceName, "op", op,
+			"error", err,
 			"action_required", "re-consent OA in Credentials tab")
+		if w.onAuthFailed != nil {
+			w.onAuthFailed(err)
+		}
+		w.authDead.Store(true)
 		return
 	}
 	if errors.Is(err, ErrRateLimit) {

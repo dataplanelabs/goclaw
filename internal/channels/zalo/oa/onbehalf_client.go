@@ -19,12 +19,17 @@ var ErrInvalidRefreshToken = errors.New("zalo_oa: refresh token invalid")
 // Returns full conversation regardless of whether the OA-side message was
 // sent by the bot via API or typed by a human in the Manager app.
 type OnBehalfClient struct {
-	client   *Client
-	tokenSrc func() string // returns current OA access token (refresh handled externally)
+	client      *Client
+	tokenSrc    func() string // returns current OA access token (refresh handled externally)
+	tokenErrSrc func() (string, error)
 }
 
 func NewOnBehalfClient(client *Client, tokenSrc func() string) *OnBehalfClient {
 	return &OnBehalfClient{client: client, tokenSrc: tokenSrc}
+}
+
+func NewOnBehalfClientWithError(client *Client, tokenSrc func() (string, error)) *OnBehalfClient {
+	return &OnBehalfClient{client: client, tokenErrSrc: tokenSrc}
 }
 
 // RecentChatEntry / ConversationMessage retained as aliases for the
@@ -54,7 +59,10 @@ type ConversationMessage struct {
 // on this OA. Zalo's /v2.0/oa/listrecentchat returns the same flat
 // message shape used by the customer poller.
 func (c *OnBehalfClient) ListRecentMessages(ctx context.Context, offset, count int) ([]ConversationMessage, error) {
-	tok := c.token()
+	tok, err := c.token()
+	if err != nil {
+		return nil, err
+	}
 	if tok == "" {
 		return nil, ErrInvalidRefreshToken
 	}
@@ -100,7 +108,10 @@ func (c *OnBehalfClient) GetConversation(ctx context.Context, uid string, offset
 	if uid == "" {
 		return nil, fmt.Errorf("oa.onbehalf: empty uid")
 	}
-	tok := c.token()
+	tok, err := c.token()
+	if err != nil {
+		return nil, err
+	}
 	if tok == "" {
 		return nil, ErrInvalidRefreshToken
 	}
@@ -121,18 +132,21 @@ func (c *OnBehalfClient) GetConversation(ctx context.Context, uid string, offset
 	return env.Data, nil
 }
 
-func (c *OnBehalfClient) token() string {
-	if c.tokenSrc == nil {
-		return ""
+func (c *OnBehalfClient) token() (string, error) {
+	if c.tokenErrSrc != nil {
+		return c.tokenErrSrc()
 	}
-	return c.tokenSrc()
+	if c.tokenSrc == nil {
+		return "", nil
+	}
+	return c.tokenSrc(), nil
 }
 
 // wrap maps a refresh-token-dead APIError to ErrInvalidRefreshToken so the
 // worker can short-circuit via errors.Is.
 func (c *OnBehalfClient) wrap(err error) error {
 	var apiErr *APIError
-	if errors.As(err, &apiErr) && apiErr.Code == codeInvalidGrant {
+	if errors.As(err, &apiErr) && (apiErr.Code == codeInvalidGrant || apiErr.Code == codeInvalidRefreshToken) {
 		return fmt.Errorf("%w: %s", ErrInvalidRefreshToken, apiErr.Message)
 	}
 	return err
