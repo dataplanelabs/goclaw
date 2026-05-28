@@ -2,6 +2,7 @@ package oa
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -15,9 +16,9 @@ import (
 )
 
 type fakeSessionCore struct {
-	mu     sync.Mutex
-	added  []providers.Message
-	saved  int
+	mu    sync.Mutex
+	added []providers.Message
+	saved int
 }
 
 func (f *fakeSessionCore) GetOrCreate(context.Context, string) *store.SessionData { return nil }
@@ -27,11 +28,11 @@ func (f *fakeSessionCore) AddMessage(_ context.Context, _ string, msg providers.
 	defer f.mu.Unlock()
 	f.added = append(f.added, msg)
 }
-func (f *fakeSessionCore) GetHistory(context.Context, string) []providers.Message { return nil }
-func (f *fakeSessionCore) GetSummary(context.Context, string) string              { return "" }
-func (f *fakeSessionCore) SetSummary(context.Context, string, string)             {}
-func (f *fakeSessionCore) GetLabel(context.Context, string) string                { return "" }
-func (f *fakeSessionCore) SetLabel(context.Context, string, string)               {}
+func (f *fakeSessionCore) GetHistory(context.Context, string) []providers.Message  { return nil }
+func (f *fakeSessionCore) GetSummary(context.Context, string) string               { return "" }
+func (f *fakeSessionCore) SetSummary(context.Context, string, string)              {}
+func (f *fakeSessionCore) GetLabel(context.Context, string) string                 { return "" }
+func (f *fakeSessionCore) SetLabel(context.Context, string, string)                {}
 func (f *fakeSessionCore) SetAgentInfo(context.Context, string, uuid.UUID, string) {}
 func (f *fakeSessionCore) TruncateHistory(context.Context, string, int)            {}
 func (f *fakeSessionCore) SetHistory(context.Context, string, []providers.Message) {}
@@ -110,6 +111,25 @@ func (f *fakeBus) Publish(e eventbus.DomainEvent) {
 func (f *fakeBus) Subscribe(eventbus.EventType, eventbus.DomainEventHandler) func() { return func() {} }
 func (f *fakeBus) Start(context.Context)                                            {}
 func (f *fakeBus) Drain(time.Duration) error                                        { return nil }
+
+func TestPollWorker_StopsAndReportsAuthFailure(t *testing.T) {
+	var got error
+	w := NewPollWorker(uuid.New(), "zalo-oa-test", uuid.NewString(), "zalo_oa", "oa-self",
+		1*time.Second, PollWorkerDeps{
+			OnBehalf: NewOnBehalfClientWithError(NewClient(5*time.Second), func() (string, error) {
+				return "", ErrAuthExpired
+			}),
+			OnAuthFailed: func(err error) { got = err },
+		})
+
+	w.tick(context.Background())
+	if !errors.Is(got, ErrAuthExpired) {
+		t.Fatalf("expected auth failure callback, got %v", got)
+	}
+	if !w.authDead.Load() {
+		t.Fatal("expected worker to stop after auth failure")
+	}
+}
 
 func TestPollWorker_PersistsOASideMessages(t *testing.T) {
 	tenantID := uuid.NewString()
@@ -323,7 +343,6 @@ func contains(rows []store.TeamReplyEvaluation, msgID string) bool {
 	}
 	return false
 }
-
 
 func TestPollWorker_SessionKeyAgentScoped(t *testing.T) {
 	w := NewPollWorker(uuid.New(), "zalo-oa-test", uuid.NewString(), "zalo_oa", "self-1", 60*time.Second, PollWorkerDeps{
