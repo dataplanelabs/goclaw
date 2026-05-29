@@ -6,6 +6,15 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Group file writers granted "All Groups" are no longer wrongly refused** — a
+  user granted `file_writer` (or `*`) at the `group:*` (All Groups) scope was
+  told by the bot it had no write permission, because the system-prompt gate used
+  an exact-scope lookup while the runtime tool gate was wildcard-aware. The prompt
+  gate now decides via the same wildcard-aware `CheckPermission` (fail-open on
+  store error — the runtime gate still fails closed), and the displayed writer
+  roster reflects wildcard grants via a new `ListEffectiveFileWriters`.
+  Channel `/addwriter` management gates keep exact-scope semantics.
+
 - **Skill detail "Files" tab no longer shows a spurious "No files found"** —
   the tab could render empty on first open (then populate after toggling
   Content↔Files) because file loads raced across effects, swallowed errors
