@@ -140,14 +140,27 @@ export function buildTree(files: TreeInput[]): TreeNode[] {
   return root;
 }
 
+function findNodeByPath(nodes: TreeNode[], path: string): TreeNode | undefined {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    const found = findNodeByPath(node.children, path);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 /** Merges a loaded subtree into an existing tree, replacing the target folder's children. */
 export function mergeSubtree(tree: TreeNode[], parentPath: string, newChildren: TreeInput[]): TreeNode[] {
-  const childTree = buildTree(newChildren);
+  // newChildren carry full paths, so buildTree reconstructs the whole ancestor
+  // chain — take only parentPath's own descendants, else they'd be re-nested
+  // under a duplicate path chain inside the target node.
+  const built = buildTree(newChildren);
+  const directChildren = findNodeByPath(built, parentPath)?.children ?? built;
 
   const merge = (nodes: TreeNode[]): TreeNode[] =>
     nodes.map((node) => {
       if (node.path === parentPath && node.isDir) {
-        return { ...node, children: childTree, hasChildren: false, loading: false };
+        return { ...node, children: directChildren, hasChildren: false, loading: false };
       }
       if (node.children.length > 0) {
         return { ...node, children: merge(node.children) };
