@@ -312,7 +312,7 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	d.server.SetFilesHandler(httpapi.NewFilesHandler(d.workspace, d.dataDir))
 
 	// Storage file management — browse/delete files under the resolved workspace directory.
-	d.server.SetStorageHandler(httpapi.NewStorageHandler(d.workspace, d.pgStores.Tenants))
+	d.server.SetStorageHandler(httpapi.NewStorageHandler(d.workspace, d.pgStores.Tenants).SetContactStore(d.pgStores.Contacts))
 
 	// Media upload endpoint — accepts multipart file uploads, returns temp path + MIME type.
 	d.server.SetMediaUploadHandler(httpapi.NewMediaUploadHandler())

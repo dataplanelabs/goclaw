@@ -33,8 +33,9 @@ type sizeCacheEntry struct {
 }
 
 type StorageHandler struct {
-	baseDir string // global data dir (resolved absolute path to ~/.goclaw/)
-	tenants store.TenantStore
+	baseDir  string // global data dir (resolved absolute path to ~/.goclaw/)
+	tenants  store.TenantStore
+	contacts store.ContactStore // optional: resolves id-folder names to display labels
 
 	// sizeCache caches the total storage size per tenant for 60 minutes.
 	sizeCache sync.Map // tenantBaseDir (string) → *sizeCacheEntry
@@ -46,6 +47,13 @@ func NewStorageHandler(baseDir string, tenants ...store.TenantStore) *StorageHan
 	if len(tenants) > 0 {
 		h.tenants = tenants[0]
 	}
+	return h
+}
+
+// SetContactStore wires the contact store so listing can label channel id /
+// group folders with their human display names. Optional (nil = no labels).
+func (h *StorageHandler) SetContactStore(cs store.ContactStore) *StorageHandler {
+	h.contacts = cs
 	return h
 }
 
@@ -231,6 +239,8 @@ func (h *StorageHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		Size        int64  `json:"size"`
 		HasChildren bool   `json:"hasChildren,omitempty"`
 		Protected   bool   `json:"protected"`
+		Label       string `json:"label,omitempty"` // human display name for channel id/group folders
+		Kind        string `json:"kind,omitempty"`  // peer kind: "direct" | "group"
 	}
 
 	var entries []fileEntry
@@ -312,10 +322,60 @@ func (h *StorageHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		entries = []fileEntry{}
 	}
 
+	// Label channel id / group folders with their human display name so the
+	// tree shows e.g. "Nguyễn Nhất Duy" instead of a bare numeric id.
+	if h.contacts != nil {
+		ids := make([]string, 0, len(entries))
+		for i := range entries {
+			if entries[i].IsDir {
+				if id := contactIDFromFolder(entries[i].Name); id != "" {
+					ids = append(ids, id)
+				}
+			}
+		}
+		if len(ids) > 0 {
+			if byID, err := h.contacts.GetContactsBySenderIDs(r.Context(), ids); err == nil {
+				for i := range entries {
+					c, ok := byID[contactIDFromFolder(entries[i].Name)]
+					if !ok || c.DisplayName == nil || *c.DisplayName == "" {
+						continue
+					}
+					entries[i].Label = *c.DisplayName
+					if c.PeerKind != nil {
+						entries[i].Kind = *c.PeerKind
+					}
+				}
+			} else {
+				slog.Debug("storage: contact label lookup failed", "error", err)
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"files":   entries,
 		"baseDir": base,
 	})
+}
+
+// contactIDFromFolder extracts the contact sender_id from a workspace folder
+// name: a bare numeric id (per-user folder) or the trailing id of a
+// "group_<channel>_<id>" group folder. Returns "" for non-id folders.
+func contactIDFromFolder(name string) string {
+	if strings.HasPrefix(name, "group_") {
+		if i := strings.LastIndex(name, "_"); i >= 0 && i+1 < len(name) {
+			name = name[i+1:]
+		}
+	}
+	digits := strings.TrimPrefix(name, "-") // Telegram group/supergroup ids are negative
+	if digits == "" {
+		return ""
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	return name
 }
 
 // sizeCacheTTL is how long storage size calculations are cached.

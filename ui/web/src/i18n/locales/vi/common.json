@@ -113,6 +113,8 @@
   "yes": "Có",
   "copyCode": "Sao chép mã",
   "copy": "Sao chép",
+  "pathCopied": "Đã sao chép đường dẫn máy chủ",
+  "pathCopyFailed": "Không sao chép được đường dẫn",
   "download": "Tải xuống",
   "errorBoundary": "Đã xảy ra lỗi khi hiển thị phần này.",
   "csvRows": "csv ({{count}} dòng)",

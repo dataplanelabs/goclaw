@@ -160,12 +160,14 @@ func (s *SQLiteContactStore) GetContactsBySenderIDs(ctx context.Context, senderI
 	tid := store.TenantIDFromContext(ctx)
 	args = append(args, tid)
 
-	// SQLite has no DISTINCT ON; emulate with GROUP BY + MAX rowid trick via subquery
-	query := `SELECT ` + contactSelectCols + `
+	// SQLite has no DISTINCT ON; emulate latest-wins per sender_id with a
+	// ROW_NUMBER window (a bare GROUP BY picks an arbitrary row, not the newest).
+	query := `SELECT ` + contactSelectCols + ` FROM (
+		SELECT ` + contactSelectCols + `,
+			ROW_NUMBER() OVER (PARTITION BY sender_id ORDER BY last_seen_at DESC) AS rn
 		FROM channel_contacts
 		WHERE sender_id IN (` + strings.Join(placeholders, ",") + `) AND tenant_id = ?
-		GROUP BY sender_id
-		ORDER BY sender_id, last_seen_at DESC`
+	) WHERE rn = 1`
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

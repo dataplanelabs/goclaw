@@ -6,6 +6,8 @@ export interface TreeNode {
   hasChildren?: boolean;
   loading?: boolean;
   protected?: boolean;
+  label?: string; // human display name (e.g. contact/group name) for id folders
+  kind?: string; // peer kind: "direct" | "group"
   children: TreeNode[];
 }
 
@@ -64,6 +66,8 @@ interface TreeInput {
   size: number;
   hasChildren?: boolean;
   protected?: boolean;
+  label?: string;
+  kind?: string;
 }
 
 export function buildTree(files: TreeInput[]): TreeNode[] {
@@ -117,6 +121,8 @@ export function buildTree(files: TreeInput[]): TreeNode[] {
       size: f.size,
       hasChildren: f.hasChildren,
       protected: f.protected,
+      label: f.label,
+      kind: f.kind,
       children: [],
     };
 

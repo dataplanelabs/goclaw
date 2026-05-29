@@ -113,6 +113,8 @@
   "typeAndPressEnter": "Type and press Enter...",
   "copyCode": "Copy code",
   "copy": "Copy",
+  "pathCopied": "Server path copied",
+  "pathCopyFailed": "Couldn't copy path",
   "download": "Download",
   "errorBoundary": "Something went wrong rendering this section.",
   "csvRows": "csv ({{count}} rows)",

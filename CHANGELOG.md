@@ -4,7 +4,23 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ## Unreleased
 
+### Added
+
+- **Storage tree shows human-readable names for channel id / group folders** — opaque
+  id folders (a user id, or `group_<channel>_<id>`) now display the contact/group
+  display name (resolved from `channel_contacts`, tenant-scoped, latest-wins) with
+  the raw id dimmed beside it and a `·direct`/`·group` pill; bare names fall back
+  unchanged. Each row also gets a hover **copy-server-path** button (copies the full
+  absolute workspace path for server-side debugging) that reports success only when
+  the clipboard write actually lands.
+
 ### Fixed
+
+- **Skill detail "Files" tab no longer shows a spurious "No files found" on first
+  open for multi-version skills** — file loading is now driven by the resolved
+  current version (resolved eagerly on open) instead of a versionless load that
+  returned the wrong/empty set for multi-version skills; it never requests files
+  with an undefined version. Adds a regression test.
 
 - **Storage tree no longer double-nests an expanded folder's contents** — opening
   a deep folder (e.g. `…/generated/2026-05-29`) rendered its files under a

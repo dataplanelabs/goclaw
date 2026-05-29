@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
-import { Folder, FolderOpen, ChevronRight, Loader2, Trash2 } from "lucide-react";
+import { Folder, FolderOpen, ChevronRight, Loader2, Trash2, Copy } from "lucide-react";
 import { formatSize, type TreeNode } from "@/lib/file-helpers";
+import { toast } from "@/stores/use-toast-store";
 import { useTreeDnd } from "@/hooks/use-tree-dnd";
 import { DragPreview } from "@/components/shared/drag-preview";
 import { FileIcon } from "./file-tree-file-icon";
@@ -19,6 +20,7 @@ export function TreeItem({
   dndEnabled,
   autoExpandPath,
   showSize,
+  baseDir,
 }: {
   node: TreeNode;
   depth: number;
@@ -29,10 +31,52 @@ export function TreeItem({
   dndEnabled: boolean;
   autoExpandPath: string | null;
   showSize?: boolean;
+  baseDir?: string;
 }) {
   const { t } = useTranslation("common");
   const [expanded, setExpanded] = useState(depth === 0);
   const isActive = activePath === node.path;
+
+  // Full absolute server path for the row, for copy-to-debug. baseDir is the
+  // server-side root (e.g. /app/workspace/tenants/shtp); node.path is relative.
+  const serverPath = baseDir ? `${baseDir.replace(/\/$/, "")}/${node.path}` : node.path;
+  const copyBtn = baseDir && (
+    <button
+      type="button"
+      className="ml-1 shrink-0 opacity-0 group-hover/tree-item:opacity-100 text-muted-foreground hover:text-foreground transition-opacity cursor-pointer p-0.5"
+      title={serverPath}
+      onClick={(e) => {
+        e.stopPropagation();
+        const w = navigator.clipboard?.writeText(serverPath);
+        if (w) {
+          w.then(
+            () => toast.success(t("pathCopied"), serverPath),
+            () => toast.error(t("pathCopyFailed"), serverPath),
+          );
+        } else {
+          toast.error(t("pathCopyFailed"), serverPath);
+        }
+      }}
+    >
+      <Copy className="h-3.5 w-3.5" />
+    </button>
+  );
+
+  // Name display: when a folder resolves to a human label (contact/group name),
+  // show the name as primary with the raw id dimmed beside it + a kind pill.
+  const nameNode = node.label ? (
+    <span className="flex min-w-0 items-baseline gap-1.5">
+      <span className="truncate font-medium">{node.label}</span>
+      {node.kind && (
+        <span className="shrink-0 text-2xs text-muted-foreground">·{node.kind}</span>
+      )}
+      <span className="truncate text-2xs text-muted-foreground/70 tabular-nums" title={node.name}>
+        {node.name}
+      </span>
+    </span>
+  ) : (
+    <span className="truncate">{node.name}</span>
+  );
 
   // Auto-expand folder when hovered during drag for 800ms.
   useEffect(() => {
@@ -87,9 +131,10 @@ export function TreeItem({
           ) : (
             <Folder className="h-4 w-4 shrink-0 text-yellow-600" />
           )}
-          <span className="truncate">{node.name}</span>
+          {nameNode}
           {node.loading && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground ml-1" />}
           {sizeLabel}
+          {copyBtn}
           {deleteBtn}
         </div>
         {expanded && node.children.map((child) => (
@@ -105,6 +150,7 @@ export function TreeItem({
 
             autoExpandPath={autoExpandPath}
             showSize={showSize}
+            baseDir={baseDir}
           />
         ))}
         {expanded && node.hasChildren && node.children.length === 0 && !node.loading && (
@@ -143,8 +189,9 @@ export function TreeItem({
       onClick={() => onSelect(node.path)}
     >
       <FileIcon name={node.name} />
-      <span className="truncate">{node.name}</span>
+      {nameNode}
       {sizeLabel}
+      {copyBtn}
       {deleteBtn}
     </div>
   );
@@ -181,6 +228,7 @@ export function FileTreePanel({
   onLoadMore,
   onMove,
   showSize,
+  baseDir,
 }: {
   tree: TreeNode[];
   filesLoading: boolean;
@@ -190,6 +238,7 @@ export function FileTreePanel({
   onLoadMore?: (path: string) => void;
   onMove?: (fromPath: string, toFolder: string) => void;
   showSize?: boolean;
+  baseDir?: string;
 }) {
   const { t } = useTranslation("common");
   const { sensors, activeId, autoExpandPath, handlers } = useTreeDnd(onMove);
@@ -222,7 +271,7 @@ export function FileTreePanel({
               key={node.path} node={node} depth={0} activePath={activePath}
               onSelect={onSelect} onDelete={onDelete} onLoadMore={onLoadMore}
               dndEnabled={dndEnabled} autoExpandPath={autoExpandPath}
-              showSize={showSize}
+              showSize={showSize} baseDir={baseDir}
             />
           ))}
         </RootDropZone>
@@ -232,7 +281,7 @@ export function FileTreePanel({
             key={node.path} node={node} depth={0} activePath={activePath}
             onSelect={onSelect} onDelete={onDelete} onLoadMore={onLoadMore}
             dndEnabled={false} autoExpandPath={null}
-            showSize={showSize}
+            showSize={showSize} baseDir={baseDir}
           />
         ))
       )}

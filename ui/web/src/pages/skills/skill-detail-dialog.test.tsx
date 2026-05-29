@@ -110,4 +110,27 @@ describe("SkillDetailDialog Files tab", () => {
     }
     expect(getSkillFiles.mock.calls.some((c) => c[1] === CURRENT_VERSION)).toBe(true);
   });
+
+  // Regression for the multi-version "No files found" bug: with a real backend
+  // where a versionless load returns nothing (only an explicit version lists
+  // files), the Files tab must still populate — because loading is driven by the
+  // resolved current version, never an undefined version.
+  it("multi-version: loads via the resolved version, never a versionless (empty) load", async () => {
+    const filesV9: SkillFile[] = [{ path: "SKILL.md", name: "SKILL.md", isDir: false, size: 1 }];
+    const getSkillVersions = vi.fn(
+      async (): Promise<SkillVersions> => ({ versions: [1, 9], current: 9 }),
+    );
+    const getSkillFiles = vi.fn(
+      async (_id: string, version?: number): Promise<SkillFile[]> => (version === 9 ? filesV9 : []),
+    );
+
+    renderDialog({ getSkillVersions, getSkillFiles });
+
+    expect((await screen.findAllByText("SKILL.md")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("noFiles")).toBeNull();
+    // Core invariant: files are never requested without a concrete version
+    // (a versionless request would return the empty set above).
+    expect(getSkillFiles.mock.calls.length).toBeGreaterThan(0);
+    expect(getSkillFiles.mock.calls.every((c) => c[1] != null)).toBe(true);
+  });
 });

@@ -11,6 +11,8 @@ export interface StorageFile {
   size: number;
   hasChildren?: boolean;
   protected: boolean;
+  label?: string;
+  kind?: string;
 }
 
 interface StorageListResponse {
