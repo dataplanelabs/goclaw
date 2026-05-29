@@ -6,6 +6,15 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **`create_image` reference-image caps are now provider-aware** (#219) — a
+  global 4-ref cap truncated references *before* provider routing, so OpenAI
+  (`/images/edits`, cap 16) and Codex never saw refs 5+, and a valid fifth
+  reference was reported with a misleading "did not resolve". References now
+  resolve up to the largest provider cap (16, subject to MIME/byte safety caps),
+  each provider still truncates to its own cap at call time (Gemini/OpenRouter
+  4, MiniMax 1, Codex 16), and a ref dropped for being over a provider's cap is
+  reported distinctly from one that was genuinely missing.
+
 - **`use_skill` no longer loads stale managed skill bundles** (#218) — when a
   duplicate tenant skill-store root existed on disk (e.g. a legacy
   `tenants/<uuid>/…` root alongside the current `tenants/<slug>/…`), the loader's
