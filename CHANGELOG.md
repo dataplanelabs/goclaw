@@ -6,6 +6,14 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Skill detail "Files" tab no longer shows a spurious "No files found"** —
+  the tab could render empty on first open (then populate after toggling
+  Content↔Files) because file loads raced across effects, swallowed errors
+  silently, and seeded the version from the possibly-stale skill-list value.
+  Loads now use a stale-response guard (latest wins), keep the last good list on
+  a transient error, and resolve the authoritative current version. Adds React
+  Testing Library + a component test for the tab.
+
 - **`create_image` reference-image caps are now provider-aware** (#219) — a
   global 4-ref cap truncated references *before* provider routing, so OpenAI
   (`/images/edits`, cap 16) and Codex never saw refs 5+, and a valid fifth

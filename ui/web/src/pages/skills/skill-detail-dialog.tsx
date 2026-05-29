@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -84,16 +84,28 @@ export function SkillDetailDialog({
     }
   }, [skill.id, versions, selectedVersionParam, getSkillVersions]);
 
+  // Monotonic sequence so out-of-order responses from concurrent loads can't
+  // clobber the latest one (e.g. a stale/empty version response landing after
+  // the correct current-version response).
+  const fileLoadSeq = useRef(0);
+
   const loadFiles = useCallback(async (version?: number) => {
     if (!skill.id) return;
+    const seq = ++fileLoadSeq.current;
     setFilesLoading(true);
     try {
       const f = await getSkillFiles(skill.id, version);
+      if (seq !== fileLoadSeq.current) return; // superseded by a newer load
       setFiles(f);
       setActivePath(null);
       setFileContent(null);
+    } catch (err) {
+      if (seq !== fileLoadSeq.current) return;
+      // Don't clobber an already-loaded tree on a transient failure (e.g. a
+      // version dir mid-write); leave the last good list in place.
+      console.error("skill files load failed", err);
     } finally {
-      setFilesLoading(false);
+      if (seq === fileLoadSeq.current) setFilesLoading(false);
     }
   }, [skill.id, getSkillFiles]);
 
@@ -131,16 +143,16 @@ export function SkillDetailDialog({
 
   useEffect(() => {
     if (detailTab !== "files" || !hasFiles) return;
+    // loadVersions resolves the authoritative current version and seeds
+    // selectedVersion from it. We deliberately do NOT pre-seed from the
+    // skill-list `skill.version`, which can lag the on-disk current version
+    // right after a regenerate and would make us list a stale/empty version.
     loadVersions();
     const versionParam = parseSkillDetailVersionParam(selectedVersionParam);
     if (versionParam !== null && versionParam !== selectedVersion) {
       setSelectedVersion(versionParam);
-      return;
     }
-    if (selectedVersion == null && skill.version) {
-      setSelectedVersion(skill.version);
-    }
-  }, [detailTab, hasFiles, loadVersions, selectedVersion, selectedVersionParam, skill.version]);
+  }, [detailTab, hasFiles, loadVersions, selectedVersion, selectedVersionParam]);
 
   useEffect(() => {
     if (!shouldLoadSkillDetailFile(detailTab, selectedFilePath, files.length, activePath)) return;
