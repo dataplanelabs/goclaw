@@ -18,22 +18,15 @@ func IsAudioExt(filePath string) bool {
 	return false
 }
 
-// NormalizeAudio re-encodes srcPath to the target extension (e.g. "m4a") via
-// ffmpeg. Returns the path to a new temp file in os.TempDir() — caller MUST
-// remove it (compare against srcPath; an unchanged passthrough returns srcPath).
-//
-// ffmpeg flags target Zalo voice-bubble compatibility: AAC-LC, mono, 16kHz,
-// with the moov atom relocated to the front (+faststart) so Zalo mobile —
-// which streams progressively — can begin playback. Without faststart the
-// bubble plays on desktop (full download) but stays silent on mobile.
+// NormalizeAudio re-encodes srcPath to targetExt (e.g. "m4a") via ffmpeg,
+// returning a temp file the caller must remove; non-m4a same-ext input passes
+// through as srcPath. M4A is AAC-LC/mono/16kHz with +faststart so Zalo mobile
+// (which plays progressively) isn't left silent.
 func NormalizeAudio(ctx context.Context, srcPath, targetExt string) (string, error) {
 	srcExt := strings.ToLower(strings.TrimPrefix(filepath.Ext(srcPath), "."))
 	tgtExt := strings.ToLower(strings.TrimPrefix(targetExt, "."))
 	if srcExt == tgtExt {
-		// MP4/M4A must still be faststart-remuxed even when the source already
-		// carries the right extension — a TTS provider that emits .m4a leaves the
-		// moov atom at the end, which Zalo mobile cannot play. Other containers
-		// are safe to pass through untouched.
+		// Even an already-.m4a source needs faststart for Zalo mobile.
 		if tgtExt == "m4a" {
 			return faststartRemuxM4A(ctx, srcPath)
 		}
@@ -62,9 +55,8 @@ func NormalizeAudio(ctx context.Context, srcPath, targetExt string) (string, err
 	return dstPath, nil
 }
 
-// faststartRemuxM4A copies an existing M4A's streams into a fresh temp file with
-// the moov atom moved to the front (-c copy → no re-encode, lossless and fast).
-// Caller MUST remove the returned temp file.
+// faststartRemuxM4A remuxes an M4A (-c copy, no re-encode) with the moov atom
+// moved to the front. Caller must remove the returned temp file.
 func faststartRemuxM4A(ctx context.Context, srcPath string) (string, error) {
 	if _, err := os.Stat(srcPath); err != nil {
 		return "", fmt.Errorf("media: normalize audio: stat src: %w", err)
@@ -95,8 +87,7 @@ func ffmpegArgsFor(targetExt, src, dst string) []string {
 	common := []string{"-y", "-loglevel", "error", "-i", src}
 	switch targetExt {
 	case "m4a":
-		// +faststart moves the moov atom to the front so Zalo mobile (progressive
-		// streaming) can play; ADTS .aac below has no moov atom so it is omitted.
+		// +faststart for Zalo mobile; ADTS .aac below has no moov atom.
 		return append(common, "-c:a", "aac", "-b:a", "64k", "-ar", "16000", "-ac", "1", "-movflags", "+faststart", dst)
 	case "aac":
 		return append(common, "-c:a", "aac", "-b:a", "64k", "-ar", "16000", "-ac", "1", dst)

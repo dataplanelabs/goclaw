@@ -50,9 +50,7 @@ func TestNormalizeAudio_PassthroughSameFormat(t *testing.T) {
 
 func TestNormalizeAudio_StripsExtensionDot(t *testing.T) {
 	tmp := t.TempDir()
-	// mp3 (non-MP4 container) passes through untouched, so this exercises the
-	// leading-dot stripping without invoking ffmpeg. m4a is intentionally not
-	// used here because m4a same-ext now triggers a faststart remux.
+	// mp3 (not m4a) passes through, exercising dot-stripping without ffmpeg.
 	src := filepath.Join(tmp, "input.mp3")
 	if err := os.WriteFile(src, []byte("fake"), 0o644); err != nil {
 		t.Fatal(err)
