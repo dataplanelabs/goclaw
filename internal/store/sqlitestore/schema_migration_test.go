@@ -468,6 +468,12 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`ALTER TABLE agents DROP COLUMN write_only_hash`)
 	}
 
+	if targetVersion < 47 {
+		// Migration 46→47 creates vieneu_cloned_voices.
+		db.Exec(`DROP INDEX IF EXISTS idx_vieneu_voices_tenant_voice`)
+		db.Exec(`DROP TABLE IF EXISTS vieneu_cloned_voices`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db
