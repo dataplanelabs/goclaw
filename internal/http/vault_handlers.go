@@ -42,6 +42,7 @@ type VaultHandler struct {
 	eventBus       eventbus.DomainEventBus
 	enrichProgress *vault.EnrichProgress // nil = enrichment progress SSE disabled
 	enrichWorker   *vault.EnrichWorker   // nil = stop not available
+	contacts       store.ContactStore    // nil = id folders shown without display labels
 	rescanMu       sync.Map              // key: tenantID → struct{}, per-tenant concurrency guard
 }
 
@@ -50,6 +51,13 @@ func (h *VaultHandler) SetEnrichProgress(p *vault.EnrichProgress) { h.enrichProg
 
 // SetEnrichWorker injects the enrichment worker for stop functionality.
 func (h *VaultHandler) SetEnrichWorker(w *vault.EnrichWorker) { h.enrichWorker = w }
+
+// SetContactStore wires the contact store so the tree can label channel id /
+// group folders with their human display name. Returns h for chaining.
+func (h *VaultHandler) SetContactStore(cs store.ContactStore) *VaultHandler {
+	h.contacts = cs
+	return h
+}
 
 func NewVaultHandler(s store.VaultStore, ta store.TeamAccessStore, workspace string, bus eventbus.DomainEventBus, agents AgentLister, teams TeamLister) *VaultHandler {
 	return &VaultHandler{store: s, teamAccess: ta, agents: agents, teams: teams, workspace: workspace, eventBus: bus}

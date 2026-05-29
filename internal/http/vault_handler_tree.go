@@ -53,5 +53,35 @@ func (h *VaultHandler) handleVaultTree(w http.ResponseWriter, r *http.Request) {
 	if entries == nil {
 		entries = []store.VaultTreeEntry{}
 	}
+
+	// Label id / group folders with their human display name (display-only;
+	// stored paths unchanged). Mirrors the storage tree enrichment.
+	if h.contacts != nil {
+		ids := make([]string, 0, len(entries))
+		for i := range entries {
+			if entries[i].IsDir {
+				if id := contactIDFromFolder(entries[i].Name); id != "" {
+					ids = append(ids, id)
+				}
+			}
+		}
+		if len(ids) > 0 {
+			if byID, err := h.contacts.GetContactsBySenderIDs(r.Context(), ids); err == nil {
+				for i := range entries {
+					c, ok := byID[contactIDFromFolder(entries[i].Name)]
+					if !ok || c.DisplayName == nil || *c.DisplayName == "" {
+						continue
+					}
+					entries[i].Label = *c.DisplayName
+					if c.PeerKind != nil {
+						entries[i].Kind = *c.PeerKind
+					}
+				}
+			} else {
+				slog.Debug("vault: contact label lookup failed", "error", err)
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
 }
