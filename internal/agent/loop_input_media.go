@@ -89,7 +89,7 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 	// 2. Process media: sanitize images, persist to media store.
 	var mediaRefs []providers.MediaRef
 	if len(req.Media) > 0 {
-		mediaRefs = l.persistMedia(req.SessionKey, req.Media, tools.ToolWorkspaceFromCtx(ctx))
+		mediaRefs = l.persistMedia(req.SessionKey, req.Media, tools.ToolWorkspaceFromCtx(ctx), req.SenderName)
 
 		// Register persisted text uploads in vault (async, non-blocking).
 		if l.onTextUploaded != nil {
