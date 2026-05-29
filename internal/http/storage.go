@@ -237,6 +237,7 @@ func (h *StorageHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		IsDir       bool   `json:"isDir"`
 		Size        int64  `json:"size"`
+		ModTime     string `json:"modTime,omitempty"` // RFC3339 last-modified, for relative-time display
 		HasChildren bool   `json:"hasChildren,omitempty"`
 		Protected   bool   `json:"protected"`
 		Label       string `json:"label,omitempty"` // human display name for channel id/group folders
@@ -287,6 +288,9 @@ func (h *StorageHandler) handleList(w http.ResponseWriter, r *http.Request) {
 				IsDir:     true,
 				Protected: isProtectedPath(rel),
 			}
+			if info, err := d.Info(); err == nil {
+				e.ModTime = info.ModTime().UTC().Format(time.RFC3339)
+			}
 			if dirEntries, err := os.ReadDir(path); err == nil && len(dirEntries) > 0 {
 				e.HasChildren = true
 			}
@@ -300,10 +304,11 @@ func (h *StorageHandler) handleList(w http.ResponseWriter, r *http.Request) {
 			IsDir: d.IsDir(),
 		}
 
-		if !d.IsDir() {
-			if info, err := d.Info(); err == nil {
+		if info, err := d.Info(); err == nil {
+			if !d.IsDir() {
 				entry.Size = info.Size()
 			}
+			entry.ModTime = info.ModTime().UTC().Format(time.RFC3339)
 		}
 
 		// For directories at max depth, check if they have children

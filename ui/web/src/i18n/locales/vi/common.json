@@ -76,6 +76,7 @@
   "searchPlaceholder": "Tìm kiếm...",
   "selectAgent": "Chọn agent",
   "selectFileToView": "Chọn một tệp để xem nội dung",
+  "showingRowsOf": "Hiển thị {{shown}} trên {{total}} hàng đầu tiên",
   "selectOrTypeTools": "Chọn hoặc nhập tên công cụ...",
   "selectOrTypeSkills": "Chọn hoặc nhập tên kỹ năng...",
   "selectProvider": "Chọn provider",

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { Folder, FolderOpen, ChevronRight, Loader2, Trash2, Copy } from "lucide-react";
 import { formatSize, type TreeNode } from "@/lib/file-helpers";
+import { formatRelativeTime } from "@/lib/format";
 import { toast } from "@/stores/use-toast-store";
 import { useTreeDnd } from "@/hooks/use-tree-dnd";
 import { DragPreview } from "@/components/shared/drag-preview";
@@ -107,9 +108,11 @@ export function TreeItem({
     </button>
   );
 
-  const sizeLabel = showSize && (node.isDir ? 0 : node.size) > 0 && (
+  const sizeLabel = showSize && !node.isDir && (node.size > 0 || node.modTime) && (
     <span className="ml-auto shrink-0 text-2xs text-muted-foreground tabular-nums">
-      {formatSize(node.size)}
+      {node.size > 0 && formatSize(node.size)}
+      {node.size > 0 && node.modTime && " · "}
+      {node.modTime && formatRelativeTime(node.modTime)}
     </span>
   );
 

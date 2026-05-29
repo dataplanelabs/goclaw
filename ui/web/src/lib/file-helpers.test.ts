@@ -57,4 +57,27 @@ describe("buildTree", () => {
     expect(root.path).toBe("d");
     expect(root.children.map((c) => c.name)).toEqual(["x.png"]);
   });
+
+  it("sorts labeled/named folders before unresolved bare-id folders, by visible name", () => {
+    const roots = buildTree([
+      { path: "900000000000000002", name: "900000000000000002", isDir: true }, // bare id, no label
+      { path: "zalo-annhien", name: "zalo-annhien", isDir: true }, // named dir
+      { path: "100000000000000001", name: "100000000000000001", isDir: true, label: "Writer One" }, // labeled
+      { path: "100000000000000003", name: "100000000000000003", isDir: true, label: "Aaa Sales" }, // labeled
+    ].map((f) => ({ ...f, size: 0 })));
+    // Labeled (by label) + named first (alpha), bare id last.
+    expect(roots.map((r) => r.label || r.name)).toEqual([
+      "Aaa Sales",
+      "Writer One",
+      "zalo-annhien",
+      "900000000000000002",
+    ]);
+  });
+
+  it("carries modTime through to the node", () => {
+    const roots = buildTree([
+      { path: "f.md", name: "f.md", isDir: false, size: 3, modTime: "2026-05-29T18:00:00Z" },
+    ]);
+    expect(roots[0]?.modTime).toBe("2026-05-29T18:00:00Z");
+  });
 });
