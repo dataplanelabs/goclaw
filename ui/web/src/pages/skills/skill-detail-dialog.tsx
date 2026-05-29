@@ -135,24 +135,23 @@ export function SkillDetailDialog({
     [skill.id, selectedVersion, getSkillFileBlob],
   );
 
+  // Resolve versions as soon as the dialog opens so selectedVersion settles on
+  // the authoritative current version BEFORE the Files tab is viewed. (The list
+  // `skill.version` can lag the on-disk current version right after a
+  // regenerate, so we never pre-seed from it.)
   useEffect(() => {
-    if (selectedVersion != null) {
+    if (hasFiles) loadVersions();
+  }, [hasFiles, loadVersions]);
+
+  // Load files only with a resolved version — never undefined. A bare
+  // (versionless) load returned the wrong/empty set for multi-version skills,
+  // so the Files tab showed "No files found" on first open until a version
+  // switch forced a reload.
+  useEffect(() => {
+    if (detailTab === "files" && hasFiles && selectedVersion != null) {
       loadFiles(selectedVersion);
     }
-  }, [selectedVersion, loadFiles]);
-
-  useEffect(() => {
-    if (detailTab !== "files" || !hasFiles) return;
-    // loadVersions resolves the authoritative current version and seeds
-    // selectedVersion from it. We deliberately do NOT pre-seed from the
-    // skill-list `skill.version`, which can lag the on-disk current version
-    // right after a regenerate and would make us list a stale/empty version.
-    loadVersions();
-    const versionParam = parseSkillDetailVersionParam(selectedVersionParam);
-    if (versionParam !== null && versionParam !== selectedVersion) {
-      setSelectedVersion(versionParam);
-    }
-  }, [detailTab, hasFiles, loadVersions, selectedVersion, selectedVersionParam]);
+  }, [detailTab, hasFiles, selectedVersion, loadFiles]);
 
   useEffect(() => {
     if (!shouldLoadSkillDetailFile(detailTab, selectedFilePath, files.length, activePath)) return;
@@ -160,13 +159,9 @@ export function SkillDetailDialog({
   }, [activePath, detailTab, files.length, loadFileContent, selectedFilePath]);
 
   const handleTabChange = (tab: string) => {
+    // File loading is owned by the version-resolution effects above, which always
+    // use a concrete current version — so just switch the tab here.
     onStateChange({ detailTab: tab });
-    if (tab === "files" && hasFiles) {
-      loadVersions();
-      if (files.length === 0 && !filesLoading) {
-        loadFiles(selectedVersion ?? undefined);
-      }
-    }
   };
 
   const handleVersionChange = (v: string) => {
@@ -183,10 +178,6 @@ export function SkillDetailDialog({
     });
     loadFileContent(path);
   };
-
-  useEffect(() => {
-    if (hasFiles) loadVersions();
-  }, [hasFiles, loadVersions]);
 
   const headerVersion = selectedVersion ?? versions?.current ?? skill.version;
 

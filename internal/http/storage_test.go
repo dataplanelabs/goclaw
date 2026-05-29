@@ -432,3 +432,24 @@ func newStorageUploadRequest(t *testing.T, target, field, filename, content stri
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	return req
 }
+
+func TestContactIDFromFolder(t *testing.T) {
+	cases := map[string]string{
+		"2534467770483644212":               "2534467770483644212", // bare user id
+		"group_zalo-shtp_44163918360303312": "44163918360303312",   // group folder → trailing id
+		"group_telegram-main_-1001234567":   "-1001234567",         // Telegram negative group id
+		"group_zalo2_123":                   "123",                 // channel name ending in digit
+		"-1001234567":                       "-1001234567",         // bare negative id
+		"group_":                            "",                    // no id
+		"":                                  "",                    // empty
+		"generated":                         "",                    // non-id folder
+		"poster.png":                        "",                    // file-ish
+		"-":                                 "",                    // lone minus
+		"group_x_":                          "",                    // trailing empty
+	}
+	for in, want := range cases {
+		if got := contactIDFromFolder(in); got != want {
+			t.Errorf("contactIDFromFolder(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

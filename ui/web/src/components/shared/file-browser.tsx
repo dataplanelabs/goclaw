@@ -53,6 +53,7 @@ export function FileBrowser({
   onDownload,
   fetchBlob,
   showSize,
+  baseDir,
 }: {
   tree: TreeNode[];
   filesLoading: boolean;
@@ -66,6 +67,7 @@ export function FileBrowser({
   onDownload?: (path: string) => void;
   fetchBlob?: (path: string) => Promise<Blob>;
   showSize?: boolean;
+  baseDir?: string;
 }) {
   const isMobile = useIsMobile();
   const { t } = useTranslation("common");
@@ -108,7 +110,7 @@ export function FileBrowser({
       <div className="flex-1 flex flex-col border rounded-md overflow-hidden min-h-0">
         {mobileShowTree ? (
           <div className="flex-1 overflow-y-auto bg-muted/20 py-1">
-            <FileTreePanel tree={tree} filesLoading={filesLoading} activePath={activePath} onSelect={handleSelect} onDelete={onDelete} onLoadMore={onLoadMore} onMove={onMove} showSize={showSize} />
+            <FileTreePanel tree={tree} filesLoading={filesLoading} activePath={activePath} onSelect={handleSelect} onDelete={onDelete} onLoadMore={onLoadMore} onMove={onMove} showSize={showSize} baseDir={baseDir} />
           </div>
         ) : (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -140,7 +142,7 @@ export function FileBrowser({
   return (
     <div ref={containerRef} className="flex-1 flex border rounded-md overflow-hidden min-h-0">
       <div className="overflow-y-auto bg-muted/20 py-1 shrink-0" style={{ width: treeWidth }}>
-        <FileTreePanel tree={tree} filesLoading={filesLoading} activePath={activePath} onSelect={handleSelect} onDelete={onDelete} onLoadMore={onLoadMore} onMove={onMove} showSize={showSize} />
+        <FileTreePanel tree={tree} filesLoading={filesLoading} activePath={activePath} onSelect={handleSelect} onDelete={onDelete} onLoadMore={onLoadMore} onMove={onMove} showSize={showSize} baseDir={baseDir} />
       </div>
 
       <div

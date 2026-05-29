@@ -113,6 +113,8 @@
   "yes": "是",
   "copyCode": "复制代码",
   "copy": "复制",
+  "pathCopied": "已复制服务器路径",
+  "pathCopyFailed": "无法复制路径",
   "download": "下载",
   "errorBoundary": "此部分渲染出错。",
   "csvRows": "csv ({{count}} 行)",
