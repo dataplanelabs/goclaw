@@ -6,6 +6,13 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- **Vault tree shows human-readable names for top-level id folders** — opaque
+  channel/group/user id folders in the Knowledge Vault tree now display the
+  contact/group display name (resolved from `channel_contacts`, tenant-scoped)
+  with the raw id dimmed beside it and a `·direct`/`·group` pill; scope folders
+  (`teams`, `agents`) and bare names fall back unchanged. Display-only — stored
+  `vault_documents.path` is untouched.
+
 - **Storage tree shows human-readable names for channel id / group folders** — opaque
   id folders (a user id, or `group_<channel>_<id>`) now display the contact/group
   display name (resolved from `channel_contacts`, tenant-scoped, latest-wins) with
@@ -15,6 +22,16 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   the clipboard write actually lands.
 
 ### Fixed
+
+- **Vault no longer indexes the same file under two tree roots** — the vault
+  interceptor stored `vault_documents.path` relative to the global workspace
+  while write tools resolve under the per-tenant workspace, so non-master
+  agent-written docs got a `tenants/<slug>/` prefix that rescan/upload never
+  produced — surfacing the same file under both `tenants/<slug>/…` and the bare
+  path. Paths are now stored tenant-root-relative; reads strip any legacy
+  prefix and resolve against the tenant root (no cross-tenant escape); a dual-DB
+  dedupe-then-strip migration normalizes existing rows (PG `000078`, SQLite
+  v48). Master/desktop (single tenant) had no prefix and is a near-noop.
 
 - **Skill detail "Files" tab no longer shows a spurious "No files found" on first
   open for multi-version skills** — file loading is now driven by the resolved

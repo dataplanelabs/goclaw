@@ -12,6 +12,8 @@ export interface VaultTreeEntry {
   scope?: string;
   title?: string;
   updatedAt?: string;
+  label?: string; // display-only contact name for id folders
+  kind?: string;  // contact peer kind (direct/group)
 }
 
 interface VaultTreeResponse { entries: VaultTreeEntry[] }
@@ -26,6 +28,7 @@ interface VaultTreeFilter {
 function toTreeInputs(entries: VaultTreeEntry[]) {
   return entries.map((e) => ({
     path: e.path, name: e.name, isDir: e.isDir, size: 0, hasChildren: e.hasChildren,
+    label: e.label, kind: e.kind,
   }));
 }
 

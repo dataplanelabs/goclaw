@@ -88,6 +88,8 @@ type VaultTreeEntry struct {
 	Scope       string     `json:"scope,omitempty"`
 	Title       string     `json:"title,omitempty"`
 	UpdatedAt   *time.Time `json:"updatedAt,omitempty"`
+	Label       string     `json:"label,omitempty"` // display-only contact name for id folders
+	Kind        string     `json:"kind,omitempty"`  // contact peer kind (direct/group)
 }
 
 // VaultTreeOptions configures a vault tree listing query.

@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 47
+const SchemaVersion = 48
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -835,6 +835,34 @@ ALTER TABLE traces ADD COLUMN outbound_emitted INTEGER NOT NULL DEFAULT 0;`,
     deleted_at  TEXT
 );
 CREATE UNIQUE INDEX idx_vieneu_voices_tenant_voice ON vieneu_cloned_voices (tenant_id, voice_id);`,
+	// Version 47 → 48: normalize vault_documents.path to tenant-root-relative
+	// (strip leading tenants/<slug>/). Mirrors PG migration 000078. Dedupe first
+	// (stripping can collide a prefixed row with a bare row under
+	// idx_vault_docs_unique_path), then strip via substr/instr — modernc has no
+	// regexp_replace. Master-tenant desktop DBs have no prefix → near-noop.
+	// substr(path, instr(substr(path,9),'/')+9): 9 = len('tenants/')+1; instr
+	// finds the slash after the slug; +9 skips 'tenants/' + that slash.
+	47: `DELETE FROM vault_documents
+WHERE id IN (
+    SELECT id FROM (
+        SELECT id,
+               ROW_NUMBER() OVER (
+                   PARTITION BY tenant_id,
+                                COALESCE(agent_id, ''),
+                                COALESCE(team_id, ''),
+                                scope,
+                                CASE WHEN path LIKE 'tenants/%/%'
+                                     THEN substr(path, instr(substr(path, 9), '/') + 9)
+                                     ELSE path END
+                   ORDER BY updated_at DESC, id DESC
+               ) AS rn
+        FROM vault_documents
+    )
+    WHERE rn > 1
+);
+UPDATE vault_documents
+SET path = substr(path, instr(substr(path, 9), '/') + 9)
+WHERE path LIKE 'tenants/%/%';`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.

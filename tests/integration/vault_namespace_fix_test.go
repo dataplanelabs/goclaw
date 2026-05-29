@@ -3,8 +3,6 @@
 package integration
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -35,9 +33,7 @@ func TestVaultNamespaceFix_thuyTienScenario(t *testing.T) {
 	ws := t.TempDir()
 	relPath := "KG_03_Danh_Muc_San_Pham.md"
 	body := "Product catalog body"
-	if err := os.WriteFile(filepath.Join(ws, relPath), []byte(body), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
+	writeTenantFile(t, ws, tenantID, relPath, []byte(body))
 
 	userID := "kguser-" + agentID.String()[:8]
 	ctx := store.WithUserID(store.WithAgentID(tenantCtx(tenantID), agentID), userID)
