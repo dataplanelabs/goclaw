@@ -6,6 +6,16 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **`create_image` no longer emits a false "provider accepts at most 4
+  references" note for custom-named Codex/OpenAI providers** — the over-cap note
+  computed the cap from the provider *instance name* (e.g. `codex-cnb`), which
+  missed the canonical-name switch and fell back to the default of 4, so a 5-ref
+  request reported "1 not sent" even though the native image path actually sent
+  all of them (cap 16). The note now resolves the cap the same way generation
+  does — native image providers (Codex/ChatGPT-OAuth) report the native cap
+  regardless of instance name, others map by media type — so it only fires when
+  references are genuinely dropped.
+
 - **`create_image` now resolves reference images from any in-workspace path** —
   a `reference_image_id` naming an on-disk image (a user upload in `.uploads/`, a
   portrait the assistant organized into `portraits/`, or an absolute workspace

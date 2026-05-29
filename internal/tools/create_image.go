@@ -231,7 +231,7 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 	if degradedReason != "" {
 		forLLM += formatRefsDroppedNote(degradedReason, requestedRefIDs,
 			refsCapableProviderNamesInRegistry(ctx, t.registry))
-	} else if refCap := imageRefCapForProvider(chainResult.Provider); len(refImages) > refCap {
+	} else if refCap := t.refCapForProvider(ctx, chainResult.Provider); len(refImages) > refCap {
 		// Refs were valid but the selected provider accepts fewer than supplied —
 		// distinct from "did not resolve" (genuinely missing) above.
 		forLLM += formatRefsOverProviderCapNote(chainResult.Provider, refCap, len(refImages))
@@ -346,9 +346,23 @@ func formatRefsDroppedNote(reason string, refIDs, availableRefsCapable []string)
 	}
 }
 
-// imageRefCapForProvider returns the max reference images the given provider's
-// image path accepts. Mirrors the per-provider caps applied at call time so the
-// tool can distinguish a valid-but-truncated ref from a genuinely missing one (#219).
+// refCapForProvider mirrors callProvider's branching: native providers
+// (Codex/ChatGPT-OAuth) cap at codexImageRefCap regardless of instance name;
+// others map by media type via ResolveProviderType (avoids the name-switch miss
+// that made "codex-cnb" report the default cap).
+func (t *CreateImageTool) refCapForProvider(ctx context.Context, providerName string) int {
+	p, err := t.registry.Get(ctx, providerName)
+	if err != nil {
+		return imageRefCapForProvider(providerName)
+	}
+	if _, ok := p.(providers.NativeImageProvider); ok {
+		return codexImageRefCap
+	}
+	return imageRefCapForProvider(ResolveProviderType(p))
+}
+
+// imageRefCapForProvider maps a media TYPE (not a raw instance name — pass via
+// refCapForProvider) to the per-provider call-time ref cap (#219).
 func imageRefCapForProvider(provider string) int {
 	switch strings.ToLower(provider) {
 	case "openai":
