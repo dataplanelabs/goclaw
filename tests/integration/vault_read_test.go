@@ -4,8 +4,6 @@ package integration
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,9 +25,7 @@ func TestVaultRead_SharedAtWorkspaceRoot(t *testing.T) {
 	ws := t.TempDir()
 	body := strings.Repeat("KG_03 body line\n", 300) // ~4.8KB
 	relPath := "KG_03_Test.md"
-	if err := os.WriteFile(filepath.Join(ws, relPath), []byte(body), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
+	writeTenantFile(t, ws, tenantID, relPath, []byte(body))
 
 	// Register doc directly (avoids spinning up the full rescan pipeline).
 	doc := makeSharedVaultDoc(tenantID.String(), relPath, "KG_03 Test")
@@ -68,9 +64,7 @@ func TestVaultRead_PersonalCrossAgentDenied(t *testing.T) {
 
 	ws := t.TempDir()
 	relPath := "private.md"
-	if err := os.WriteFile(filepath.Join(ws, relPath), []byte("secret"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
+	writeTenantFile(t, ws, tenantID, relPath, []byte("secret"))
 
 	doc := makeVaultDoc(tenantID.String(), agentA.String(), relPath, "Private")
 	ctxA := store.WithAgentID(tenantCtx(tenantID), agentA)
@@ -102,9 +96,7 @@ func TestVaultRead_MediaRejected(t *testing.T) {
 
 	ws := t.TempDir()
 	relPath := "pic.png"
-	if err := os.WriteFile(filepath.Join(ws, relPath), []byte("pretend-png"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
+	writeTenantFile(t, ws, tenantID, relPath, []byte("pretend-png"))
 
 	aid := agentID.String()
 	doc := &store.VaultDocument{
@@ -144,9 +136,7 @@ func TestVaultRead_OversizeTruncation(t *testing.T) {
 	ws := t.TempDir()
 	relPath := "big.md"
 	big := bytes.Repeat([]byte("a"), 300_000)
-	if err := os.WriteFile(filepath.Join(ws, relPath), big, 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
+	writeTenantFile(t, ws, tenantID, relPath, big)
 
 	doc := makeSharedVaultDoc(tenantID.String(), relPath, "Big Doc")
 	ctx := store.WithAgentID(tenantCtx(tenantID), agentID)
@@ -198,9 +188,7 @@ func TestVaultRead_OutlinksScopeMatrix(t *testing.T) {
 
 	// Source file on disk + doc (shared so read is allowed).
 	srcRel := "src.md"
-	if err := os.WriteFile(filepath.Join(ws, srcRel), []byte("src body"), 0o644); err != nil {
-		t.Fatalf("write src: %v", err)
-	}
+	writeTenantFile(t, ws, tenantID, srcRel, []byte("src body"))
 	src := makeSharedVaultDoc(tid, srcRel, "Source")
 	if err := vs.UpsertDocument(ctxSelf, src); err != nil {
 		t.Fatalf("Upsert src: %v", err)
