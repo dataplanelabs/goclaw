@@ -584,19 +584,27 @@ func (l *Loader) LoadActivationPayload(ctx context.Context, slug string) (*Activ
 	if !ok {
 		return nil, fmt.Errorf("skill_not_found: %q", slug)
 	}
+	return BuildActivationPayload(info.Slug, info.Name, info.Source, info.BaseDir, info.Path)
+}
 
+// BuildActivationPayload assembles the activation bundle (structured paths +
+// inline SKILL.md under the byte budget) for an already-resolved skill. Callers
+// that hold an authoritative path — e.g. use_skill resolving a managed skill
+// from the DB to avoid stale duplicate filesystem roots (#218) — use this to
+// bypass the loader's global filesystem slug scan.
+func BuildActivationPayload(slug, name, source, baseDir, skillMDPath string) (*ActivationPayload, error) {
 	payload := &ActivationPayload{
-		Slug:        info.Slug,
-		Name:        info.Name,
-		Source:      info.Source,
-		BaseDir:     info.BaseDir,
-		SkillMDPath: info.Path,
-		AssetPaths:  listFilesInSubdir(info.BaseDir, "assets"),
-		ScriptPaths: listFilesInSubdir(info.BaseDir, "scripts"),
+		Slug:        slug,
+		Name:        name,
+		Source:      source,
+		BaseDir:     baseDir,
+		SkillMDPath: skillMDPath,
+		AssetPaths:  listFilesInSubdir(baseDir, "assets"),
+		ScriptPaths: listFilesInSubdir(baseDir, "scripts"),
 		ActivatedAt: time.Now().UTC(),
 	}
 
-	data, err := os.ReadFile(info.Path)
+	data, err := os.ReadFile(skillMDPath)
 	if err != nil {
 		return nil, fmt.Errorf("read SKILL.md: %w", err)
 	}

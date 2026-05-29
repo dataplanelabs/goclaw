@@ -6,6 +6,16 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **`use_skill` no longer loads stale managed skill bundles** (#218) — when a
+  duplicate tenant skill-store root existed on disk (e.g. a legacy
+  `tenants/<uuid>/…` root alongside the current `tenants/<slug>/…`), the loader's
+  first-match filesystem scan could resolve an old version's `SKILL.md` + assets
+  even though the DB/UI showed a newer current version. `use_skill` now builds
+  the managed activation payload from the authoritative DB path
+  (`SkillAccessStore.ListAccessible` → `SkillInfo.BaseDir`, which honors the DB
+  `file_path`), falling back to the filesystem loader only for non-managed
+  skills. Grant semantics unchanged.
+
 - **TTS fallback no longer starves on a slow primary** — when the primary
   provider (e.g. CPU VieNeu) ran long, it consumed the entire TTS deadline and
   the fast Edge fallback inherited an already-expired context, so it failed

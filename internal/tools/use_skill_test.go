@@ -229,6 +229,60 @@ func TestUseSkill_ManagedSkill_NotGranted(t *testing.T) {
 	}
 }
 
+// Regression for #218: when a stale duplicate skill-store root is registered in
+// the loader, use_skill must resolve the managed skill from the authoritative
+// DB path (SkillInfo.BaseDir) rather than the loader's first-match filesystem
+// scan, so it returns the current SKILL.md + assets.
+func TestUseSkill_ManagedSkill_PrefersAuthoritativeDBPath(t *testing.T) {
+	// Stale managed root the loader would otherwise resolve (old content, no assets).
+	staleBody := "---\nname: SHTP\nslug: design-shtp\ndescription: stale\n---\n\n# STALE VERSION"
+	loader := makeManagedSkill(t, "design-shtp", staleBody)
+
+	// Authoritative current version dir (DB file_path), with new content + asset.
+	authBase := t.TempDir()
+	curBody := "---\nname: SHTP\nslug: design-shtp\ndescription: current\n---\n\n# CURRENT VERSION"
+	if err := os.WriteFile(filepath.Join(authBase, "SKILL.md"), []byte(curBody), 0644); err != nil {
+		t.Fatalf("write current SKILL.md: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(authBase, "assets"), 0755); err != nil {
+		t.Fatalf("mkdir assets: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(authBase, "assets", "club-shirt-green.jpg"), []byte("new"), 0644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+
+	tool := NewUseSkillTool(loader)
+	tool.SetSkillAccessStore(&fakeSkillAccess{skills: []store.SkillInfo{{
+		Slug:    "design-shtp",
+		Name:    "Thiết kế SHTP",
+		Source:  "managed",
+		BaseDir: authBase,
+		Path:    filepath.Join(authBase, "SKILL.md"),
+	}}})
+	ctx := store.WithAgentID(context.Background(), uuid.New())
+
+	result := tool.Execute(ctx, map[string]any{"name": "design-shtp"})
+	if result.IsError {
+		t.Fatalf("activation should succeed: %s", result.ForLLM)
+	}
+	var payload skills.ActivationPayload
+	if err := json.Unmarshal([]byte(result.ForLLM), &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if payload.BaseDir != authBase {
+		t.Errorf("base_dir: got %q, want authoritative %q", payload.BaseDir, authBase)
+	}
+	if !strings.Contains(payload.SkillMDContent, "# CURRENT VERSION") {
+		t.Errorf("expected current SKILL.md content; got %q", payload.SkillMDContent)
+	}
+	if strings.Contains(payload.SkillMDContent, "STALE") {
+		t.Errorf("resolved stale loader content instead of authoritative DB path")
+	}
+	if len(payload.AssetPaths) != 1 || !strings.HasSuffix(payload.AssetPaths[0], "club-shirt-green.jpg") {
+		t.Errorf("asset_paths: got %v, want [.../club-shirt-green.jpg]", payload.AssetPaths)
+	}
+}
+
 func TestSkillSearchInstructionUsesSlug(t *testing.T) {
 	loader := newLoaderWithSkill(t, "poster-tuyen-dung-an-nhien", "---\nname: Poster Tuyển Dụng An Nhiên\ndescription: Poster tuyển dụng\n---\n\n# Body", false)
 	tool := NewSkillSearchTool(loader)
