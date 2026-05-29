@@ -74,10 +74,15 @@ func newVaultReadTestTool(t *testing.T, docs ...*store.VaultDocument) (*VaultRea
 	return tool, ws
 }
 
-// writeFile creates a file under workspace with the given relative path.
+// testTenantSlug is the slug stamped into makeCtx; non-master vault files live
+// under <ws>/tenants/<slug>/ (tenant-root-relative model), so the write helpers
+// place fixtures there to match resolvePath.
+const testTenantSlug = "t"
+
+// writeFile creates a file under the tenant workspace with the given relative path.
 func writeFile(t *testing.T, ws, rel, content string) {
 	t.Helper()
-	full := filepath.Join(ws, filepath.FromSlash(rel))
+	full := filepath.Join(ws, "tenants", testTenantSlug, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -89,7 +94,7 @@ func writeFile(t *testing.T, ws, rel, content string) {
 // writeBytes creates a file with raw bytes (for binary content tests).
 func writeBytes(t *testing.T, ws, rel string, b []byte) {
 	t.Helper()
-	full := filepath.Join(ws, filepath.FromSlash(rel))
+	full := filepath.Join(ws, "tenants", testTenantSlug, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -102,6 +107,7 @@ func makeCtx(tenantID, agentID uuid.UUID) context.Context {
 	ctx := context.Background()
 	if tenantID != uuid.Nil {
 		ctx = store.WithTenantID(ctx, tenantID)
+		ctx = store.WithTenantSlug(ctx, testTenantSlug)
 	}
 	if agentID != uuid.Nil {
 		ctx = store.WithAgentID(ctx, agentID)
@@ -476,8 +482,13 @@ func TestVaultRead_SymlinkEscape_Denied(t *testing.T) {
 	if err := os.WriteFile(target, []byte("leak"), 0o644); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
-	// Symlink ws/escape.md → outside/secret.txt.
-	if err := os.Symlink(target, filepath.Join(ws, "escape.md")); err != nil {
+	// Symlink <ws>/tenants/<slug>/escape.md → outside/secret.txt (the tenant root
+	// is where resolvePath looks).
+	linkDir := filepath.Join(ws, "tenants", testTenantSlug)
+	if err := os.MkdirAll(linkDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(linkDir, "escape.md")); err != nil {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
 

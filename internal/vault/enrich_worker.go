@@ -341,7 +341,7 @@ func (w *EnrichWorker) processChunk(ctx context.Context, items []eventbus.VaultD
 			continue
 		}
 
-		fullPath := filepath.Join(item.Workspace, item.Path)
+		fullPath := filepath.Join(item.Workspace, StripTenantPrefix(item.Path))
 		raw, err := os.ReadFile(fullPath)
 		if err != nil {
 			slog.Warn("vault.enrich: read_file", "path", item.Path, "err", err)
@@ -544,7 +544,7 @@ func (w *EnrichWorker) syncWikilinks(ctx context.Context, p eventbus.VaultDocUps
 		return
 	}
 
-	fullPath := filepath.Join(p.Workspace, p.Path)
+	fullPath := filepath.Join(p.Workspace, StripTenantPrefix(p.Path))
 	f, err := os.Open(fullPath)
 	if err != nil {
 		return

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/vault"
@@ -23,6 +24,26 @@ type VaultInterceptor struct {
 // NewVaultInterceptor creates a new vault interceptor.
 func NewVaultInterceptor(vs store.VaultStore, workspace string, bus eventbus.DomainEventBus) *VaultInterceptor {
 	return &VaultInterceptor{vaultStore: vs, workspace: workspace, eventBus: bus}
+}
+
+// tenantRoot resolves the per-tenant workspace root for the current request, so
+// stored vault paths are tenant-root-relative (no "tenants/<slug>/" prefix) and
+// match what the rescan walker produces. Master tenant → global workspace.
+func (v *VaultInterceptor) tenantRoot(ctx context.Context) string {
+	return config.TenantWorkspace(v.workspace, store.TenantIDFromContext(ctx), store.TenantSlugFromContext(ctx))
+}
+
+// vaultRelPath returns the tenant-root-relative, slash-separated path for a
+// resolved file, or "" when it lies outside the tenant workspace (e.g. a missing
+// slug fell back to a UUID root that doesn't match the file — logged, then skip).
+func (v *VaultInterceptor) vaultRelPath(ctx context.Context, resolvedPath string) string {
+	root := v.tenantRoot(ctx)
+	rel, err := filepath.Rel(root, resolvedPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		slog.Debug("vault.rel_path_outside_tenant_root", "root", root, "path", resolvedPath)
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }
 
 // inferScopeFromContext returns scope, team_id, and whether agent_id should be set.
@@ -58,11 +79,10 @@ func (v *VaultInterceptor) AfterWrite(ctx context.Context, resolvedPath, content
 		return
 	}
 
-	relPath, err := filepath.Rel(v.workspace, resolvedPath)
-	if err != nil || strings.HasPrefix(relPath, "..") {
-		return // outside workspace
+	relPath := v.vaultRelPath(ctx, resolvedPath)
+	if relPath == "" {
+		return // outside tenant workspace
 	}
-	relPath = filepath.ToSlash(relPath)
 
 	tenantID := store.TenantIDFromContext(ctx).String()
 	agentID := store.AgentIDFromContext(ctx).String()
@@ -124,7 +144,7 @@ func (v *VaultInterceptor) AfterWrite(ctx context.Context, resolvedPath, content
 				AgentID:     eventAgentID,
 				Path:        relPath,
 				ContentHash: hash,
-				Workspace:   v.workspace,
+				Workspace:   v.tenantRoot(ctx),
 			},
 		})
 	}
@@ -138,11 +158,10 @@ func (v *VaultInterceptor) AfterWriteMedia(ctx context.Context, resolvedPath, su
 		return
 	}
 
-	relPath, err := filepath.Rel(v.workspace, resolvedPath)
-	if err != nil || strings.HasPrefix(relPath, "..") {
+	relPath := v.vaultRelPath(ctx, resolvedPath)
+	if relPath == "" {
 		return
 	}
-	relPath = filepath.ToSlash(relPath)
 
 	tenantID := store.TenantIDFromContext(ctx).String()
 	agentID := store.AgentIDFromContext(ctx).String()
@@ -209,7 +228,7 @@ func (v *VaultInterceptor) AfterWriteMedia(ctx context.Context, resolvedPath, su
 				AgentID:     eventAgentID,
 				Path:        relPath,
 				ContentHash: hash,
-				Workspace:   v.workspace,
+				Workspace:   v.tenantRoot(ctx),
 			},
 		})
 	}
@@ -221,11 +240,10 @@ func (v *VaultInterceptor) BeforeRead(ctx context.Context, resolvedPath string) 
 		return
 	}
 
-	relPath, err := filepath.Rel(v.workspace, resolvedPath)
-	if err != nil || strings.HasPrefix(relPath, "..") {
+	relPath := v.vaultRelPath(ctx, resolvedPath)
+	if relPath == "" {
 		return
 	}
-	relPath = filepath.ToSlash(relPath)
 
 	tenantID := store.TenantIDFromContext(ctx).String()
 	agentID := store.AgentIDFromContext(ctx).String()
@@ -253,4 +271,3 @@ func (v *VaultInterceptor) BeforeRead(ctx context.Context, resolvedPath string) 
 		}
 	}
 }
-
