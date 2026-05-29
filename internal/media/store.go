@@ -111,6 +111,8 @@ func ExtFromMime(mime string) string {
 		return ".wav"
 	case strings.HasPrefix(mime, "application/pdf"):
 		return ".pdf"
+	case mime == "application/msword":
+		return ".doc"
 	case mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
 		return ".docx"
 	case mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":

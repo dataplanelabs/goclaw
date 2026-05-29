@@ -207,8 +207,12 @@ func (l *Loop) persistMedia(sessionKey string, files []bus.MediaFile, workspace 
 	var refs []providers.MediaRef
 	for _, f := range files {
 		mime := f.MimeType
-		if mime == "" {
-			mime = mimeFromExt(filepath.Ext(f.Path))
+		if mime == "" || mime == "application/octet-stream" {
+			if inferred := documentMIMEFromFilename(f.Filename); inferred != "" {
+				mime = inferred
+			} else if mime == "" {
+				mime = mimeFromExt(filepath.Ext(f.Path))
+			}
 		}
 		kind := mediaKindFromMime(mime)
 
@@ -543,6 +547,27 @@ func mediaKindFromMime(mime string) string {
 		return "audio"
 	default:
 		return "document"
+	}
+}
+
+func documentMIMEFromFilename(filename string) string {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".pdf":
+		return "application/pdf"
+	case ".doc":
+		return "application/msword"
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".xls":
+		return "application/vnd.ms-excel"
+	case ".xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case ".ppt":
+		return "application/vnd.ms-powerpoint"
+	case ".pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	default:
+		return ""
 	}
 }
 

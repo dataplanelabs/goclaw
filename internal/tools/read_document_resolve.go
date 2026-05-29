@@ -120,7 +120,9 @@ func mimeFromDocExt(ext string) string {
 	switch strings.ToLower(ext) {
 	case ".pdf":
 		return "application/pdf"
-	case ".doc", ".docx":
+	case ".doc":
+		return "application/msword"
+	case ".docx":
 		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	case ".xls", ".xlsx":
 		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

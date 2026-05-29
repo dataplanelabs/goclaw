@@ -37,6 +37,7 @@ func TestPersistMedia_NamingScheme(t *testing.T) {
 		mime       string
 		wantSlug   string // prefix (stem) expected in disk name; empty means UUID fallback
 		wantExtPat string // extension regex on disk (lowercase)
+		wantMime   string
 	}
 
 	cases := []tc{
@@ -55,6 +56,15 @@ func TestPersistMedia_NamingScheme(t *testing.T) {
 			mime:       "application/octet-stream", // bypass image sanitize path
 			wantSlug:   "猫の写真",
 			wantExtPat: `\.bin`,
+		},
+		{
+			name:       "docx_octet_stream_infers_from_original_filename",
+			filename:   "Tai lieu kiem thu mau.docx",
+			content:    "fake docx bytes",
+			mime:       "application/octet-stream",
+			wantSlug:   "tai-lieu-kiem-thu-mau",
+			wantExtPat: `\.docx`,
+			wantMime:   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		},
 		{
 			name:       "empty_filename_uuid_fallback",
@@ -85,6 +95,9 @@ func TestPersistMedia_NamingScheme(t *testing.T) {
 			}}, workspace)
 			if len(refs) != 1 {
 				t.Fatalf("got %d refs, want 1", len(refs))
+			}
+			if c.wantMime != "" && refs[0].MimeType != c.wantMime {
+				t.Fatalf("mime = %q, want %q", refs[0].MimeType, c.wantMime)
 			}
 			base := filepath.Base(refs[0].Path)
 			if c.wantSlug == "" {
