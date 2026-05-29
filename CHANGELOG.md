@@ -6,6 +6,13 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Storage tree no longer double-nests an expanded folder's contents** — opening
+  a deep folder (e.g. `…/generated/2026-05-29`) rendered its files under a
+  duplicated path chain (`…/2026-05-29/zalo-shtp/group_…/generated/2026-05-29/…`).
+  `mergeSubtree` grafted the rebuilt full ancestor chain (the lazy-loaded children
+  carry full paths) under the target node; it now grafts only that folder's direct
+  descendants. Disk layout was always correct — this was display-only.
+
 - **`create_image` no longer emits a false "provider accepts at most 4
   references" note for custom-named Codex/OpenAI providers** — the over-cap note
   computed the cap from the provider *instance name* (e.g. `codex-cnb`), which
