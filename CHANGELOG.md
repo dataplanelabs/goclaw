@@ -6,6 +6,14 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **TTS fallback no longer starves on a slow primary** — when the primary
+  provider (e.g. CPU VieNeu) ran long, it consumed the entire TTS deadline and
+  the fast Edge fallback inherited an already-expired context, so it failed
+  instantly without ever running — long texts produced no audio at all. Each
+  provider attempt now gets its own slice of the remaining deadline
+  (`remaining / providers-left`), so the fallback always runs with a fresh,
+  fair budget.
+
 - **Zalo voice messages now play on mobile, not just desktop** — TTS voice
   bubbles were silent on Zalo Android/iOS because we sent M4A (MP4 container) at
   16 kHz. Zalo's own voice messages are raw **ADTS AAC** (AAC-LC, mono,
