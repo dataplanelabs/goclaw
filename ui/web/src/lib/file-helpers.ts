@@ -8,6 +8,7 @@ export interface TreeNode {
   protected?: boolean;
   label?: string; // human display name (e.g. contact/group name) for id folders
   kind?: string; // peer kind: "direct" | "group"
+  modTime?: string; // RFC3339 last-modified, for relative-time display
   children: TreeNode[];
 }
 
@@ -68,6 +69,7 @@ interface TreeInput {
   protected?: boolean;
   label?: string;
   kind?: string;
+  modTime?: string;
 }
 
 export function buildTree(files: TreeInput[]): TreeNode[] {
@@ -123,6 +125,7 @@ export function buildTree(files: TreeInput[]): TreeNode[] {
       protected: f.protected,
       label: f.label,
       kind: f.kind,
+      modTime: f.modTime,
       children: [],
     };
 
@@ -133,10 +136,14 @@ export function buildTree(files: TreeInput[]): TreeNode[] {
     attachNode(node);
   }
 
+  // Unresolved bare-id folders (numeric, no contact label) sink below named ones.
+  const isBareId = (n: TreeNode) => !n.label && /^-?\d+$/.test(n.name);
   const sortChildren = (nodes: TreeNode[]) => {
     nodes.sort((a, b) => {
       if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-      return a.name.localeCompare(b.name);
+      const aId = isBareId(a), bId = isBareId(b);
+      if (aId !== bId) return aId ? 1 : -1;
+      return (a.label || a.name).localeCompare(b.label || b.name);
     });
     for (const n of nodes) {
       if (n.children.length > 0) sortChildren(n.children);

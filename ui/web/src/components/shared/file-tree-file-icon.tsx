@@ -25,7 +25,7 @@ export function FileIcon({ name }: { name: string }) {
   if (ext === "md" || ext === "mdx") return <FileText className={`${cls} text-blue-500`} />;
   if (ext === "json" || ext === "json5") return <FileJson2 className={`${cls} text-yellow-600`} />;
   if (ext === "yaml" || ext === "yml" || ext === "toml") return <FileCog className={`${cls} text-orange-500`} />;
-  if (ext === "csv") return <FileSpreadsheet className={`${cls} text-green-600`} />;
+  if (ext === "csv" || ext === "xlsx" || ext === "xls" || ext === "ods") return <FileSpreadsheet className={`${cls} text-green-600`} />;
   if (ext === "sh" || ext === "bash" || ext === "zsh") return <FileTerminal className={`${cls} text-lime-600`} />;
   if (IMAGE_EXTENSIONS.has(ext)) return <FileImage className={`${cls} text-emerald-500`} />;
   if (ext === "mp4" || ext === "webm" || ext === "mov" || ext === "avi" || ext === "mkv") return <FileVideo className={`${cls} text-pink-500`} />;
