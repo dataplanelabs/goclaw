@@ -49,6 +49,9 @@ func (s stubConfigPermissionStore) List(context.Context, uuid.UUID, string, stri
 func (s stubConfigPermissionStore) ListFileWriters(context.Context, uuid.UUID, string) ([]store.ConfigPermission, error) {
 	return nil, nil
 }
+func (s stubConfigPermissionStore) ListEffectiveFileWriters(context.Context, uuid.UUID, string) ([]store.ConfigPermission, error) {
+	return nil, nil
+}
 
 func (s *stubAgentStore) GetAgentContextFiles(_ context.Context, _ uuid.UUID) ([]store.AgentContextFileData, error) {
 	s.agentCallsN.Add(1)

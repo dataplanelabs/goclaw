@@ -222,6 +222,65 @@ func (s *SQLiteConfigPermissionStore) ListFileWriters(ctx context.Context, agent
 	return perms, nil
 }
 
+// ListEffectiveFileWriters: see store.ConfigPermissionStore. Includes wildcard
+// scope/config_type grants for group/guild scopes so the roster matches CheckPermission.
+func (s *SQLiteConfigPermissionStore) ListEffectiveFileWriters(ctx context.Context, agentID uuid.UUID, scope string) ([]store.ConfigPermission, error) {
+	tid := store.TenantIDFromContext(ctx)
+	if tid == uuid.Nil {
+		tid = store.MasterTenantID
+	}
+	cacheKey := "eff:" + tid.String() + ":" + agentID.String() + ":" + scope
+
+	s.fwMu.RLock()
+	if entry, ok := s.fwCache[cacheKey]; ok && time.Since(entry.fetched) < permCacheTTL {
+		s.fwMu.RUnlock()
+		return entry.rows, nil
+	}
+	s.fwMu.RUnlock()
+
+	tClause, tArgs, err := scopeClause(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	scopePred, typePred := "scope = ?", "config_type = 'file_writer'"
+	if strings.HasPrefix(scope, "group:") || strings.HasPrefix(scope, "guild:") {
+		scopePred, typePred = "scope IN (?, 'group:*', '*')", "config_type IN ('file_writer', '*')"
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, agent_id, scope, config_type, user_id, permission, granted_by, metadata, created_at, updated_at
+		 FROM agent_config_permissions
+		 WHERE agent_id = ? AND `+typePred+` AND `+scopePred+` AND permission = 'allow'`+tClause+`
+		 ORDER BY created_at`,
+		append([]any{agentID, scope}, tArgs...)...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	perms, err := scanConfigPermissions(rows)
+	if err != nil {
+		return nil, err
+	}
+	// dedupe by user_id (a user may match exact + wildcard)
+	seen := make(map[string]bool, len(perms))
+	out := perms[:0]
+	for _, p := range perms {
+		if !seen[p.UserID] {
+			seen[p.UserID] = true
+			out = append(out, p)
+		}
+	}
+	perms = out
+
+	s.fwMu.Lock()
+	s.fwCache[cacheKey] = fwCacheEntry{rows: perms, fetched: time.Now()}
+	s.fwMu.Unlock()
+
+	return perms, nil
+}
+
 func scanConfigPermissions(rows *sql.Rows) ([]store.ConfigPermission, error) {
 	var perms []store.ConfigPermission
 	for rows.Next() {

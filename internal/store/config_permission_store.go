@@ -108,7 +108,11 @@ type ConfigPermissionStore interface {
 	// List returns permissions for agentID+configType. If scope != "" only rows with that scope are returned.
 	List(ctx context.Context, agentID uuid.UUID, configType, scope string) ([]ConfigPermission, error)
 	// ListFileWriters returns cached file_writer allow permissions for a given agentID+scope (hot-path).
+	// Exact-scope match only — used by channel writer-management gates (/addwriter).
 	ListFileWriters(ctx context.Context, agentID uuid.UUID, scope string) ([]ConfigPermission, error)
+	// ListEffectiveFileWriters is ListFileWriters plus wildcard-scope (group:*) and
+	// wildcard config_type (*) allow grants — the roster CheckPermission would allow.
+	ListEffectiveFileWriters(ctx context.Context, agentID uuid.UUID, scope string) ([]ConfigPermission, error)
 }
 
 // CheckFileWriterPermission returns an error if the caller is in a group context

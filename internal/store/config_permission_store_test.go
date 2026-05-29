@@ -35,6 +35,9 @@ func (s *decisionConfigPermStore) List(context.Context, uuid.UUID, string, strin
 func (s *decisionConfigPermStore) ListFileWriters(context.Context, uuid.UUID, string) ([]ConfigPermission, error) {
 	return nil, nil
 }
+func (s *decisionConfigPermStore) ListEffectiveFileWriters(context.Context, uuid.UUID, string) ([]ConfigPermission, error) {
+	return nil, nil
+}
 
 func TestValidConfigType(t *testing.T) {
 	for _, configType := range []string{

@@ -72,6 +72,9 @@ func (f *fakeConfigPermStore) List(_ context.Context, agentID uuid.UUID, configT
 func (f *fakeConfigPermStore) ListFileWriters(ctx context.Context, agentID uuid.UUID, scope string) ([]store.ConfigPermission, error) {
 	return f.List(ctx, agentID, store.ConfigTypeFileWriter, scope)
 }
+func (f *fakeConfigPermStore) ListEffectiveFileWriters(ctx context.Context, agentID uuid.UUID, scope string) ([]store.ConfigPermission, error) {
+	return f.List(ctx, agentID, store.ConfigTypeFileWriter, scope)
+}
 
 // newTestChannel builds a minimal Feishu Channel suitable for writer-command
 // unit tests: BaseChannel with a UUID agent key, stub lark client pointing

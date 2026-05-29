@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -104,23 +105,49 @@ func (l *Loop) buildGroupWriterPrompt(ctx context.Context, groupID, senderID str
 	}
 
 	numericID := strings.SplitN(senderID, "|", 2)[0]
-	isWriter := false
-	var senderLabel string
-	for _, w := range writers {
-		if w.UserID == numericID {
-			isWriter = true
-			senderLabel = channels.WriterLabel(w.Metadata, w.UserID)
-			break
-		}
+
+	// Wildcard-aware decision via the same check the runtime gate uses, so a
+	// file_writer/`*` @ group:* grant is honored. Fail open: a store error must
+	// not inject a false refusal.
+	isWriter, permErr := l.configPermStore.CheckPermission(ctx, l.agentUUID, groupID, store.ConfigTypeFileWriter, numericID)
+	if permErr != nil {
+		slog.Warn("buildGroupWriterPrompt: file-writer permission check failed; skipping gate (fail-open)",
+			"group", groupID, "sender", numericID, "error", permErr)
+		return "", files
 	}
 
-	// Build writer display names from metadata JSON. Rows with empty metadata
-	// (legacy /) fall back to "User <id>" so the LLM sees a complete roster —
-	// omitting a user silently would make the prompt inconsistent with the
-	// permission check below and confuse the model about who can write.
+	// Roster = exact-scope writers ∪ effective (wildcard) writers, deduped — so the
+	// displayed list matches who CheckPermission would allow.
+	roster := writers
+	if eff, effErr := l.configPermStore.ListEffectiveFileWriters(ctx, l.agentUUID, groupID); effErr == nil {
+		roster = append(append([]store.ConfigPermission{}, writers...), eff...)
+	}
 	var names []string
-	for _, w := range writers {
-		names = append(names, channels.WriterLabel(w.Metadata, w.UserID))
+	var senderLabel string
+	seen := make(map[string]bool, len(roster)+1)
+	senderInRoster := false
+	for _, w := range roster {
+		if seen[w.UserID] {
+			continue
+		}
+		seen[w.UserID] = true
+		label := channels.WriterLabel(w.Metadata, w.UserID)
+		names = append(names, label)
+		if w.UserID == numericID {
+			senderInRoster = true
+			senderLabel = label
+		}
+	}
+	// A writer not individually listed (e.g. a user_id='*' grant) still gets named.
+	if isWriter && !senderInRoster {
+		if senderLabel == "" {
+			if n := store.SenderNameFromContext(ctx); n != "" {
+				senderLabel = n
+			} else {
+				senderLabel = "User " + numericID
+			}
+		}
+		names = append(names, senderLabel)
 	}
 
 	var sb strings.Builder
