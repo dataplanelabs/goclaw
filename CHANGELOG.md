@@ -6,6 +6,22 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- **Storage browser previews `.xlsx` spreadsheets** — selecting an Excel file
+  renders its sheets as a table (sheet tabs, header row, 200-row cap) instead of
+  an unsupported-file placeholder. The parser is dynamically imported so it
+  stays out of the main bundle.
+
+- **Storage tree shows last-modified time + a spreadsheet icon** — file rows now
+  display `<size> · <relative time>` (e.g. `16.3 KB · 2d ago`), and
+  `.xlsx`/`.xls`/`.ods` get the green spreadsheet icon. Folders are sorted by
+  their resolved display name, with unresolved bare-id folders sorted last.
+
+- **Richer inbound upload filenames** — media received from channels is now saved
+  as `{timestamp}_{sender}_{original-or-kind}_{contenthash}.ext` (e.g.
+  `20260529-184710_nguyen-nhat-duy_promo_a1b2c3d4.jpg`) instead of an opaque
+  `goclaw-zca-…` name — chronological, attributable, and identical re-uploads
+  dedup onto one file (full-hash verified). Existing files are unaffected.
+
 - **Vault tree shows human-readable names for top-level id folders** — opaque
   channel/group/user id folders in the Knowledge Vault tree now display the
   contact/group display name (resolved from `channel_contacts`, tenant-scoped)
