@@ -6,6 +6,18 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **`create_image` now resolves reference images from any in-workspace path** —
+  a `reference_image_id` naming an on-disk image (a user upload in `.uploads/`, a
+  portrait the assistant organized into `portraits/`, or an absolute workspace
+  path) previously "did not resolve" because only the in-conversation media set
+  was consulted, so posters were generated with the wrong face/logo while the
+  tool still reported success. Resolution now mirrors `read_image` (workspace
+  boundary + skill dirs, secrets denied), enumerates the session `.uploads/`
+  folder so uploads that aged out of the context window still resolve, and
+  returns an actionable error **before** generation when a ref genuinely can't be
+  used — missing → fix the id or ask the user to resend; too large or unsupported
+  → recompress/convert. Per-image cap aligned to `read_image` (10MB).
+
 - **Group file writers granted "All Groups" are no longer wrongly refused** — a
   user granted `file_writer` (or `*`) at the `group:*` (All Groups) scope was
   told by the bot it had no write permission, because the system-prompt gate used
