@@ -41,11 +41,24 @@ var imageGenModelDefaults = map[string]string{
 
 // CreateImageTool generates images using an image generation API.
 type CreateImageTool struct {
-	registry  *providers.Registry
-	vaultIntc *VaultInterceptor
+	registry        *providers.Registry
+	vaultIntc       *VaultInterceptor
+	allowedPrefixes []string // extra read-allowed prefixes (skills dirs, user paths)
+	deniedPrefixes  []string // workspace-relative prefixes to reject (memory.db, config.json)
 }
 
 func (t *CreateImageTool) SetVaultInterceptor(v *VaultInterceptor) { t.vaultIntc = v }
+
+// AllowPaths / DenyPaths give create_image the same workspace path-loading reach
+// as read_image, so reference_image_ids can name any in-workspace image the LLM
+// organized (.uploads/, portraits/, …) — wired identically at startup.
+func (t *CreateImageTool) AllowPaths(prefixes ...string) {
+	t.allowedPrefixes = append(t.allowedPrefixes, prefixes...)
+}
+
+func (t *CreateImageTool) DenyPaths(prefixes ...string) {
+	t.deniedPrefixes = append(t.deniedPrefixes, prefixes...)
+}
 
 func NewCreateImageTool(registry *providers.Registry) *CreateImageTool {
 	return &CreateImageTool{registry: registry}
@@ -78,7 +91,7 @@ func (t *CreateImageTool) Parameters() map[string]any {
 			"reference_image_ids": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Optional. Reference images for face/composition/style preservation and exact logos. Accepts media IDs from <media:image id='...'> tags, file paths from path='...' attrs, skill asset paths returned by use_skill, or the bare filename (basename of the path). Looks across the current turn, user-uploaded history, and activated skill assets. First entry is the primary reference. Max 4 (provider-aware: Gemini 4, OpenRouter 4, OpenAI gpt-image-* 4, MiniMax 1 — character only). DashScope and BytePlus drop refs silently. Animated GIFs and SVG not supported.",
+				"description": "Optional. Reference images for face/composition/style preservation and exact logos. Accepts media IDs from <media:image id='...'> tags, file paths from path='...' attrs, skill asset paths returned by use_skill, or the bare filename (basename of the path). Looks across the current turn, user-uploaded history, and activated skill assets. First entry is the primary reference. Max 4 (provider-aware: Gemini 4, OpenRouter 4, OpenAI gpt-image-* 4, MiniMax 1 — character only). DashScope and BytePlus drop refs silently. Animated GIFs and SVG not supported. If any id cannot be resolved, the tool returns an error (nothing is generated) and lists the references you can use — correct the id or ask the user to resend the image.",
 			},
 		},
 		"required": []string{"prompt"},
@@ -106,20 +119,30 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 	filenameHint, _ := args["filename_hint"].(string)
 
 	var refImages []providers.ImageContent
-	var unresolvedRefIDs []string
+	var trimmedRefIDs []string
 	var requestedRefIDs []string
-	availableRefs := availableImageRefs(ctx)
 	_, explicitRefIDs := args["reference_image_ids"]
 	if idsAny, ok := args["reference_image_ids"]; ok {
 		ids := toStringSlice(idsAny)
 		if len(ids) > 0 {
-			refImages, unresolvedRefIDs = resolveRefImageIDsDetailed(ctx, ids, availableRefs, maxResolvedRefImages)
+			availableRefs := t.appendWorkspaceImageRefs(ctx, availableImageRefs(ctx), ids)
+			var missingRefIDs, unusableRefIDs []string
+			refImages, missingRefIDs, unusableRefIDs, trimmedRefIDs = resolveRefImageIDsDetailed(ids, availableRefs, maxResolvedRefImages)
 			requestedRefIDs = ids
 			slog.Info("create_image: reference images resolved",
-				"requested", len(ids), "loaded", len(refImages), "unresolved", len(unresolvedRefIDs))
+				"requested", len(ids), "loaded", len(refImages), "missing", len(missingRefIDs),
+				"unusable", len(unusableRefIDs), "trimmed", len(trimmedRefIDs))
 
-			if len(refImages) == 0 {
+			// Fail fast on unresolved refs: generating from the resolved subset
+			// yields the wrong face/logo (trace 019e7256). Trimmed ≠ error.
+			if len(refImages) == 0 && len(unusableRefIDs) == 0 {
 				return ErrorResult(formatRefResolveError(ids, availableRefs))
+			}
+			if len(missingRefIDs) > 0 {
+				return ErrorResult(formatRefPartialResolveError(missingRefIDs, availableRefs))
+			}
+			if len(unusableRefIDs) > 0 {
+				return ErrorResult(formatRefUnusableError(unusableRefIDs))
 			}
 		}
 	}
@@ -202,8 +225,8 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 			"the image is NOT auto-delivered. Pass the path EXACTLY as shown.",
 		imagePath, imagePath,
 	)
-	if len(unresolvedRefIDs) > 0 {
-		forLLM += formatRefPartialResolveNote(unresolvedRefIDs, MediaImageRefsFromCtx(ctx))
+	if len(trimmedRefIDs) > 0 {
+		forLLM += formatRefTrimmedNote(trimmedRefIDs)
 	}
 	if degradedReason != "" {
 		forLLM += formatRefsDroppedNote(degradedReason, requestedRefIDs,
@@ -818,8 +841,9 @@ const (
 	// call functions cap further (MiniMax 1, DashScope 3, OpenAI 16).
 	maxRefImages = 4
 	// maxRefImageBytes is the per-image byte cap before base64 expansion.
-	// 5MB matches read_image's image-load expectations and provider edit endpoints.
-	maxRefImageBytes = 5 * 1024 * 1024
+	// 10MB matches read_image's maxImageFileBytes so an image read_image accepts
+	// can also be used as a reference.
+	maxRefImageBytes = 10 * 1024 * 1024
 	// maxRefImagesAggregateBytes bounds the total reference payload to keep
 	// multipart/JSON bodies sane when many refs supplied.
 	maxRefImagesAggregateBytes = 20 * 1024 * 1024
@@ -871,20 +895,118 @@ func toStringSlice(v any) []string {
 	return nil
 }
 
+// availableImageRefs is the single set of references create_image can resolve:
+// activated skill assets, user uploads still in the conversation window, and
+// every image on disk in the session .uploads/ folder (so uploads that aged out
+// of the window still resolve — trace 019e7256). Skill refs first so user
+// uploads win basename collisions in the lookup maps; deduped by path.
 func availableImageRefs(ctx context.Context) []providers.MediaRef {
-	skillRefs := skillAssetImageRefsFromCtx(ctx)
-	mediaRefs := MediaImageRefsFromCtx(ctx)
-	if len(skillRefs) == 0 {
-		return mediaRefs
+	out := append([]providers.MediaRef(nil), skillAssetImageRefsFromCtx(ctx)...)
+	out = append(out, MediaImageRefsFromCtx(ctx)...)
+	out = append(out, uploadsImageRefs(ToolWorkspaceFromCtx(ctx))...)
+	return dedupRefsByPath(out)
+}
+
+// appendWorkspaceImageRefs resolves path-type ref ids (absolute or containing a
+// separator) against the workspace boundary the same way read_image does, so the
+// LLM can reference any in-workspace image it organized — e.g. a portrait it
+// copied from .uploads/ into portraits/ (trace 019e728d). Bare ids/basenames are
+// left to the in-context lookup + .uploads/ enumeration.
+func (t *CreateImageTool) appendWorkspaceImageRefs(ctx context.Context, refs []providers.MediaRef, ids []string) []providers.MediaRef {
+	workspace := ToolWorkspaceFromCtx(ctx)
+	if workspace == "" {
+		return refs
 	}
-	if len(mediaRefs) == 0 {
-		return skillRefs
+	covered := make(map[string]bool, len(refs))
+	for _, r := range refs {
+		covered[r.ID] = true
+		if r.Path != "" {
+			covered[r.Path] = true
+		}
 	}
-	out := make([]providers.MediaRef, 0, len(skillRefs)+len(mediaRefs))
-	// Put skill refs first so user-uploaded refs win basename collisions in
-	// resolveRefImageIDsDetailed's lookup maps.
-	out = append(out, skillRefs...)
-	out = append(out, mediaRefs...)
+	allowed := allowedWithTeamWorkspace(ctx, t.allowedPrefixes)
+	for _, id := range ids {
+		if id == "" || covered[id] {
+			continue
+		}
+		if !filepath.IsAbs(id) && !strings.ContainsRune(id, '/') {
+			continue
+		}
+		if !allowedRefMIMEs[imageMIMEFromPath(id)] {
+			continue
+		}
+		resolved, err := resolvePathWithAllowed(id, workspace, effectiveRestrict(ctx, true), allowed)
+		if err != nil {
+			continue
+		}
+		if err := checkDeniedPath(resolved, workspace, t.deniedPrefixes); err != nil {
+			continue
+		}
+		if covered[resolved] {
+			continue // same file already in the ref set (e.g. via .uploads/ enumeration)
+		}
+		if fi, err := os.Stat(resolved); err != nil || fi.IsDir() {
+			continue
+		}
+		refs = append(refs, providers.MediaRef{ID: id, Path: resolved, MimeType: imageMIMEFromPath(resolved), Kind: "image"})
+		covered[id] = true
+		covered[resolved] = true
+	}
+	return refs
+}
+
+// uploadsImageRefs lists image files in <workspace>/.uploads/ as MediaRefs.
+// Symlink-resolved, scoped to .uploads/, hardlinks rejected — same guards as
+// resolvePath, since .uploads/ is agent-writable.
+func uploadsImageRefs(workspace string) []providers.MediaRef {
+	if workspace == "" {
+		return nil
+	}
+	uploadsReal, err := filepath.EvalSymlinks(filepath.Join(workspace, ".uploads"))
+	if err != nil {
+		return nil
+	}
+	entries, err := os.ReadDir(uploadsReal)
+	if err != nil {
+		return nil
+	}
+	var out []providers.MediaRef
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		mime := imageMIMEFromPath(e.Name())
+		if !allowedRefMIMEs[mime] {
+			continue
+		}
+		real, err := filepath.EvalSymlinks(filepath.Join(uploadsReal, e.Name()))
+		if err != nil || !isPathInside(real, uploadsReal) || checkHardlink(real) != nil {
+			continue
+		}
+		out = append(out, providers.MediaRef{ID: e.Name(), Path: real, MimeType: mime, Kind: "image"})
+	}
+	return out
+}
+
+// dedupRefsByPath keeps the first ref per Path (or ID when Path is empty),
+// preserving caller order.
+func dedupRefsByPath(refs []providers.MediaRef) []providers.MediaRef {
+	if len(refs) <= 1 {
+		return refs
+	}
+	seen := make(map[string]bool, len(refs))
+	out := make([]providers.MediaRef, 0, len(refs))
+	for _, r := range refs {
+		key := r.Path
+		if key == "" {
+			key = r.ID
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, r)
+	}
 	return out
 }
 
@@ -949,12 +1071,18 @@ func formatMissingSkillAssetRefsError(skillRefs []providers.MediaRef) string {
 		strings.Join(lines, "\n"))
 }
 
-func resolveRefImageIDs(ctx context.Context, ids []string, refs []providers.MediaRef, maxRefs int) []providers.ImageContent {
-	out, _ := resolveRefImageIDsDetailed(ctx, ids, refs, maxRefs)
+func resolveRefImageIDs(_ context.Context, ids []string, refs []providers.MediaRef, maxRefs int) []providers.ImageContent {
+	out, _, _, _ := resolveRefImageIDsDetailed(ids, refs, maxRefs)
 	return out
 }
 
-func resolveRefImageIDsDetailed(_ context.Context, ids []string, refs []providers.MediaRef, maxRefs int) ([]providers.ImageContent, []string) {
+// resolveRefImageIDsDetailed resolves reference IDs (by id, path, or basename)
+// against the available ref set. Buckets: missing = not found / file gone (fix
+// the id or ask the user to resend); unusable = present but can't be sent as-is
+// (too large or unsupported format → recompress/convert); trimmed = dropped by
+// the resolution/byte cap (non-blocking note). Every distinct id lands in
+// exactly one bucket (or is a dup) so the caller's fail-fast stays sound.
+func resolveRefImageIDsDetailed(ids []string, refs []providers.MediaRef, maxRefs int) (out []providers.ImageContent, missing, unusable, trimmed []string) {
 	refByID := make(map[string]providers.MediaRef, len(refs))
 	refByPath := make(map[string]providers.MediaRef, len(refs))
 	refByBase := make(map[string]providers.MediaRef, len(refs))
@@ -966,8 +1094,8 @@ func resolveRefImageIDsDetailed(_ context.Context, ids []string, refs []provider
 		}
 	}
 	seen := make(map[string]bool, len(ids))
-	out := make([]providers.ImageContent, 0, len(ids))
-	var unresolved []string
+	seenPath := make(map[string]bool, len(ids))
+	out = make([]providers.ImageContent, 0, len(ids))
 	var aggregateBytes int64
 	for _, id := range ids {
 		if seen[id] {
@@ -977,7 +1105,7 @@ func resolveRefImageIDsDetailed(_ context.Context, ids []string, refs []provider
 		seen[id] = true
 		if len(out) >= maxRefs {
 			slog.Warn("create_image: reference images truncated at cap", "cap", maxRefs, "requested", len(ids))
-			unresolved = append(unresolved, id)
+			trimmed = append(trimmed, id)
 			continue
 		}
 		ref, ok := refByID[id]
@@ -990,50 +1118,82 @@ func resolveRefImageIDsDetailed(_ context.Context, ids []string, refs []provider
 		}
 		if !ok {
 			slog.Warn("create_image: reference image not found by id/path/basename", "key", id)
-			unresolved = append(unresolved, id)
+			missing = append(missing, id)
 			continue
 		}
+		if ref.Path != "" && seenPath[ref.Path] {
+			continue // same file via another id form — already categorized/loaded
+		}
 		if !allowedRefMIMEs[ref.MimeType] {
-			slog.Warn("create_image: skipping reference image with unsupported MIME", "id", id, "mime", ref.MimeType)
-			unresolved = append(unresolved, id)
+			slog.Warn("create_image: reference image has unsupported MIME", "id", id, "mime", ref.MimeType)
+			unusable = append(unusable, id)
 			continue
 		}
 		if ref.Path == "" {
 			slog.Warn("create_image: reference image has no path", "id", id)
-			unresolved = append(unresolved, id)
+			missing = append(missing, id)
 			continue
 		}
 		fi, err := os.Stat(ref.Path)
 		if err != nil {
 			slog.Warn("create_image: failed to stat reference image", "id", id, "error", err)
-			unresolved = append(unresolved, id)
+			missing = append(missing, id)
 			continue
 		}
 		if fi.Size() > maxRefImageBytes {
 			slog.Warn("create_image: reference image exceeds per-image byte cap",
 				"id", id, "size", fi.Size(), "cap", maxRefImageBytes)
-			unresolved = append(unresolved, id)
+			unusable = append(unusable, id)
 			continue
 		}
 		if aggregateBytes+fi.Size() > maxRefImagesAggregateBytes {
-			slog.Warn("create_image: aggregate reference image bytes exceeded; stopping",
-				"accumulated", aggregateBytes, "cap", maxRefImagesAggregateBytes)
-			unresolved = append(unresolved, id)
-			break
+			// continue (not break) so every remaining id is still categorized —
+			// a break left trailing ids in no bucket, defeating the fail-fast.
+			slog.Warn("create_image: reference image skipped; aggregate byte cap reached",
+				"id", id, "accumulated", aggregateBytes, "cap", maxRefImagesAggregateBytes)
+			trimmed = append(trimmed, id)
+			continue
 		}
 		data, err := os.ReadFile(ref.Path)
 		if err != nil {
 			slog.Warn("create_image: failed to read reference image", "id", id, "error", err)
-			unresolved = append(unresolved, id)
+			unusable = append(unusable, id)
 			continue
 		}
+		seenPath[ref.Path] = true
 		aggregateBytes += int64(len(data))
 		out = append(out, providers.ImageContent{
 			MimeType: ref.MimeType,
 			Data:     base64.StdEncoding.EncodeToString(data),
 		})
 	}
-	return out, unresolved
+	return out, missing, unusable, trimmed
+}
+
+// maxListedRefs bounds how many available refs an error lists (token budget);
+// .uploads/ can hold many files. Truncation is flagged with a resend hint.
+const maxListedRefs = 30
+
+// formatAvailableRefLines renders available refs as id/path/basename/mime lines,
+// capped at maxListedRefs.
+func formatAvailableRefLines(available []providers.MediaRef) string {
+	if len(available) == 0 {
+		return "  (none currently available — ask the user to resend the image)"
+	}
+	n := len(available)
+	shown := available
+	if n > maxListedRefs {
+		shown = available[:maxListedRefs]
+	}
+	lines := make([]string, 0, len(shown))
+	for _, r := range shown {
+		lines = append(lines, fmt.Sprintf("  - id=%q path=%q basename=%q mime=%s",
+			r.ID, r.Path, filepath.Base(r.Path), r.MimeType))
+	}
+	if n > maxListedRefs {
+		lines = append(lines, fmt.Sprintf("  ... (+%d more; if the one you need isn't shown, ask the user to resend it)", n-maxListedRefs))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func formatRefResolveError(requested []string, available []providers.MediaRef) string {
@@ -1042,25 +1202,36 @@ func formatRefResolveError(requested []string, available []providers.MediaRef) s
 			"reference_image_ids %v could not be resolved — no user-uploaded images or activated skill image assets are visible in this conversation. Ask the user to attach the image, or call use_skill if the reference should come from a skill asset, then retry. Do NOT pass sandbox paths (e.g. /tmp/foo.png) or paths from your code-exec tools — only IDs/paths from <media:image id='...' path='...'> tags or use_skill asset_paths will resolve.",
 			requested)
 	}
-	lines := make([]string, 0, len(available))
-	for _, r := range available {
-		lines = append(lines, fmt.Sprintf("  - id=%q path=%q basename=%q mime=%s",
-			r.ID, r.Path, filepath.Base(r.Path), r.MimeType))
-	}
 	return fmt.Sprintf(
-		"reference_image_ids %v could not be resolved (looked up by id, path, basename). Available user-uploaded refs and activated skill image assets in this conversation:\n%s\nRetry with one of the id/path/basename values above — do NOT pass sandbox paths (e.g. /tmp/...) or paths from your code-exec tools.",
-		requested, strings.Join(lines, "\n"))
+		"reference_image_ids %v could not be resolved (looked up by id, path, basename, and the session .uploads/ folder). Available user-uploaded refs and activated skill image assets:\n%s\nRetry with one of the id/path/basename values above — do NOT pass sandbox paths (e.g. /tmp/...) or paths from your code-exec tools.",
+		requested, formatAvailableRefLines(available))
 }
 
-func formatRefPartialResolveNote(unresolved []string, available []providers.MediaRef) string {
-	if len(unresolved) == 0 {
+// formatRefPartialResolveError lists the available refs (same source the
+// resolver uses — skill assets, recent uploads, and the .uploads/ folder) and
+// tells the LLM to fix the id or ask the user to resend.
+func formatRefPartialResolveError(missing []string, available []providers.MediaRef) string {
+	return fmt.Sprintf(
+		"reference_image_ids %v could not be resolved (looked up by id, path, basename, and the session .uploads/ folder). The other references resolved, but generating without these would produce the wrong face/logo/subject — so nothing was generated. Available references you CAN use right now:\n%s\nRetry create_image with corrected id/path/basename values from the list above. If a reference you need is NOT listed, its original file is unavailable — ask the user to resend that image, then retry. Do NOT pass sandbox paths (e.g. /tmp/...) or code-exec output paths.",
+		missing, formatAvailableRefLines(available))
+}
+
+// formatRefUnusableError covers refs present on disk that can't be sent as-is —
+// too large or an unsupported/animated format. Tells the LLM to recompress or
+// convert (it has exec) and retry, NOT to ask the user to resend.
+func formatRefUnusableError(unusable []string) string {
+	return fmt.Sprintf(
+		"reference_image_ids %v are present but cannot be used as-is — each is over the %dMB per-image limit or not a supported still image (JPEG/PNG/WebP). Recompress or convert them under the limit (e.g. exec: convert IN -resize '2048x2048>' -quality 85 OUT.jpg) and retry create_image with the smaller/converted file. The files ARE present — do NOT ask the user to resend.",
+		unusable, maxRefImageBytes/(1024*1024))
+}
+
+// formatRefTrimmedNote covers refs dropped by the resolution/byte cap (valid but
+// over budget) — distinct from the not-found error.
+func formatRefTrimmedNote(trimmed []string) string {
+	if len(trimmed) == 0 {
 		return ""
 	}
-	lines := make([]string, 0, len(available))
-	for _, r := range available {
-		lines = append(lines, fmt.Sprintf("  - id=%q basename=%q", r.ID, filepath.Base(r.Path)))
-	}
 	return fmt.Sprintf(
-		"\n\nNote: %d reference_image_ids did not resolve: %v. Available refs you could have used:\n%s",
-		len(unresolved), unresolved, strings.Join(lines, "\n"))
+		"\n\nNote: %d reference image(s) were not sent — the request exceeded the %d-reference limit or the total size budget. Trimmed: %v. Retry with fewer references if these are required.",
+		len(trimmed), maxResolvedRefImages, trimmed)
 }

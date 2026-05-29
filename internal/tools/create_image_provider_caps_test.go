@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -23,12 +22,12 @@ func TestResolveRefImageIDs_FiveRefsResolveUnderResolutionCap(t *testing.T) {
 		refs = append(refs, writeRef(t, dir, n, mime, []byte{0xff, 0xd8, 0x00}))
 	}
 
-	got, unresolved := resolveRefImageIDsDetailed(context.Background(), names, refs, maxResolvedRefImages)
+	got, missing, unusable, trimmed := resolveRefImageIDsDetailed(names, refs, maxResolvedRefImages)
 	if len(got) != 5 {
 		t.Fatalf("resolved = %d, want 5 (all valid refs)", len(got))
 	}
-	if len(unresolved) != 0 {
-		t.Fatalf("unresolved = %v, want none (no misleading did-not-resolve for valid refs)", unresolved)
+	if len(missing) != 0 || len(unusable) != 0 || len(trimmed) != 0 {
+		t.Fatalf("missing=%v unusable=%v trimmed=%v, want none (no misleading did-not-resolve for valid refs)", missing, unusable, trimmed)
 	}
 }
 

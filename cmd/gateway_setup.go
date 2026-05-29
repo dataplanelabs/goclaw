@@ -286,6 +286,12 @@ func setupToolRegistry(
 			t.DenyPaths(readFileDenyPaths...)
 		}
 	}
+	// create_image resolves reference_image_ids from workspace paths like read_image.
+	if ci, ok := toolsReg.Get("create_image"); ok {
+		if t, ok := ci.(*tools.CreateImageTool); ok {
+			t.DenyPaths(readFileDenyPaths...)
+		}
+	}
 
 	return
 }

@@ -32,36 +32,60 @@ func TestFormatRefResolveError_WithAvailable_ListsThem(t *testing.T) {
 	}
 }
 
-func TestFormatRefPartialResolveNote_Empty(t *testing.T) {
-	if got := formatRefPartialResolveNote(nil, nil); got != "" {
-		t.Errorf("empty unresolved should produce empty note, got %q", got)
+func TestFormatRefTrimmedNote_Empty(t *testing.T) {
+	if got := formatRefTrimmedNote(nil); got != "" {
+		t.Errorf("empty trimmed should produce empty note, got %q", got)
 	}
 }
 
-func TestFormatRefPartialResolveNote_Lists(t *testing.T) {
-	refs := []providers.MediaRef{
-		{ID: "abc123", Path: "/uploads/logo.png", MimeType: "image/png"},
-	}
-	note := formatRefPartialResolveNote([]string{"/tmp/bad.png"}, refs)
-	for _, want := range []string{"did not resolve", "/tmp/bad.png", `id="abc123"`, `basename="logo.png"`} {
+func TestFormatRefTrimmedNote_Lists(t *testing.T) {
+	note := formatRefTrimmedNote([]string{"x", "y"})
+	for _, want := range []string{"not sent", "Trimmed: [x y]"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("missing %q in note:\n%s", want, note)
 		}
 	}
+	// Trimmed (over budget) is NOT the not-found case.
+	if strings.Contains(strings.ToLower(note), "could not be resolved") {
+		t.Errorf("trimmed note must be distinct from the not-found error")
+	}
 }
 
-func TestResolveRefImageIDsDetailed_ReturnsUnresolvedKeys(t *testing.T) {
+func TestFormatRefPartialResolveError_ListsAvailableAndGuidance(t *testing.T) {
+	refs := []providers.MediaRef{
+		{ID: "abc123", Path: "/uploads/logo.png", MimeType: "image/png"},
+	}
+	msg := formatRefPartialResolveError([]string{"/tmp/bad.png"}, refs)
+	for _, want := range []string{"could not be resolved", "/tmp/bad.png", `id="abc123"`, `basename="logo.png"`, "resend"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("missing %q in error:\n%s", want, msg)
+		}
+	}
+}
+
+func TestFormatRefPartialResolveError_NoAvailableSuggestsResend(t *testing.T) {
+	msg := formatRefPartialResolveError([]string{"missing.png"}, nil)
+	if !strings.Contains(msg, "resend") {
+		t.Errorf("with no available refs the error must tell the LLM to ask the user to resend:\n%s", msg)
+	}
+}
+
+func TestResolveRefImageIDsDetailed_ReturnsMissingKeys(t *testing.T) {
 	refs := []providers.MediaRef{
 		{ID: "good", Path: "/nonexistent/x.png", MimeType: "image/png"},
 	}
-	_, unresolved := resolveRefImageIDsDetailed(nil, []string{"good", "missing"}, refs, 4)
+	// Both are missing: "good" stat-fails (/nonexistent), "missing" not in refs.
+	_, missing, _, trimmed := resolveRefImageIDsDetailed([]string{"good", "missing"}, refs, 4)
 	hasMissing := false
-	for _, u := range unresolved {
+	for _, u := range missing {
 		if u == "missing" {
 			hasMissing = true
 		}
 	}
 	if !hasMissing {
-		t.Errorf("expected 'missing' in unresolved, got %v", unresolved)
+		t.Errorf("expected 'missing' in missing keys, got %v", missing)
+	}
+	if len(trimmed) != 0 {
+		t.Errorf("expected no trimmed keys, got %v", trimmed)
 	}
 }

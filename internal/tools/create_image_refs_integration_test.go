@@ -115,11 +115,11 @@ func TestWarnIfRefsDropped_SilentWhenNoRefs(t *testing.T) {
 	}
 }
 
-// TestExecute_PartialRefs_StillTriggersRefsError verifies that when ≥1 ref
-// resolves (even if others fail), the refs-aware error path fires — proving
-// the gate is `len(refImages) > 0` after resolveRefImageIDs, not "all IDs
-// resolved".
-func TestExecute_PartialRefs_StillTriggersRefsError(t *testing.T) {
+// TestExecute_PartialRefs_ErrorsBeforeGeneration verifies that when some refs
+// resolve but others don't, the tool errors BEFORE generation (trace 019e7256):
+// it must not silently generate from the resolved subset (wrong face/logo). The
+// error lists the unresolved id and the refs the LLM CAN use.
+func TestExecute_PartialRefs_ErrorsBeforeGeneration(t *testing.T) {
 	dir := t.TempDir()
 	jpegPath := filepath.Join(dir, "photo.jpg")
 	if err := os.WriteFile(jpegPath, []byte{0xff, 0xd8}, 0o644); err != nil {
@@ -140,8 +140,10 @@ func TestExecute_PartialRefs_StillTriggersRefsError(t *testing.T) {
 	if result == nil || !result.IsError {
 		t.Fatalf("expected error result, got: %+v", result)
 	}
-	if !strings.Contains(result.ForLLM, "reference images") {
-		t.Errorf("partial resolution (1/2) must still trigger refs-aware error, got: %s", result.ForLLM)
+	for _, want := range []string{"could not be resolved", "missing", `id="real"`} {
+		if !strings.Contains(result.ForLLM, want) {
+			t.Errorf("partial resolution (1/2) must error before generation listing %q, got: %s", want, result.ForLLM)
+		}
 	}
 }
 
