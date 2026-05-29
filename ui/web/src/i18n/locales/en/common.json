@@ -70,6 +70,7 @@
   "reconnecting": "Reconnecting...",
   "noFiles": "No files found.",
   "selectFileToView": "Select a file to view its content",
+  "showingRowsOf": "Showing first {{shown}} of {{total}} rows",
   "typeToConfirmPrefix": "Type",
   "typeToConfirmSuffix": "to confirm.",
   "searchPlaceholder": "Search...",
