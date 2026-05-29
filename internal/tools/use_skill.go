@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
@@ -59,15 +60,69 @@ func (t *UseSkillTool) Execute(ctx context.Context, args map[string]any) *Result
 		return ErrorResult(fmt.Sprintf("invalid skill name: %q", name))
 	}
 
+	// Prefer the DB-authoritative path for managed skills (#218): the loader's
+	// global filesystem scan is first-managed-root-wins, so a stale duplicate
+	// tenant skill-store root can shadow the current version. The access store
+	// resolves BaseDir from the DB file_path. Being in the accessible set also
+	// satisfies the grant check, so no separate checkGrant is needed here.
+	if payload := t.resolveManagedPayload(ctx, name); payload != nil {
+		return t.activate(ctx, payload)
+	}
+
+	// Fallback: filesystem loader for non-managed (bundled/file) skills, or when
+	// no access store / agent context is available. checkGrant still denies a
+	// managed skill that isn't granted (and fails closed on DB errors).
 	payload, err := t.loader.LoadActivationPayload(ctx, name)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
-
 	if err := t.checkGrant(ctx, payload); err != nil {
 		return ErrorResult(err.Error())
 	}
+	return t.activate(ctx, payload)
+}
 
+// resolveManagedPayload returns an activation payload built from the
+// DB-authoritative SkillInfo when `name` matches a managed skill the agent can
+// access. Returns nil to fall through to the filesystem loader (non-managed
+// skill, no access store, no agent context, transient DB error, or no match).
+func (t *UseSkillTool) resolveManagedPayload(ctx context.Context, name string) *skills.ActivationPayload {
+	if t.skillAccess == nil {
+		return nil
+	}
+	agentID := store.AgentIDFromContext(ctx)
+	if agentID == uuid.Nil {
+		return nil
+	}
+	accessible, err := t.skillAccess.ListAccessible(ctx, agentID, store.UserIDFromContext(ctx))
+	if err != nil {
+		// Fall through; the fallback path's checkGrant re-checks and fails closed.
+		return nil
+	}
+	slugified := skills.Slugify(name)
+	for _, s := range accessible {
+		if s.Source != "managed" || s.BaseDir == "" {
+			continue
+		}
+		if strings.EqualFold(s.Slug, name) || strings.EqualFold(s.Name, name) || s.Slug == slugified {
+			skillMD := s.Path
+			if skillMD == "" {
+				skillMD = filepath.Join(s.BaseDir, "SKILL.md")
+			}
+			payload, perr := skills.BuildActivationPayload(s.Slug, s.Name, s.Source, s.BaseDir, skillMD)
+			if perr != nil {
+				slog.Warn("use_skill: authoritative payload build failed, falling back to loader",
+					"skill", s.Slug, "base_dir", s.BaseDir, "error", perr)
+				return nil
+			}
+			return payload
+		}
+	}
+	return nil
+}
+
+// activate registers the skill in the session context and returns the payload.
+func (t *UseSkillTool) activate(ctx context.Context, payload *skills.ActivationPayload) *Result {
 	// Register the skill in the session context (if one is attached) so
 	// downstream filesystem tools accept paths under this skill's BaseDir
 	// without per-tool wiring (Phase 3).

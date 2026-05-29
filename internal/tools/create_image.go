@@ -113,7 +113,7 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 	if idsAny, ok := args["reference_image_ids"]; ok {
 		ids := toStringSlice(idsAny)
 		if len(ids) > 0 {
-			refImages, unresolvedRefIDs = resolveRefImageIDsDetailed(ctx, ids, availableRefs, maxRefImages)
+			refImages, unresolvedRefIDs = resolveRefImageIDsDetailed(ctx, ids, availableRefs, maxResolvedRefImages)
 			requestedRefIDs = ids
 			slog.Info("create_image: reference images resolved",
 				"requested", len(ids), "loaded", len(refImages), "unresolved", len(unresolvedRefIDs))
@@ -208,6 +208,10 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 	if degradedReason != "" {
 		forLLM += formatRefsDroppedNote(degradedReason, requestedRefIDs,
 			refsCapableProviderNamesInRegistry(ctx, t.registry))
+	} else if refCap := imageRefCapForProvider(chainResult.Provider); len(refImages) > refCap {
+		// Refs were valid but the selected provider accepts fewer than supplied —
+		// distinct from "did not resolve" (genuinely missing) above.
+		forLLM += formatRefsOverProviderCapNote(chainResult.Provider, refCap, len(refImages))
 	}
 	out := &Result{ForLLM: forLLM}
 	out.MediaPrompts = map[int]string{0: prompt}
@@ -319,6 +323,38 @@ func formatRefsDroppedNote(reason string, refIDs, availableRefsCapable []string)
 	}
 }
 
+// imageRefCapForProvider returns the max reference images the given provider's
+// image path accepts. Mirrors the per-provider caps applied at call time so the
+// tool can distinguish a valid-but-truncated ref from a genuinely missing one (#219).
+func imageRefCapForProvider(provider string) int {
+	switch strings.ToLower(provider) {
+	case "openai":
+		return openAIEditRefCap // 16 — /v1/images/edits
+	case "codex", "chatgpt", "chatgpt-oauth":
+		return codexImageRefCap // 16 — native image tool
+	case "gemini":
+		return geminiRefCap // 4
+	case "openrouter":
+		return openRouterRefCap // 4
+	case "minimax":
+		return minimaxRefCap // 1 — character reference only
+	case "dashscope", "byteplus":
+		return 0 // refs unsupported; dropped
+	default:
+		return maxRefImages // conservative 4
+	}
+}
+
+// formatRefsOverProviderCapNote tells the assistant that valid refs were dropped
+// because the resolved provider's cap is lower than the number supplied — kept
+// distinct from the "did not resolve" (missing) note.
+func formatRefsOverProviderCapNote(provider string, maxRefs, supplied int) string {
+	dropped := supplied - maxRefs
+	return fmt.Sprintf(
+		"\n\n⚠️ NOTE TO ASSISTANT: %d of %d reference images were valid but not sent — provider %q accepts at most %d. The first %d (in the order you listed them) were used. To include the rest, retry with ≤%d refs or switch to an OpenAI/Codex image provider (cap 16).",
+		dropped, supplied, provider, maxRefs, maxRefs, maxRefs)
+}
+
 // refsCapableProviderNamesInRegistry returns names of providers in the registry
 // whose Capabilities().ImageRefs is true. Used to enrich the dropped-refs note
 // with operator-actionable provider names from the current tenant.
@@ -369,6 +405,11 @@ func (t *CreateImageTool) callProvider(ctx context.Context, cp credentialProvide
 			aspectRatio := GetParamString(params, "aspect_ratio", "1:1")
 			imageModel := GetParamString(params, "image_model", "")
 			refs, _ := params["reference_images"].([]providers.ImageContent)
+			if len(refs) > codexImageRefCap {
+				slog.Warn("create_image: native image refs truncated at cap",
+					"provider", providerName, "provided", len(refs), "cap", codexImageRefCap)
+				refs = refs[:codexImageRefCap]
+			}
 			result, err := np.GenerateImage(ctx, providers.NativeImageRequest{
 				Model:           model,
 				ImageModel:      imageModel,
@@ -783,11 +824,19 @@ const (
 	// multipart/JSON bodies sane when many refs supplied.
 	maxRefImagesAggregateBytes = 20 * 1024 * 1024
 
-	// Per-provider caps applied inside each call function. The tool-layer cap
-	// (maxRefImages) is the primary safeguard; these are belt-and-suspenders
-	// in case future code reaches the providers with more refs than expected.
+	// Per-provider caps applied inside each call function.
 	geminiRefCap     = 4 // Gemini face-preservation limit (verified 2026-05).
 	openRouterRefCap = 4 // Matches Gemini face limit for OR-routed Gemini models.
+	// codexImageRefCap bounds refs sent to the Codex/ChatGPT-OAuth native image
+	// tool. Matches OpenAI's image-edit cap pending live validation (#219).
+	codexImageRefCap = 16
+
+	// maxResolvedRefImages bounds how many references the tool resolves before
+	// provider routing. Set to the largest per-provider cap (OpenAI/Codex 16) so
+	// capable providers receive every valid ref; lower-cap providers truncate at
+	// call time. Resolving here is subject only to safety caps (MIME, per-image
+	// and aggregate bytes) — NOT a global 4-ref cut that hid valid refs (#219).
+	maxResolvedRefImages = openAIEditRefCap // 16
 )
 
 // allowedRefMIMEs whitelists reference-image MIME types. GIF is omitted because
