@@ -7,13 +7,12 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 ### Fixed
 
 - **Zalo voice messages now play on mobile, not just desktop** — TTS voice
-  bubbles were silent on Zalo Android/iOS because the M4A files left the
-  `moov` atom at the end (ffmpeg's default), which progressive mobile players
-  cannot read until the whole file downloads; desktop buffered the full file
-  so it played. `media.NormalizeAudio` now encodes M4A with
-  `-movflags +faststart` (moov relocated to the front) and faststart-remuxes
-  M4A sources that previously passed through untouched. AAC-LC / mono / 16 kHz
-  are unchanged.
+  bubbles were silent on Zalo Android/iOS because we sent M4A (MP4 container) at
+  16 kHz. Zalo's own voice messages are raw **ADTS AAC** (AAC-LC, mono,
+  44.1 kHz) — a streamable format with no moov atom — which is what plays on
+  both mobile and desktop. The Zalo voice path now normalizes to ADTS AAC at
+  44.1 kHz to match. (Supersedes the earlier M4A `+faststart` attempt, which
+  still failed on mobile because the MP4 container itself was the problem.)
 
 - **Skill image assets now work as `create_image` references** — activated
   skill image assets returned by `use_skill` are exposed as resolvable

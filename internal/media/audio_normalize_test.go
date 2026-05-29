@@ -64,39 +64,16 @@ func TestNormalizeAudio_StripsExtensionDot(t *testing.T) {
 	}
 }
 
-func TestFFmpegArgsFor_M4AHasFaststart(t *testing.T) {
-	joined := strings.Join(ffmpegArgsFor("m4a", "src", "dst"), " ")
-	if !strings.Contains(joined, "-movflags +faststart") {
-		t.Errorf("m4a args must include +faststart for Zalo mobile playback; got: %s", joined)
-	}
-	// ADTS .aac has no moov atom — movflags would error, so it must be absent.
-	if aac := strings.Join(ffmpegArgsFor("aac", "src", "dst"), " "); strings.Contains(aac, "movflags") {
-		t.Errorf("aac (ADTS) args must not include movflags; got: %s", aac)
-	}
-}
-
-func TestNormalizeAudio_M4APassthroughRemuxesFaststart(t *testing.T) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("ffmpeg not installed; skipping faststart remux test")
-	}
-	tmp := t.TempDir()
-	// Build a real (tiny) m4a so the -c copy remux succeeds.
-	src := filepath.Join(tmp, "input.m4a")
-	gen := exec.Command("ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
-		"-i", "anullsrc=r=16000:cl=mono", "-t", "1", "-c:a", "aac", src)
-	if out, err := gen.CombinedOutput(); err != nil {
-		t.Skipf("could not synthesize test m4a: %v (%s)", err, out)
-	}
-	got, err := NormalizeAudio(context.Background(), src, "m4a")
-	if err != nil {
-		t.Fatalf("m4a passthrough remux: %v", err)
-	}
-	if got == src {
-		t.Fatal("m4a same-ext must remux (faststart), not return src unchanged")
-	}
-	defer os.Remove(got)
-	if _, err := os.Stat(got); err != nil {
-		t.Fatalf("remux output missing: %v", err)
+func TestFFmpegArgsFor_VoiceMatchesNativeZalo(t *testing.T) {
+	// Zalo's own voice messages are AAC-LC mono 44.1kHz; matching them is what
+	// plays on both mobile and desktop.
+	for _, target := range []string{"aac", "m4a"} {
+		joined := strings.Join(ffmpegArgsFor(target, "src", "dst"), " ")
+		for _, want := range []string{"-c:a aac", "-ar 44100", "-ac 1"} {
+			if !strings.Contains(joined, want) {
+				t.Errorf("ffmpegArgsFor(%q) missing %q; got: %s", target, want, joined)
+			}
+		}
 	}
 }
 

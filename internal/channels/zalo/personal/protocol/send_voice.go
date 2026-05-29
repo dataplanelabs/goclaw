@@ -14,9 +14,9 @@ import (
 // is /api/message/forward (user) or /api/group/forward (group); msgType=3
 // signals voice on the outbound API (distinct from inbound clientMsgType=31).
 //
-// ttlMs of 0 = no TTL. The audio should be M4A for best playback fidelity on
-// recipients' mobile clients; callers should normalize via media.NormalizeAudio
-// before invoking this function.
+// ttlMs of 0 = no TTL. The audio should be raw ADTS AAC (AAC-LC, mono, 44.1kHz)
+// to match Zalo's own voice messages — that format plays on both mobile and
+// desktop. Callers should normalize via media.NormalizeAudio(…, "aac") first.
 func SendVoice(ctx context.Context, sess *Session, ln *Listener, threadID string, threadType ThreadType, filePath string, ttlMs int) (string, error) {
 	upload, err := UploadFile(ctx, sess, ln, threadID, threadType, filePath)
 	if err != nil {

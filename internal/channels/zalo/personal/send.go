@@ -222,14 +222,15 @@ func (c *Channel) sendMediaBestEffort(ctx context.Context, sess *protocol.Sessio
 	}
 }
 
-// sendVoice normalizes audio to M4A then sends via Zalo's voice endpoint.
-// Returns an error so the caller can fall back to share.file on failure.
+// sendVoice normalizes audio to ADTS AAC (Zalo's own voice format) then sends
+// via Zalo's voice endpoint. Returns an error so the caller can fall back to
+// share.file on failure.
 func (c *Channel) sendVoice(ctx context.Context, sess *protocol.Session, chatID string, threadType protocol.ThreadType, filePath string) error {
 	ln := c.getListener()
 	if ln == nil {
 		return fmt.Errorf("listener not available for voice upload")
 	}
-	normalized, err := mediapkg.NormalizeAudio(ctx, filePath, "m4a")
+	normalized, err := mediapkg.NormalizeAudio(ctx, filePath, "aac")
 	if err != nil {
 		return fmt.Errorf("normalize audio: %w", err)
 	}
