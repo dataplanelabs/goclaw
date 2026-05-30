@@ -203,9 +203,10 @@ func (m *Manager) getPageAndResolve(ctx context.Context, targetID, ref string) (
 	return page, el, nil
 }
 
-// waitStable waits for page to become stable (no network/DOM activity).
+// waitStable best-effort settles a page (load + bounded DOM) without ever blocking on
+// network idle — see settlePage. Avoids the never-idle-page action-timeout stall.
 func waitStable(page *rod.Page) {
-	_ = page.WaitStable(300 * time.Millisecond)
+	settlePage(page)
 }
 
 // resolveRemoteCDP queries a Chrome endpoint's /json/version to get the CDP

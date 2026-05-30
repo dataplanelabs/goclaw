@@ -15,6 +15,26 @@ import (
 // Bound the AX-tree fetch so a huge page fails fast instead of hanging the action.
 const snapshotAXTimeout = 45 * time.Second
 
+// Page settle bounds. We wait for the load event plus a short DOM-stable window but NEVER
+// for network idle: pages with continuous analytics/polling/lazy-load (e.g. Strava) never
+// go network-idle, so rod's WaitStable — which requires WaitRequestIdle — blocks until the
+// action timeout (the 5-minute "open"/"navigate" stalls, after which the watchdog closes
+// the tab → "tab not found"). Load + a brief DOM settle is enough to snapshot/screenshot;
+// the agent issues explicit waits/scrolls afterward.
+const (
+	pageLoadWait  = 15 * time.Second
+	pageDOMSettle = 3 * time.Second
+)
+
+// settlePage best-effort waits for a freshly navigated page to become usable, bounded so a
+// heavy/never-idle page returns promptly instead of consuming the whole action timeout.
+// Each wait is best-effort: a timeout or transient CDP error is non-fatal — the page is
+// still usable. The caller's ctx-cancel watchdog handles real action cancellation.
+func settlePage(page *rod.Page) {
+	_ = page.Timeout(pageLoadWait).WaitLoad()
+	_ = page.Timeout(pageDOMSettle).WaitDOMStable(300*time.Millisecond, 0)
+}
+
 // Errors meaning the page/connection died under us — safe to retry once after re-resolve.
 var staleErrSubstrings = []string{
 	"context canceled", "cannot find context", "Inspector.detached",
@@ -161,11 +181,9 @@ func (m *Manager) Navigate(ctx context.Context, targetID, url string) error {
 		}
 		return fmt.Errorf("navigate: %w", err)
 	}
-	if err := page.WaitStable(300 * time.Millisecond); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return fmt.Errorf("wait stable after navigate: %w", err)
+	settlePage(page)
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	return nil
 }
