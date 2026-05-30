@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -107,6 +108,7 @@ func callDashScopeImageGen(ctx context.Context, apiKey, apiBase, model, prompt s
 			"size":              size,
 			"prompt_extend":     promptExtend,
 			"enable_interleave": true,
+			"stream":            true,
 		},
 	}
 
@@ -121,8 +123,10 @@ func callDashScopeImageGen(ctx context.Context, apiKey, apiBase, model, prompt s
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-	// wan2.x/wan2.5+ reject synchronous calls ("stream=False is not supported"); async is mandatory.
-	req.Header.Set("X-DashScope-Async", "enable")
+	// International region uses synchronous SSE streaming, NOT async/task_id polling (the
+	// China-region pattern): X-DashScope-SSE:enable + parameters.stream=true. Without it the
+	// endpoint rejects with "stream=False is not supported".
+	req.Header.Set("X-DashScope-SSE", "enable")
 
 	client := &http.Client{} // timeout governed by chain context
 	resp, err := client.Do(req)
@@ -131,42 +135,73 @@ func callDashScopeImageGen(ctx context.Context, apiKey, apiBase, model, prompt s
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read response: %w", err)
-	}
 	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
 		return nil, nil, fmt.Errorf("API error %d: %s", resp.StatusCode, truncateBytes(respBody, 500))
 	}
 
-	// Parse initial response — may be synchronous (results present) or async (task_id present).
-	var initResp struct {
-		Output *struct {
-			TaskID  string `json:"task_id"`
-			Results []struct {
-				URL string `json:"url"`
-			} `json:"results"`
-		} `json:"output"`
+	imageURL, err := dashScopeStreamImageURL(resp.Body)
+	if err != nil {
+		return nil, nil, err
 	}
-	if err := json.Unmarshal(respBody, &initResp); err != nil {
-		return nil, nil, fmt.Errorf("parse response: %w", err)
-	}
+	return downloadImageURL(ctx, imageURL)
+}
 
-	if initResp.Output == nil {
-		return nil, nil, fmt.Errorf("no output in DashScope response: %s", truncateBytes(respBody, 300))
+// dashScopeStreamImageURL reads the DashScope SSE stream and returns the LAST image URL.
+// wan2.x interleaved output streams progressive image parts; the final one is the refined
+// result. Image parts look like {"type":"image","image":"https://…png"}; an error event
+// carries a top-level code/message (HTTP can be 200 with the error inside the stream).
+func dashScopeStreamImageURL(body io.Reader) (string, error) {
+	sc := bufio.NewScanner(body)
+	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024) // signed OSS URLs + large interleaved events
+	var lastURL string
+	for sc.Scan() {
+		line := sc.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		if data == "" {
+			continue
+		}
+		var ev struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+			Output  *struct {
+				Choices []struct {
+					Message struct {
+						Content []struct {
+							Type  string `json:"type"`
+							Image string `json:"image"`
+						} `json:"content"`
+					} `json:"message"`
+				} `json:"choices"`
+			} `json:"output"`
+		}
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			continue
+		}
+		if ev.Code != "" {
+			return "", fmt.Errorf("dashscope stream error: %s: %s", ev.Code, ev.Message)
+		}
+		if ev.Output == nil {
+			continue
+		}
+		for _, ch := range ev.Output.Choices {
+			for _, part := range ch.Message.Content {
+				if part.Type == "image" && part.Image != "" {
+					lastURL = part.Image
+				}
+			}
+		}
 	}
-
-	// Synchronous result already available
-	if len(initResp.Output.Results) > 0 && initResp.Output.Results[0].URL != "" {
-		return downloadImageURL(ctx, initResp.Output.Results[0].URL)
+	if err := sc.Err(); err != nil {
+		return "", fmt.Errorf("read dashscope stream: %w", err)
 	}
-
-	// Async: poll the task until done
-	if initResp.Output.TaskID == "" {
-		return nil, nil, fmt.Errorf("no task_id and no results in DashScope response")
+	if lastURL == "" {
+		return "", fmt.Errorf("no image in DashScope stream")
 	}
-
-	return dashScopePollTask(ctx, apiKey, apiBase, initResp.Output.TaskID, client)
+	return lastURL, nil
 }
 
 // dashScopePollTask polls the DashScope task API until the task completes, then downloads
