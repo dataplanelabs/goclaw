@@ -94,6 +94,10 @@ func setupToolRegistry(
 	// Browser automation tool
 	if cfg.Tools.Browser.Enabled {
 		var opts []browser.Option
+		if cfg.Tools.Browser.PersistentProfile {
+			opts = append(opts, browser.WithPersistentProfile(true))
+			slog.Info("browser persistent profile enabled (single-identity)")
+		}
 		if cfg.Tools.Browser.RemoteURL != "" {
 			opts = append(opts, browser.WithRemoteURL(cfg.Tools.Browser.RemoteURL))
 			slog.Info("browser tool enabled", "remote", cfg.Tools.Browser.RemoteURL)

@@ -22,8 +22,9 @@ type Manager struct {
 	tenantCtxs  map[string]*rod.Browser     // tenantID → incognito browser context
 	pageTenants map[string]string           // targetID → tenantID (for filtering)
 	pageLastUsed map[string]time.Time       // targetID → last access time
-	headless      bool
-	remoteURL     string        // CDP endpoint for remote Chrome (sidecar); skips local launcher
+	headless          bool
+	persistentProfile bool          // share one authenticated default-context browser across all tenants (single-identity only)
+	remoteURL         string        // CDP endpoint for remote Chrome (sidecar); skips local launcher
 	actionTimeout time.Duration // per-action context timeout (default 30s)
 	idleTimeout   time.Duration // auto-close pages idle longer than this (default 10m, 0=disabled)
 	maxPages      int           // max open pages per tenant (default 5)
@@ -43,6 +44,14 @@ func WithHeadless(h bool) Option {
 // When set, Start() connects to the remote Chrome instead of launching locally.
 func WithRemoteURL(url string) Option {
 	return func(m *Manager) { m.remoteURL = url }
+}
+
+// WithPersistentProfile makes every tenant share the one default-context browser
+// (the only context backed by the remote Chrome's --user-data-dir), so a human's
+// one-time login persists and the agent inherits it. SINGLE-IDENTITY ONLY: all
+// tenants share one cookie jar — never enable on a multi-identity deployment.
+func WithPersistentProfile(p bool) Option {
+	return func(m *Manager) { m.persistentProfile = p }
 }
 
 // WithLogger sets a custom logger.
@@ -254,6 +263,11 @@ const MasterTenantID = "0193a5b0-7000-7000-8000-000000000001"
 func (m *Manager) tenantBrowserLocked(tenantID string) (*rod.Browser, error) {
 	if m.browser == nil {
 		return nil, fmt.Errorf("browser not running")
+	}
+	// Persistent-profile mode: every tenant shares the default-context browser
+	// (the only one backed by --user-data-dir) so the human login persists.
+	if m.persistentProfile {
+		return m.browser, nil
 	}
 	// Master tenant or no tenant: use main browser
 	if tenantID == "" || tenantID == MasterTenantID {

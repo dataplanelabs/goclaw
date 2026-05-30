@@ -338,6 +338,9 @@ func (c *Config) applyEnvOverrides() {
 	if c.Tools.Browser.RemoteURL != "" {
 		c.Tools.Browser.Enabled = true
 	}
+	if v := os.Getenv("GOCLAW_BROWSER_PERSISTENT_PROFILE"); v != "" {
+		c.Tools.Browser.PersistentProfile = v == "true" || v == "1"
+	}
 }
 
 // Save writes the config to a JSON file.
