@@ -13,23 +13,24 @@ import (
 
 // Manager handles the Chrome browser lifecycle and page management.
 type Manager struct {
-	mu          sync.Mutex
-	browser     *rod.Browser
-	launcher    *launcher.Launcher // retained for PID-based cleanup on crash
-	refs        *RefStore
-	pages       map[string]*rod.Page        // targetID → page
-	console     map[string][]ConsoleMessage // targetID → console messages
-	tenantCtxs  map[string]*rod.Browser     // tenantID → incognito browser context
-	pageTenants map[string]string           // targetID → tenantID (for filtering)
-	pageLastUsed map[string]time.Time       // targetID → last access time
+	mu                sync.Mutex
+	browser           *rod.Browser
+	browserCancel     context.CancelFunc // cancels the browser's lifetime context (set on connect, called on Stop/cleanup)
+	launcher          *launcher.Launcher // retained for PID-based cleanup on crash
+	refs              *RefStore
+	pages             map[string]*rod.Page        // targetID → page
+	console           map[string][]ConsoleMessage // targetID → console messages
+	tenantCtxs        map[string]*rod.Browser     // tenantID → incognito browser context
+	pageTenants       map[string]string           // targetID → tenantID (for filtering)
+	pageLastUsed      map[string]time.Time        // targetID → last access time
 	headless          bool
 	persistentProfile bool          // share one authenticated default-context browser across all tenants (single-identity only)
 	remoteURL         string        // CDP endpoint for remote Chrome (sidecar); skips local launcher
-	actionTimeout time.Duration // per-action context timeout (default 30s)
-	idleTimeout   time.Duration // auto-close pages idle longer than this (default 10m, 0=disabled)
-	maxPages      int           // max open pages per tenant (default 5)
-	stopReaper    chan struct{} // signal to stop the reaper goroutine
-	logger        *slog.Logger
+	actionTimeout     time.Duration // per-action context timeout (default 30s)
+	idleTimeout       time.Duration // auto-close pages idle longer than this (default 10m, 0=disabled)
+	maxPages          int           // max open pages per tenant (default 5)
+	stopReaper        chan struct{} // signal to stop the reaper goroutine
+	logger            *slog.Logger
 }
 
 // Option configures a Manager.
@@ -159,21 +160,33 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.logger.Info("Chrome launched", "cdp", controlURL, "headless", m.headless, "pid", l.PID())
 	}
 
-	connectCtx, connectCancel := context.WithTimeout(ctx, 15*time.Second)
-	defer connectCancel()
+	// Browser ctx must OUTLIVE Start(): go-rod ties the CDP client lifetime to it,
+	// so a defer-cancelled connect ctx kills the connection on return → next action
+	// fails "context canceled". Cancel only on Stop/cleanup; watchdog bounds the dial.
+	browserCtx, browserCancel := context.WithCancel(context.Background())
+	b := rod.New().Context(browserCtx).ControlURL(controlURL)
 
-	b := rod.New().Context(connectCtx).ControlURL(controlURL)
-	if err := b.Connect(); err != nil {
+	connectDone := make(chan error, 1)
+	go func() { connectDone <- b.Connect() }()
+	var connErr error
+	select {
+	case connErr = <-connectDone:
+	case <-time.After(15 * time.Second):
+		connErr = fmt.Errorf("timeout after 15s")
+	}
+	if connErr != nil {
+		browserCancel()
 		// If local launch succeeded but connect failed, kill the orphan process
 		if m.launcher != nil {
 			m.launcher.Kill()
 			m.launcher.Cleanup()
 			m.launcher = nil
 		}
-		return fmt.Errorf("connect to Chrome: %w", err)
+		return fmt.Errorf("connect to Chrome: %w", connErr)
 	}
 
 	m.browser = b
+	m.browserCancel = browserCancel
 
 	// Start idle-page reaper if configured
 	if m.idleTimeout > 0 && m.stopReaper == nil {
@@ -218,6 +231,10 @@ func (m *Manager) Stop(ctx context.Context) error {
 	}
 	// Remote Chrome — just drop the connection; sidecar stays alive
 
+	if m.browserCancel != nil {
+		m.browserCancel()
+		m.browserCancel = nil
+	}
 	m.browser = nil
 	m.pages = make(map[string]*rod.Page)
 	m.console = make(map[string][]ConsoleMessage)
@@ -240,6 +257,10 @@ func (m *Manager) closeTenantContextsLocked() {
 // Must be called with mu held.
 func (m *Manager) cleanupDeadBrowserLocked() {
 	m.closeTenantContextsLocked()
+	if m.browserCancel != nil {
+		m.browserCancel()
+		m.browserCancel = nil
+	}
 	if m.launcher != nil {
 		m.launcher.Kill()
 		m.launcher.Cleanup()
