@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,11 +16,8 @@ import (
 // resolveDocumentFile finds the document file path from context MediaRefs.
 func (t *ReadDocumentTool) resolveDocumentFile(ctx context.Context, mediaID string) (path, mime string, err error) {
 	refs := MediaDocRefsFromCtx(ctx)
-	if len(refs) == 0 {
-		return "", "", fmt.Errorf("no documents available in this conversation. The user may not have sent a document.")
-	}
 
-	// Find specific media_id or use most recent document.
+	// Find specific media_id, or use the most recent document ref.
 	var ref *providers.MediaRef
 	if mediaID != "" {
 		for i := range refs {
@@ -27,12 +26,21 @@ func (t *ReadDocumentTool) resolveDocumentFile(ctx context.Context, mediaID stri
 				break
 			}
 		}
-		if ref == nil {
-			return "", "", fmt.Errorf("document with media_id %q not found in conversation", mediaID)
-		}
-	} else {
-		// Use the last (most recent) document ref.
+	} else if len(refs) > 0 {
 		ref = &refs[len(refs)-1]
+	}
+
+	// Not in the current conversation window — fall back to the session .uploads/ on disk.
+	// A document sent in an earlier turn persists as .uploads/<media_id>.bin even after it
+	// ages out of the conversation refs, so resolving by media_id still works (trace 019e79ef).
+	if ref == nil {
+		if p, m, ok := resolveUploadedDoc(ctx, mediaID); ok {
+			return p, m, nil
+		}
+		if mediaID != "" {
+			return "", "", fmt.Errorf("document with media_id %q not found in conversation or uploads", mediaID)
+		}
+		return "", "", fmt.Errorf("no documents available in this conversation. The user may not have sent a document.")
 	}
 
 	// Prefer persisted workspace path; fall back to legacy .media/ lookup.
@@ -113,6 +121,61 @@ func (t *ReadDocumentTool) callProvider(ctx context.Context, cp credentialProvid
 		return nil, nil, fmt.Errorf("chat call: %w", err)
 	}
 	return []byte(resp.Content), resp.Usage, nil
+}
+
+// resolveUploadedDoc finds a document in the session .uploads/ folder by media_id when it's
+// no longer in the conversation refs. Uploads are stored as <media_id>.bin (the conversation
+// tag's id carries no extension), so match the full name OR the stem. Path-bounded +
+// hardlink-checked like uploadsImageRefs; MIME sniffed from content since .bin has no ext.
+func resolveUploadedDoc(ctx context.Context, mediaID string) (path, mime string, ok bool) {
+	if mediaID == "" || strings.ContainsAny(mediaID, `/\`) || strings.Contains(mediaID, "..") {
+		return "", "", false
+	}
+	workspace := ToolWorkspaceFromCtx(ctx)
+	if workspace == "" {
+		return "", "", false
+	}
+	uploadsReal, err := filepath.EvalSymlinks(filepath.Join(workspace, ".uploads"))
+	if err != nil {
+		return "", "", false
+	}
+	entries, err := os.ReadDir(uploadsReal)
+	if err != nil {
+		return "", "", false
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		stem := strings.TrimSuffix(name, filepath.Ext(name))
+		if name != mediaID && stem != mediaID {
+			continue
+		}
+		real, err := filepath.EvalSymlinks(filepath.Join(uploadsReal, name))
+		if err != nil || !isPathInside(real, uploadsReal) || checkHardlink(real) != nil {
+			continue
+		}
+		m := mimeFromDocExt(filepath.Ext(name))
+		if m == "application/octet-stream" {
+			m = sniffDocMIME(real)
+		}
+		return real, m, true
+	}
+	return "", "", false
+}
+
+// sniffDocMIME detects a document MIME from its leading bytes (e.g. %PDF -> application/pdf)
+// for extensionless .bin uploads; falls back to application/octet-stream.
+func sniffDocMIME(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return "application/octet-stream"
+	}
+	defer f.Close()
+	buf := make([]byte, 512)
+	n, _ := f.Read(buf)
+	return http.DetectContentType(buf[:n])
 }
 
 // mimeFromDocExt returns MIME type for document file extensions.
