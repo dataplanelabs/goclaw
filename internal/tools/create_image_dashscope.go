@@ -57,7 +57,7 @@ func dashScopeTaskEndpoint(apiBase, taskID string) string {
 }
 
 // callDashScopeImageGen calls the DashScope (Alibaba/Bailian) multimodal image generation API.
-// The API is async: an initial POST returns a task_id, which is then polled until done.
+// X-DashScope-Async:enable is mandatory — wan2.x+ reject synchronous calls.
 // On completion, output.results[].url contains the image URL to download.
 // aspectRatioToDashScopeSize converts aspect_ratio to DashScope size format.
 // Falls back to explicit "size" param if set, otherwise uses aspect_ratio mapping.
@@ -121,6 +121,8 @@ func callDashScopeImageGen(ctx context.Context, apiKey, apiBase, model, prompt s
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
+	// wan2.x/wan2.5+ reject synchronous calls ("stream=False is not supported"); async is mandatory.
+	req.Header.Set("X-DashScope-Async", "enable")
 
 	client := &http.Client{} // timeout governed by chain context
 	resp, err := client.Do(req)
