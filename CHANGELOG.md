@@ -6,6 +6,11 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- **`GOCLAW_BROWSER_ACTION_TIMEOUT_MS`** — env overlay for the browser tool's
+  per-action timeout (default 30000ms). Raise it (e.g. 180000 = 3min) so the
+  agent can navigate + snapshot heavy authenticated pages (e.g. a logged-in
+  Strava dashboard) that exceed the 30s default.
+
 - **Browser tool: persistent-profile mode** (`GOCLAW_BROWSER_PERSISTENT_PROFILE`) — makes
   every tenant share the one default-context remote Chrome (the only context backed by
   `--user-data-dir`), so a human's one-time login on a remote headful Chrome sidecar

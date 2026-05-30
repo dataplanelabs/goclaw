@@ -341,6 +341,11 @@ func (c *Config) applyEnvOverrides() {
 	if v := os.Getenv("GOCLAW_BROWSER_PERSISTENT_PROFILE"); v != "" {
 		c.Tools.Browser.PersistentProfile = v == "true" || v == "1"
 	}
+	if v := os.Getenv("GOCLAW_BROWSER_ACTION_TIMEOUT_MS"); v != "" {
+		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
+			c.Tools.Browser.ActionTimeoutMs = ms
+		}
+	}
 }
 
 // Save writes the config to a JSON file.
