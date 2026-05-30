@@ -65,7 +65,9 @@ func watchPageClose(ctx context.Context, page *rod.Page) (stopWatchdog func()) {
 // Snapshot returns the page's accessibility tree, time-bounded and retried once if the page went stale.
 func (m *Manager) Snapshot(ctx context.Context, targetID string, opts SnapshotOptions) (*SnapshotResult, error) {
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 	m.mu.Lock()
+	targetID = m.sessionTargetLocked(sessionKey, targetID)
 	page, err := m.getPageForTenant(targetID, tenantID)
 	m.mu.Unlock()
 	if err != nil {
@@ -105,7 +107,9 @@ func (m *Manager) Snapshot(ctx context.Context, targetID string, opts SnapshotOp
 // Screenshot captures PNG bytes, retried once if the page went stale.
 func (m *Manager) Screenshot(ctx context.Context, targetID string, fullPage bool) ([]byte, error) {
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 	m.mu.Lock()
+	targetID = m.sessionTargetLocked(sessionKey, targetID)
 	page, err := m.getPageForTenant(targetID, tenantID)
 	m.mu.Unlock()
 	if err != nil {
@@ -137,7 +141,9 @@ func capturePNG(page *rod.Page, fullPage bool) ([]byte, error) {
 // A ctx-cancel watchdog closes the page if ctx is done during the blocking WaitStable call.
 func (m *Manager) Navigate(ctx context.Context, targetID, url string) error {
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 	m.mu.Lock()
+	targetID = m.sessionTargetLocked(sessionKey, targetID)
 	page, err := m.getPageForTenant(targetID, tenantID)
 	m.mu.Unlock()
 

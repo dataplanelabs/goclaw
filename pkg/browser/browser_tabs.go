@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
 )
 
@@ -70,24 +71,46 @@ func (m *Manager) ListTabs(ctx context.Context) ([]TabInfo, error) {
 // Pages are created within the tenant's incognito browser context for isolation.
 // If the tenant already has maxPages open, the oldest idle page is closed first.
 func (m *Manager) OpenTab(ctx context.Context, url string) (*TabInfo, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 
-	// Enforce max pages per tenant
+	// Phase 1 (under mu): eviction + browser resolution only.
+	m.mu.Lock()
 	if m.maxPages > 0 {
-		m.evictOldestIfOverLimitLocked(tenantID)
+		m.evictOldestIfOverLimitLocked(sessionKey, tenantID) // per-session tab budget
 	}
-
 	b, err := m.tenantBrowserLocked(tenantID)
+	m.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 
-	page, err := b.Page(proto.TargetCreateTarget{URL: url})
-	if err != nil {
-		return nil, fmt.Errorf("open tab: %w", err)
+	// Phase 2 (no mu): release mutex during slow createTarget/WaitStable so a
+	// contended open can't block other sessions; bound the WAIT by the action ctx.
+	// Page stays on the long-lived browser ctx (no b.Timeout — would kill the page).
+	type openResult struct {
+		p   *rod.Page
+		err error
+	}
+	ch := make(chan openResult, 1)
+	go func() {
+		p, err := b.Page(proto.TargetCreateTarget{URL: url})
+		ch <- openResult{p, err}
+	}()
+	var page *rod.Page
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			return nil, fmt.Errorf("open tab: %w", r.err)
+		}
+		page = r.p
+	case <-ctx.Done():
+		go func() { // close the orphan if createTarget still completes
+			if r := <-ch; r.err == nil && r.p != nil {
+				_ = r.p.Close()
+			}
+		}()
+		return nil, fmt.Errorf("open tab: %w", ctx.Err())
 	}
 
 	// Watchdog: close page on ctx cancel to unblock WaitStable CDP call.
@@ -102,14 +125,19 @@ func (m *Manager) OpenTab(ctx context.Context, url string) (*TabInfo, error) {
 	stopWatchdog()
 	info, _ := page.Info()
 	tid := string(page.TargetID)
+
+	// Phase 3 (under mu): record the page exactly as before.
+	m.mu.Lock()
 	m.pages[tid] = page
 	m.touchPageLocked(tid)
 	if tenantID != "" {
 		m.pageTenants[tid] = tenantID
 	}
-
-	// Set up console listener
+	if sessionKey != "" {
+		m.pageSessions[tid] = sessionKey
+	}
 	m.setupConsoleListener(page, tid)
+	m.mu.Unlock()
 
 	tab := &TabInfo{TargetID: tid, URL: url}
 	if info != nil {
@@ -119,10 +147,11 @@ func (m *Manager) OpenTab(ctx context.Context, url string) (*TabInfo, error) {
 	return tab, nil
 }
 
-// oldestEvictableLocked returns the oldest goclaw-opened tab for the tenant when
-// at/over maxPages, else "". Tabs a human opened via noVNC (no pageLastUsed entry,
-// never touched by goclaw) are not counted or evicted. Must be called with mu held.
-func (m *Manager) oldestEvictableLocked(tenantID string) string {
+// oldestEvictableLocked returns the calling session's oldest goclaw-opened tab when
+// at/over maxPages, else "". On the shared browser only the session's own tabs count,
+// so one session never evicts another's. Tabs a human opened via noVNC (no pageLastUsed
+// entry, never touched by goclaw) are not counted or evicted. Must be called with mu held.
+func (m *Manager) oldestEvictableLocked(sessionKey, tenantID string) string {
 	isMaster := tenantID == "" || tenantID == MasterTenantID
 
 	var oldestID string
@@ -132,6 +161,9 @@ func (m *Manager) oldestEvictableLocked(tenantID string) string {
 		lu, tracked := m.pageLastUsed[tid]
 		if !tracked {
 			continue // human/manual noVNC tab — never evict
+		}
+		if sessionKey != "" && m.pageSessions[tid] != sessionKey {
+			continue // another session's tab — never evict
 		}
 		if isMaster {
 			if _, hasOwner := m.pageTenants[tid]; hasOwner {
@@ -152,10 +184,11 @@ func (m *Manager) oldestEvictableLocked(tenantID string) string {
 	return oldestID
 }
 
-// evictOldestIfOverLimitLocked closes the oldest goclaw-opened tab for a tenant if
-// at or over maxPages. Never closes human noVNC tabs. Must be called with mu held.
-func (m *Manager) evictOldestIfOverLimitLocked(tenantID string) {
-	oldestID := m.oldestEvictableLocked(tenantID)
+// evictOldestIfOverLimitLocked closes the calling session's oldest goclaw-opened tab
+// if at or over maxPages. Never closes human noVNC tabs or another session's tabs.
+// Must be called with mu held.
+func (m *Manager) evictOldestIfOverLimitLocked(sessionKey, tenantID string) {
+	oldestID := m.oldestEvictableLocked(sessionKey, tenantID)
 	if oldestID == "" {
 		return
 	}
@@ -165,17 +198,20 @@ func (m *Manager) evictOldestIfOverLimitLocked(tenantID string) {
 	delete(m.pages, oldestID)
 	delete(m.console, oldestID)
 	delete(m.pageTenants, oldestID)
+	delete(m.pageSessions, oldestID)
 	delete(m.pageLastUsed, oldestID)
 	m.refs.Remove(oldestID)
-	m.logger.Info("evicted oldest page (max pages reached)", "targetId", oldestID, "tenant", tenantID)
+	m.logger.Info("evicted oldest page (max pages reached)", "targetId", oldestID, "tenant", tenantID, "session", sessionKey)
 }
 
 // FocusTab activates a tab.
 func (m *Manager) FocusTab(ctx context.Context, targetID string) error {
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	targetID = m.sessionTargetLocked(sessionKey, targetID)
 	page, err := m.getPageForTenant(targetID, tenantID)
 	if err != nil {
 		return err
@@ -188,9 +224,11 @@ func (m *Manager) FocusTab(ctx context.Context, targetID string) error {
 // CloseTab closes a tab.
 func (m *Manager) CloseTab(ctx context.Context, targetID string) error {
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	targetID = m.sessionTargetLocked(sessionKey, targetID)
 	page, err := m.getPageForTenant(targetID, tenantID)
 	if err != nil {
 		return err
@@ -199,6 +237,7 @@ func (m *Manager) CloseTab(ctx context.Context, targetID string) error {
 	delete(m.pages, targetID)
 	delete(m.console, targetID)
 	delete(m.pageTenants, targetID)
+	delete(m.pageSessions, targetID)
 	delete(m.pageLastUsed, targetID)
 	m.refs.Remove(targetID)
 	return page.Close()
@@ -207,8 +246,11 @@ func (m *Manager) CloseTab(ctx context.Context, targetID string) error {
 // ConsoleMessages returns captured console messages for a tab.
 func (m *Manager) ConsoleMessages(ctx context.Context, targetID string) []ConsoleMessage {
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	targetID = m.sessionTargetLocked(sessionKey, targetID)
 
 	// Validate tenant ownership
 	if tenantID != "" && tenantID != MasterTenantID {

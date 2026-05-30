@@ -22,6 +22,7 @@ type Manager struct {
 	console           map[string][]ConsoleMessage // targetID → console messages
 	tenantCtxs        map[string]*rod.Browser     // tenantID → incognito browser context
 	pageTenants       map[string]string           // targetID → tenantID (for filtering)
+	pageSessions      map[string]string           // targetID → sessionKey (shared browser, per-session tab ownership)
 	pageLastUsed      map[string]time.Time        // targetID → last access time
 	headless          bool
 	persistentProfile bool          // share one authenticated default-context browser across all tenants (single-identity only)
@@ -83,6 +84,7 @@ func New(opts ...Option) *Manager {
 		console:       make(map[string][]ConsoleMessage),
 		tenantCtxs:    make(map[string]*rod.Browser),
 		pageTenants:   make(map[string]string),
+		pageSessions:  make(map[string]string),
 		pageLastUsed:  make(map[string]time.Time),
 		actionTimeout: 30 * time.Second,
 		idleTimeout:   10 * time.Minute,
@@ -98,6 +100,32 @@ func New(opts ...Option) *Manager {
 // ActionTimeout returns the configured per-action timeout.
 func (m *Manager) ActionTimeout() time.Duration {
 	return m.actionTimeout
+}
+
+// PersistentProfile reports whether the shared default-context browser is in use.
+func (m *Manager) PersistentProfile() bool {
+	return m.persistentProfile
+}
+
+// sessionTargetLocked resolves an optional targetID to the calling session's own
+// most-recently-used tab, so an empty targetID never lands on another session's
+// tab on the shared browser. Empty sessionKey keeps the legacy global fallback.
+// Must be called with mu held.
+func (m *Manager) sessionTargetLocked(sessionKey, targetID string) string {
+	if targetID != "" || sessionKey == "" {
+		return targetID
+	}
+	var bestID string
+	var bestTime time.Time
+	for tid, lu := range m.pageLastUsed {
+		if m.pageSessions[tid] != sessionKey {
+			continue
+		}
+		if bestID == "" || lu.After(bestTime) {
+			bestID, bestTime = tid, lu
+		}
+	}
+	return bestID
 }
 
 // touchPageLocked updates the last-used timestamp for a page. Must be called with mu held.
@@ -239,6 +267,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	m.pages = make(map[string]*rod.Page)
 	m.console = make(map[string][]ConsoleMessage)
 	m.pageTenants = make(map[string]string)
+	m.pageSessions = make(map[string]string)
 	m.pageLastUsed = make(map[string]time.Time)
 	return err
 }
@@ -270,8 +299,40 @@ func (m *Manager) cleanupDeadBrowserLocked() {
 	m.pages = make(map[string]*rod.Page)
 	m.console = make(map[string][]ConsoleMessage)
 	m.pageTenants = make(map[string]string)
+	m.pageSessions = make(map[string]string)
 	m.pageLastUsed = make(map[string]time.Time)
 	m.refs = NewRefStore()
+}
+
+// CloseSessionTabs closes only the calling session's tabs, leaving the shared
+// browser connection and human login alive. Returns the number of tabs closed.
+func (m *Manager) CloseSessionTabs(ctx context.Context) int {
+	sessionKey := sessionKeyFromCtx(ctx)
+	if sessionKey == "" {
+		return 0
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var owned []string
+	for tid, sk := range m.pageSessions {
+		if sk == sessionKey {
+			owned = append(owned, tid)
+		}
+	}
+	for _, tid := range owned {
+		if page, ok := m.pages[tid]; ok && page != nil {
+			_ = page.Close()
+		}
+		delete(m.pages, tid)
+		delete(m.console, tid)
+		delete(m.pageTenants, tid)
+		delete(m.pageSessions, tid)
+		delete(m.pageLastUsed, tid)
+		m.refs.Remove(tid)
+	}
+	return len(owned)
 }
 
 // MasterTenantID is the well-known master tenant UUID string.

@@ -18,14 +18,14 @@ func TestOldestEvictableLocked_ProtectsHumanTabs(t *testing.T) {
 	m.pages = map[string]*rod.Page{"old": nil, "new": nil, "human": nil}
 	m.pageLastUsed = map[string]time.Time{"old": now.Add(-10 * time.Minute), "new": now}
 
-	if got := m.oldestEvictableLocked(MasterTenantID); got != "old" {
+	if got := m.oldestEvictableLocked("", MasterTenantID); got != "old" {
 		t.Fatalf("expected oldest tracked tab 'old', got %q (human tab must never be evicted)", got)
 	}
 
 	// Under the limit (1 tracked tab + 1 human) → nothing evictable.
 	m.pages = map[string]*rod.Page{"new": nil, "human": nil}
 	m.pageLastUsed = map[string]time.Time{"new": now}
-	if got := m.oldestEvictableLocked(MasterTenantID); got != "" {
+	if got := m.oldestEvictableLocked("", MasterTenantID); got != "" {
 		t.Fatalf("under maxPages: expected no eviction, got %q", got)
 	}
 }
@@ -124,5 +124,85 @@ func TestCleanupDeadBrowser_CancelsContext(t *testing.T) {
 	}
 	if m.browserCancel != nil {
 		t.Fatal("cleanupDeadBrowserLocked did not clear browserCancel")
+	}
+}
+
+// TestSessionTargetLocked verifies an empty targetID resolves to the calling
+// session's OWN most-recently-used tab, never another session's, so concurrent
+// sessions on the shared browser don't read each other's pages.
+func TestSessionTargetLocked(t *testing.T) {
+	now := time.Now()
+	m := New()
+	// Session A owns two tabs; session B owns one.
+	m.pages = map[string]*rod.Page{"a-old": nil, "a-new": nil, "b1": nil}
+	m.pageSessions = map[string]string{"a-old": "A", "a-new": "A", "b1": "B"}
+	m.pageLastUsed = map[string]time.Time{
+		"a-old": now.Add(-5 * time.Minute),
+		"a-new": now,
+		"b1":    now.Add(-time.Minute),
+	}
+
+	if got := m.sessionTargetLocked("A", ""); got != "a-new" {
+		t.Fatalf("session A empty targetID: got %q, want its newest tab a-new", got)
+	}
+	if got := m.sessionTargetLocked("B", ""); got != "b1" {
+		t.Fatalf("session B empty targetID: got %q, want b1", got)
+	}
+	// Explicit targetID is always honored, even cross-session.
+	if got := m.sessionTargetLocked("A", "b1"); got != "b1" {
+		t.Fatalf("explicit targetID must pass through, got %q", got)
+	}
+	// Unknown session and empty session → no tab / legacy global fallback.
+	if got := m.sessionTargetLocked("ghost", ""); got != "" {
+		t.Fatalf("unknown session: got %q, want \"\"", got)
+	}
+	if got := m.sessionTargetLocked("", ""); got != "" {
+		t.Fatalf("empty session must keep global fallback (\"\"), got %q", got)
+	}
+}
+
+// TestSessionTargetLocked_NoTabs verifies a known session with no open tabs resolves to "".
+func TestSessionTargetLocked_NoTabs(t *testing.T) {
+	m := New()
+	m.pages = map[string]*rod.Page{"b1": nil}
+	m.pageSessions = map[string]string{"b1": "B"}
+	m.pageLastUsed = map[string]time.Time{"b1": time.Now()}
+
+	if got := m.sessionTargetLocked("A", ""); got != "" {
+		t.Fatalf("session with no tabs: got %q, want \"\"", got)
+	}
+}
+
+// TestEviction_PerSession verifies maxPages is a per-session budget: session A
+// opening a new tab at the limit never evicts session B's tab on the shared browser.
+func TestEviction_PerSession(t *testing.T) {
+	now := time.Now()
+	m := New(WithMaxPages(1))
+	m.pages = map[string]*rod.Page{"a1": nil, "b1": nil}
+	m.pageSessions = map[string]string{"a1": "A", "b1": "B"}
+	m.pageLastUsed = map[string]time.Time{"a1": now, "b1": now.Add(-time.Minute)}
+
+	// Session A at its 1-tab limit → evicts only its own a1, never B's older b1.
+	if got := m.oldestEvictableLocked("A", MasterTenantID); got != "a1" {
+		t.Fatalf("session A eviction: got %q, want its own a1 (must not touch B's b1)", got)
+	}
+	// Session B at its 1-tab limit → evicts only b1.
+	if got := m.oldestEvictableLocked("B", MasterTenantID); got != "b1" {
+		t.Fatalf("session B eviction: got %q, want b1", got)
+	}
+}
+
+// TestEviction_PerSession_HumanTabGuard verifies the human noVNC tab guard still
+// holds under per-session eviction — an untracked tab is never evicted.
+func TestEviction_PerSession_HumanTabGuard(t *testing.T) {
+	now := time.Now()
+	m := New(WithMaxPages(1))
+	// Session A has one tracked tab; "human" is an untracked noVNC tab (no pageLastUsed).
+	m.pages = map[string]*rod.Page{"a1": nil, "human": nil}
+	m.pageSessions = map[string]string{"a1": "A"}
+	m.pageLastUsed = map[string]time.Time{"a1": now}
+
+	if got := m.oldestEvictableLocked("A", MasterTenantID); got != "a1" {
+		t.Fatalf("got %q, want a1 — human tab must never be evicted", got)
 	}
 }

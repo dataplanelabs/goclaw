@@ -204,6 +204,12 @@ func (t *BrowserTool) handleStart(ctx context.Context) *tools.Result {
 }
 
 func (t *BrowserTool) handleStop(ctx context.Context) *tools.Result {
+	// Shared persistent browser: a session's "stop" closes only its own tabs,
+	// never the connection/login other sessions still depend on.
+	if t.manager.PersistentProfile() {
+		n := t.manager.CloseSessionTabs(ctx)
+		return tools.NewResult(fmt.Sprintf("Closed %d tab(s) from this session.", n))
+	}
 	if err := t.manager.Stop(ctx); err != nil {
 		return tools.ErrorResult(fmt.Sprintf("failed to stop browser: %v", err))
 	}
