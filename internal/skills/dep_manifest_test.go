@@ -43,7 +43,8 @@ func TestCategorizeManifestDep(t *testing.T) {
 		wantImportName string
 		wantInstall    string
 	}{
-		{"pip:psycopg2-binary", "pip", "psycopg2-binary", "psycopg2-binary"},
+		{"pip:psycopg2-binary", "pip", "psycopg2", "psycopg2-binary"},
+		{"pip:pillow", "pip", "PIL", "pillow"},
 		{"pip:requests>=2.31", "pip", "requests", "requests>=2.31"},
 		{"pip:psycopg[binary]", "pip", "psycopg", "psycopg[binary]"},
 		{"npm:typescript", "npm", "typescript", "typescript"},
@@ -201,7 +202,7 @@ func TestApplyManifestOverride_Explicit(t *testing.T) {
 	if !got.FromManifest {
 		t.Error("FromManifest should be true")
 	}
-	wantPy := []string{"psycopg2-binary", "requests"}
+	wantPy := []string{"psycopg2", "requests"}
 	if !reflect.DeepEqual(got.RequiresPython, wantPy) {
 		t.Errorf("RequiresPython = %v, want %v", got.RequiresPython, wantPy)
 	}
@@ -279,7 +280,7 @@ func TestIsValidDepName(t *testing.T) {
 		{"npm", "@scope/pkg-name", true},
 		{"npm", "lodash.debounce", true},
 		{"npm", "", false},
-		{"npm", "Upper", false}, // npm pkgs are lowercase
+		{"npm", "Upper", false},                                   // npm pkgs are lowercase
 		{"npm", "a');require('child_process').exec('evil", false}, // C2 injection
 		{"npm", "a';b('", false},
 
@@ -288,11 +289,11 @@ func TestIsValidDepName(t *testing.T) {
 		{"system", "gcc-13", true},
 		{"system", "lib_foo+bar.1", true},
 		{"system", "", false},
-		{"system", "rm -rf /", false},   // space
-		{"system", "foo;bar", false},    // semicolon
-		{"system", "$(evil)", false},    // command substitution
-		{"system", "`bad`", false},      // backtick
-		{"system", "a|b", false},        // pipe
+		{"system", "rm -rf /", false}, // space
+		{"system", "foo;bar", false},  // semicolon
+		{"system", "$(evil)", false},  // command substitution
+		{"system", "`bad`", false},    // backtick
+		{"system", "a|b", false},      // pipe
 
 		// github — opaque spec, validated downstream
 		{"github", "anything/goes@v1", true},
@@ -319,9 +320,9 @@ func TestApplyManifestOverride_DropsInjection(t *testing.T) {
 		"npm:typescript",
 		"system:rm -rf /",
 		"system:ffmpeg",
-		"pip:",             // empty spec
-		"pip:>=1.0",        // version only, no name
-		"pip:[binary]",     // extras only, no name
+		"pip:",         // empty spec
+		"pip:>=1.0",    // version only, no name
+		"pip:[binary]", // extras only, no name
 	}
 	got := applyManifestOverride(scan, malicious, nil)
 	if !got.FromManifest {

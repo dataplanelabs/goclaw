@@ -111,7 +111,7 @@ RUN set -eux; \
         /root/.cargo/bin/rustup self uninstall -y; \
         apt-get purge -y --auto-remove build-essential cmake pkg-config; \
         npm install -g --cache /tmp/npm-cache docx@^9.6.1 pptxgenjs@^4.0.1; \
-        python3 -c "import boto3, docx, openpyxl, pandas, pptx, pyzipper, pypdf, pdfplumber, pdf2image, markitdown, PIL"; \
+        python3 -c "import boto3, docx, jinja2, kaleido, openpyxl, pandas, plotly, pptx, pyzipper, pypdf, pdfplumber, pdf2image, markitdown, PIL"; \
         NODE_PATH="$(npm root -g)" node -e "require.resolve('docx'); require.resolve('pptxgenjs')"; \
         command -v soffice >/dev/null; \
         command -v pandoc >/dev/null; \

@@ -72,8 +72,9 @@ func checkPythonPackages(importNames []string, scriptsDir string) []string {
 
 func pythonProbeMissing(importNames []string, scriptsDir string, includeOverlay bool) []string {
 	var sb strings.Builder
+	sb.WriteString("import importlib\n")
 	for _, name := range importNames {
-		sb.WriteString(fmt.Sprintf("try:\n import %s\nexcept ImportError:\n print(%q)\n", name, name))
+		sb.WriteString(fmt.Sprintf("try:\n importlib.import_module(%q)\nexcept ImportError:\n print(%q)\n", name, name))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), depCheckTimeout)
@@ -189,6 +190,35 @@ var importToPipName = func(importName string) string {
 		return pip
 	}
 	return importName
+}
+
+// pipToImportName maps pip package names from explicit skill manifests to the
+// top-level Python module that should be imported during dependency checks.
+var pipToImportName = func(pipName string) string {
+	m := map[string]string{
+		"opencv-python":      "cv2",
+		"pillow":             "PIL",
+		"pyyaml":             "yaml",
+		"scikit-learn":       "sklearn",
+		"beautifulsoup4":     "bs4",
+		"python-dateutil":    "dateutil",
+		"python-dotenv":      "dotenv",
+		"python-pptx":        "pptx",
+		"python-docx":        "docx",
+		"attrs":              "attr",
+		"pygobject":          "gi",
+		"psycopg2-binary":    "psycopg2",
+		"psycopg[binary]":    "psycopg",
+		"mysqlclient":        "MySQLdb",
+		"pycryptodome":       "Crypto",
+		"pyserial":           "serial",
+		"scikit-image":       "skimage",
+		"python-levenshtein": "Levenshtein",
+	}
+	if importName, ok := m[strings.ToLower(pipName)]; ok {
+		return importName
+	}
+	return pipName
 }
 
 // FormatMissing formats a missing deps list into a human-readable string.
