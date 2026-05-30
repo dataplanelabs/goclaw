@@ -6,6 +6,14 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- **Browser tool: persistent-profile mode** (`GOCLAW_BROWSER_PERSISTENT_PROFILE`) — makes
+  every tenant share the one default-context remote Chrome (the only context backed by
+  `--user-data-dir`), so a human's one-time login on a remote headful Chrome sidecar
+  persists and the agent inherits the authenticated session over CDP. Without it,
+  non-master tenants route to ephemeral incognito and never see the logged-in profile.
+  **Single-identity only** — all tenants share one cookie jar; never enable on a
+  multi-identity deployment.
+
 - **Storage browser previews `.xlsx` spreadsheets** — selecting an Excel file
   renders its sheets as a table (sheet tabs, header row, 200-row cap) instead of
   an unsupported-file placeholder. The parser is dynamically imported so it
