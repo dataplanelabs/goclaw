@@ -33,6 +33,7 @@ type tokenSource struct {
 	creds      atomic.Pointer[ChannelCreds]
 	store      store.ChannelInstanceStore
 	instanceID uuid.UUID
+	tenantID   uuid.UUID
 
 	refreshSF singleflight.Group
 }
@@ -115,7 +116,7 @@ func (ts *tokenSource) doRefresh(ctx context.Context) error {
 
 	snapshot := *cur
 	snapshot.WithTokens(tok)
-	if err := persistWithRetry(ctx, ts.store, ts.instanceID, &snapshot); err != nil {
+	if err := persistWithRetry(ts.persistContext(ctx), ts.store, ts.instanceID, &snapshot); err != nil {
 		// Zalo already rotated the RT upstream; old one is dead. Commit
 		// the new pair in memory so this process keeps working until
 		// restart, but pod restart with stale DB = re-consent required.
@@ -133,6 +134,13 @@ func (ts *tokenSource) doRefresh(ctx context.Context) error {
 		"refresh_expires_at", snapshot.RefreshTokenExpiresAt,
 	)
 	return nil
+}
+
+func (ts *tokenSource) persistContext(ctx context.Context) context.Context {
+	if store.IsCrossTenant(ctx) || ts.tenantID == uuid.Nil || store.TenantIDFromContext(ctx) == ts.tenantID {
+		return ctx
+	}
+	return store.WithTenantID(ctx, ts.tenantID)
 }
 
 // persistWithRetry writes the rotated tokens to DB with exponential backoff.

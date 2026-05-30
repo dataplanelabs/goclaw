@@ -68,11 +68,11 @@ type Channel struct {
 
 	bootstrapDroppedCount atomic.Int64
 
-	reactions       sync.Map // key: "<userID>:<sourceMessageID>" → *zaloReactionController
-	reactionWG      sync.WaitGroup
-	reactionCtx     context.Context
-	reactionCancel  context.CancelFunc
-	lastReplyChars  sync.Map // key: chatID → int (latest reply char count, used to scale terminal-reaction delay)
+	reactions      sync.Map // key: "<userID>:<sourceMessageID>" → *zaloReactionController
+	reactionWG     sync.WaitGroup
+	reactionCtx    context.Context
+	reactionCancel context.CancelFunc
+	lastReplyChars sync.Map // key: chatID → int (latest reply char count, used to scale terminal-reaction delay)
 
 	// downloadMediaFn lets tests inject a fixture writer that bypasses SSRF
 	// on httptest loopback URLs. nil → downloadOAMedia.
@@ -86,7 +86,7 @@ type Channel struct {
 	teamReplyContacts *store.ContactCollector
 	teamReplyWorker   *PollWorker
 	teamReplyTenantID string
-	judgeResolver JudgeAgentResolver
+	judgeResolver     JudgeAgentResolver
 }
 
 // JudgeAgentResolver mirrors consolidation.JudgeAgentResolver — re-declared to avoid import cycle.
@@ -145,6 +145,13 @@ func New(name string, cfg config.ZaloOAConfig, creds *ChannelCreds,
 func (c *Channel) SetInstanceID(id uuid.UUID) {
 	c.instanceID = id
 	c.tokens.instanceID = id
+}
+
+func (c *Channel) SetTenantID(id uuid.UUID) {
+	c.BaseChannel.SetTenantID(id)
+	if c.tokens != nil {
+		c.tokens.tenantID = id
+	}
 }
 
 // SetTestEndpointsForTest overrides the OAuth + API hosts for integration tests.
