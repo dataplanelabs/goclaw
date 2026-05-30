@@ -64,7 +64,9 @@ func (m *Manager) Type(ctx context.Context, targetID, ref, text string, opts Typ
 // Press presses a keyboard key.
 func (m *Manager) Press(ctx context.Context, targetID, key string) error {
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 	m.mu.Lock()
+	targetID = m.sessionTargetLocked(sessionKey, targetID)
 	page, err := m.getPageForTenant(targetID, tenantID)
 	m.mu.Unlock()
 	if err != nil {
@@ -88,7 +90,9 @@ func (m *Manager) Hover(ctx context.Context, targetID, ref string) error {
 // Wait waits for a condition on a page.
 func (m *Manager) Wait(ctx context.Context, targetID string, opts WaitOpts) error {
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 	m.mu.Lock()
+	targetID = m.sessionTargetLocked(sessionKey, targetID)
 	page, err := m.getPageForTenant(targetID, tenantID)
 	m.mu.Unlock()
 	if err != nil {
@@ -108,7 +112,7 @@ func (m *Manager) Wait(ctx context.Context, targetID string, opts WaitOpts) erro
 	// Wait for text to appear
 	if opts.Text != "" {
 		return rod.Try(func() {
-			page.Timeout(30 * time.Second).MustElementR("*", opts.Text)
+			page.Timeout(30*time.Second).MustElementR("*", opts.Text)
 		})
 	}
 
@@ -151,7 +155,9 @@ func (m *Manager) Wait(ctx context.Context, targetID string, opts WaitOpts) erro
 // Evaluate runs JavaScript on a page.
 func (m *Manager) Evaluate(ctx context.Context, targetID, js string) (string, error) {
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 	m.mu.Lock()
+	targetID = m.sessionTargetLocked(sessionKey, targetID)
 	page, err := m.getPageForTenant(targetID, tenantID)
 	m.mu.Unlock()
 	if err != nil {

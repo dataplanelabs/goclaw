@@ -22,6 +22,7 @@ func (m *Manager) reconnectLocked() error {
 	m.pages = make(map[string]*rod.Page)
 	m.console = make(map[string][]ConsoleMessage)
 	m.pageTenants = make(map[string]string)
+	m.pageSessions = make(map[string]string)
 	m.pageLastUsed = make(map[string]time.Time)
 	m.refs = NewRefStore()
 
@@ -182,7 +183,9 @@ func (m *Manager) resolveElement(page *rod.Page, targetID, ref string) (*rod.Ele
 // getPageAndResolve is a helper that locks, gets page with tenant check, and resolves an element.
 func (m *Manager) getPageAndResolve(ctx context.Context, targetID, ref string) (*rod.Page, *rod.Element, error) {
 	tenantID := tenantIDFromCtx(ctx)
+	sessionKey := sessionKeyFromCtx(ctx)
 	m.mu.Lock()
+	targetID = m.sessionTargetLocked(sessionKey, targetID)
 	page, err := m.getPageForTenant(targetID, tenantID)
 	m.mu.Unlock()
 	if err != nil {
