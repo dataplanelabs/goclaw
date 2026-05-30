@@ -61,7 +61,7 @@ func dashScopeModels() []ModelInfo {
 		{ID: "wan2.6-image", Name: "Wan 2.6 Image"},
 		{ID: "wan2.1-image", Name: "Wan 2.1 Image"},
 		// Video generation
-		{ID: "wan2.6-video", Name: "Wan 2.6 Video"},
+		{ID: "wan2.2-t2v-plus", Name: "Wan 2.2 Video (T2V Plus)"},
 	}
 }
 
