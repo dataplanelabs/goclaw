@@ -37,3 +37,26 @@ func TestImportToPipName(t *testing.T) {
 		})
 	}
 }
+
+func TestPipToImportName(t *testing.T) {
+	cases := []struct {
+		pipName string
+		want    string
+	}{
+		{"pillow", "PIL"},
+		{"Pillow", "PIL"},
+		{"pyyaml", "yaml"},
+		{"python-docx", "docx"},
+		{"python-pptx", "pptx"},
+		{"psycopg2-binary", "psycopg2"},
+		{"opencv-python", "cv2"},
+		{"plotly", "plotly"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.pipName, func(t *testing.T) {
+			if got := pipToImportName(tc.pipName); got != tc.want {
+				t.Errorf("pipToImportName(%q) = %q, want %q", tc.pipName, got, tc.want)
+			}
+		})
+	}
+}

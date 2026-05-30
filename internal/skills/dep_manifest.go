@@ -68,6 +68,7 @@ func categorizeManifestDep(raw string) ParsedDep {
 		p.Category = "pip"
 		spec := strings.TrimPrefix(raw, "pip:")
 		p.ImportName, p.InstallSpec = splitPipSpec(spec)
+		p.ImportName = pipToImportName(p.ImportName)
 	case strings.HasPrefix(raw, "npm:"):
 		p.Category = "npm"
 		p.ImportName = strings.TrimPrefix(raw, "npm:")
@@ -204,7 +205,7 @@ func filterOutByImportName(names, excludeDeps []string, category string) []strin
 		case strings.HasPrefix(e, prefix):
 			name, _ := splitPipSpec(strings.TrimPrefix(e, prefix))
 			if name != "" {
-				blocked[name] = true
+				blocked[pipToImportName(name)] = true
 			}
 		case category == "system" && !strings.Contains(e, ":"):
 			blocked[e] = true
