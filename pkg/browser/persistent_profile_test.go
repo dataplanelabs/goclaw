@@ -2,10 +2,28 @@ package browser
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/go-rod/rod"
 )
+
+// TestIsStalePageErr pins which errors trigger a re-resolve-and-retry on page ops.
+func TestIsStalePageErr(t *testing.T) {
+	for _, s := range []string{"open tab: context canceled", "Target closed", "no such target", "use of closed network connection"} {
+		if !isStalePageErr(errors.New(s)) {
+			t.Fatalf("want stale: %q", s)
+		}
+	}
+	for _, s := range []string{"context deadline exceeded", "element not found"} {
+		if isStalePageErr(errors.New(s)) {
+			t.Fatalf("want NOT stale: %q", s)
+		}
+	}
+	if isStalePageErr(nil) {
+		t.Fatal("nil must not be stale")
+	}
+}
 
 // TestTenantBrowserLocked_PersistentProfile verifies the persistent-profile mode
 // routes EVERY tenant (including a non-master UUID) to the shared default-context

@@ -289,7 +289,9 @@ func (t *BrowserTool) handleScreenshot(ctx context.Context, args map[string]any)
 		return tools.ErrorResult(fmt.Sprintf("failed to save screenshot: %v", err))
 	}
 
-	return &tools.Result{ForLLM: fmt.Sprintf("MEDIA:%s", imagePath)}
+	// Return a plain reference, NOT a MEDIA: auto-deliver — agents often screenshot
+	// to analyze, and auto-delivery duplicates images when the agent also send_files.
+	return &tools.Result{ForLLM: fmt.Sprintf("Screenshot saved to %s — use read_image to analyze it, or send_file to deliver it to the user once.", imagePath)}
 }
 
 func (t *BrowserTool) handleNavigate(ctx context.Context, args map[string]any) *tools.Result {
