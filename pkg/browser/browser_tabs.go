@@ -119,49 +119,46 @@ func (m *Manager) OpenTab(ctx context.Context, url string) (*TabInfo, error) {
 	return tab, nil
 }
 
-// evictOldestIfOverLimitLocked closes the oldest idle page for a tenant if at or over maxPages.
-// Must be called with mu held.
-func (m *Manager) evictOldestIfOverLimitLocked(tenantID string) {
+// oldestEvictableLocked returns the oldest goclaw-opened tab for the tenant when
+// at/over maxPages, else "". Tabs a human opened via noVNC (no pageLastUsed entry,
+// never touched by goclaw) are not counted or evicted. Must be called with mu held.
+func (m *Manager) oldestEvictableLocked(tenantID string) string {
 	isMaster := tenantID == "" || tenantID == MasterTenantID
 
-	// Collect targetIDs belonging to this tenant
-	var owned []string
-	for tid := range m.pages {
-		if isMaster {
-			// Master tenant owns pages not in pageTenants
-			if _, hasOwner := m.pageTenants[tid]; !hasOwner {
-				owned = append(owned, tid)
-			}
-		} else {
-			if m.pageTenants[tid] == tenantID {
-				owned = append(owned, tid)
-			}
-		}
-	}
-
-	if len(owned) < m.maxPages {
-		return
-	}
-
-	// Find the oldest page by lastUsed
 	var oldestID string
 	var oldestTime time.Time
-	for _, tid := range owned {
-		lu, ok := m.pageLastUsed[tid]
-		if !ok {
-			oldestID = tid
-			break
+	var count int
+	for tid := range m.pages {
+		lu, tracked := m.pageLastUsed[tid]
+		if !tracked {
+			continue // human/manual noVNC tab — never evict
 		}
+		if isMaster {
+			if _, hasOwner := m.pageTenants[tid]; hasOwner {
+				continue
+			}
+		} else if m.pageTenants[tid] != tenantID {
+			continue
+		}
+		count++
 		if oldestID == "" || lu.Before(oldestTime) {
-			oldestID = tid
-			oldestTime = lu
+			oldestID, oldestTime = tid, lu
 		}
 	}
 
+	if count < m.maxPages {
+		return ""
+	}
+	return oldestID
+}
+
+// evictOldestIfOverLimitLocked closes the oldest goclaw-opened tab for a tenant if
+// at or over maxPages. Never closes human noVNC tabs. Must be called with mu held.
+func (m *Manager) evictOldestIfOverLimitLocked(tenantID string) {
+	oldestID := m.oldestEvictableLocked(tenantID)
 	if oldestID == "" {
 		return
 	}
-
 	if page, ok := m.pages[oldestID]; ok {
 		_ = page.Close()
 	}

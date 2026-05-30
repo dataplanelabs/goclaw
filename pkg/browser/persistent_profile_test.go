@@ -4,9 +4,31 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/go-rod/rod"
 )
+
+// TestOldestEvictableLocked_ProtectsHumanTabs verifies the max-pages eviction only
+// ever picks a goclaw-opened tab (in pageLastUsed) — never a human's noVNC tab.
+func TestOldestEvictableLocked_ProtectsHumanTabs(t *testing.T) {
+	now := time.Now()
+	m := New(WithMaxPages(2))
+	// two goclaw-opened master tabs (tracked, no tenant owner) + one untracked human tab
+	m.pages = map[string]*rod.Page{"old": nil, "new": nil, "human": nil}
+	m.pageLastUsed = map[string]time.Time{"old": now.Add(-10 * time.Minute), "new": now}
+
+	if got := m.oldestEvictableLocked(MasterTenantID); got != "old" {
+		t.Fatalf("expected oldest tracked tab 'old', got %q (human tab must never be evicted)", got)
+	}
+
+	// Under the limit (1 tracked tab + 1 human) → nothing evictable.
+	m.pages = map[string]*rod.Page{"new": nil, "human": nil}
+	m.pageLastUsed = map[string]time.Time{"new": now}
+	if got := m.oldestEvictableLocked(MasterTenantID); got != "" {
+		t.Fatalf("under maxPages: expected no eviction, got %q", got)
+	}
+}
 
 // TestIsStalePageErr pins which errors trigger a re-resolve-and-retry on page ops.
 func TestIsStalePageErr(t *testing.T) {
