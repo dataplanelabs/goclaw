@@ -52,6 +52,13 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Zalo OA refresh-token rotation now persists under the channel tenant** —
+  background refresh paths such as team analytics could call the token source
+  with a context that had no tenant scope, causing the rotated refresh token to
+  stay only in memory. After a pod restart, the channel reloaded the stale
+  already-burned refresh token and required another OA re-auth. The token source
+  now carries the channel row's tenant and uses it for credential persistence.
+
 - **Vault no longer indexes the same file under two tree roots** — the vault
   interceptor stored `vault_documents.path` relative to the global workspace
   while write tools resolve under the per-tenant workspace, so non-master
