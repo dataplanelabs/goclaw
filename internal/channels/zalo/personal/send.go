@@ -46,7 +46,7 @@ func readQuoteFromMetadata(meta map[string]string) *protocol.SendMessageQuote {
 //  2. applyAskerPrepend      — inserts "@[uid] " at head → shift styles right
 //  3. wrapBareMentions       — SKIPPED when styles non-empty (would shift mid-text)
 //  4. ParseMarkersWithStyles — removes @[uid] markers → adjusts remaining styles
-//  5. sendChunkedText        — DROPS styles on multi-chunk (mirrors mentions)
+//  5. sendChunkedText        — re-anchors mentions/styles to each chunk
 func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	sess := c.session()
 	if !c.IsRunning() || sess == nil {
@@ -282,60 +282,38 @@ func (c *Channel) cacheOutboundMedia(msgID, kind, filePath, caption string) {
 }
 
 // sendChunkedText sends one chunk per request. Quote attaches to chunk 0 only.
-// Mentions/styles: on single-chunk sends, everything rides through. On
-// multi-chunk, mentions/styles fitting entirely within chunk 0 ride on
-// chunk 0 (positions are still valid since ChunkMarkdown only trims AFTER
-// chunk 0's boundary — head text is untouched). Entries whose
-// [Pos, Pos+Len) extends past chunk 0's UTF-16 length are dropped with a
-// warn log. Critical for the asker-prepend mention which always sits at
-// position 0 — it should not be dropped just because the reply is long.
+// Mentions/styles are authored against the full rendered text, but Zalo expects
+// offsets relative to each outgoing message body. For multi-chunk sends we map
+// full-text UTF-16 offsets into chunk-local offsets and drop only spans that
+// straddle a chunk boundary.
 func (c *Channel) sendChunkedText(ctx context.Context, sess *protocol.Session, chatID string, threadType protocol.ThreadType, text string, quote *protocol.SendMessageQuote, allMentions []pkgproto.Mention, allStyles []common.Style) error {
 	chunks := channels.ChunkMarkdown(text, maxTextLength)
-	chunk0UTF16 := 0
-	if len(chunks) > 0 {
-		chunk0UTF16 = pkgproto.UTF16Len(chunks[0])
+	ranges := chunkRangesUTF16(text, chunks)
+	chunkMentions, droppedMentions := mentionsByChunk(allMentions, ranges)
+	chunkStyles, droppedStyles := stylesByChunk(allStyles, ranges)
+	if len(chunks) > 1 && droppedMentions > 0 {
+		slog.Warn("zalo_personal.mention.dropped_multichunk",
+			"chat_id", chatID,
+			"mentions_total", len(allMentions),
+			"kept", countMentions(chunkMentions),
+			"dropped", droppedMentions,
+			"chunks", len(chunks))
+	}
+	if len(chunks) > 1 && droppedStyles > 0 {
+		slog.Warn("zalo_personal.style.dropped_multichunk",
+			"chat_id", chatID,
+			"styles_total", len(allStyles),
+			"kept", countStyles(chunkStyles),
+			"dropped", droppedStyles,
+			"chunks", len(chunks),
+			"text_preview", previewText(text, 80))
 	}
 	for i, chunk := range chunks {
 		var q *protocol.SendMessageQuote
 		if i == 0 {
 			q = quote
 		}
-		var chunkMentions []pkgproto.Mention
-		if len(allMentions) > 0 && i == 0 {
-			if len(chunks) == 1 {
-				chunkMentions = allMentions
-			} else {
-				kept, dropped := mentionsFittingChunk0(allMentions, chunk0UTF16)
-				chunkMentions = kept
-				if dropped > 0 {
-					slog.Warn("zalo_personal.mention.dropped_multichunk",
-						"chat_id", chatID,
-						"mentions_total", len(allMentions),
-						"kept_chunk0", len(kept),
-						"dropped", dropped,
-						"chunks", len(chunks))
-				}
-			}
-		}
-		var chunkStyles []common.Style
-		if len(allStyles) > 0 && i == 0 {
-			if len(chunks) == 1 {
-				chunkStyles = allStyles
-			} else {
-				kept, dropped := stylesFittingChunk0(allStyles, chunk0UTF16)
-				chunkStyles = kept
-				if dropped > 0 {
-					slog.Warn("zalo_personal.style.dropped_multichunk",
-						"chat_id", chatID,
-						"styles_total", len(allStyles),
-						"kept_chunk0", len(kept),
-						"dropped", dropped,
-						"chunks", len(chunks),
-						"text_preview", previewText(text, 80))
-				}
-			}
-		}
-		msgID, err := c.sendChunkWithFallbacks(ctx, sess, chatID, threadType, chunk, q, chunkMentions, chunkStyles)
+		msgID, err := c.sendChunkWithFallbacks(ctx, sess, chatID, threadType, chunk, q, chunkMentions[i], chunkStyles[i])
 		if err != nil {
 			return err
 		}
@@ -376,40 +354,108 @@ func quoteIDOrEmpty(q *protocol.SendMessageQuote) string {
 	return q.MsgID
 }
 
-// mentionsFittingChunk0 returns mentions whose [Position, Position+Length)
-// fits entirely within the first chunk (positions are UTF-16 code units).
-// Used when the message gets chunked — chunk 0 keeps the head's text
-// untouched, so mention positions remain valid; later chunks would need
-// re-anchoring which is out of scope.
-func mentionsFittingChunk0(all []pkgproto.Mention, chunk0UTF16 int) ([]pkgproto.Mention, int) {
-	if chunk0UTF16 <= 0 {
-		return nil, len(all)
-	}
-	kept := all[:0:0]
-	dropped := 0
-	for _, m := range all {
-		if m.Position >= 0 && m.Position+m.Length <= chunk0UTF16 {
-			kept = append(kept, m)
-		} else {
-			dropped++
-		}
-	}
-	return kept, dropped
+type chunkRange struct {
+	startUTF16 int
+	lenUTF16   int
 }
 
-// stylesFittingChunk0 is the style-side mirror of mentionsFittingChunk0.
-func stylesFittingChunk0(all []common.Style, chunk0UTF16 int) ([]common.Style, int) {
-	if chunk0UTF16 <= 0 {
-		return nil, len(all)
+func chunkRangesUTF16(text string, chunks []string) []chunkRange {
+	ranges := make([]chunkRange, len(chunks))
+	searchFrom := 0
+	fallbackStart := 0
+	for i, chunk := range chunks {
+		if chunk == "" {
+			ranges[i] = chunkRange{startUTF16: fallbackStart}
+			continue
+		}
+		if searchFrom <= len(text) {
+			if rel := strings.Index(text[searchFrom:], chunk); rel >= 0 {
+				byteStart := searchFrom + rel
+				ranges[i] = chunkRange{
+					startUTF16: pkgproto.UTF16Len(text[:byteStart]),
+					lenUTF16:   pkgproto.UTF16Len(chunk),
+				}
+				searchFrom = byteStart + len(chunk)
+				fallbackStart = ranges[i].startUTF16 + ranges[i].lenUTF16
+				continue
+			}
+		}
+		// Fallback for chunks that ChunkMarkdown repaired, e.g. force-split code
+		// fences. Those chunks generally have no native styles, but keep progress
+		// monotonic so later chunks can still be localized.
+		chunkLen := pkgproto.UTF16Len(chunk)
+		ranges[i] = chunkRange{startUTF16: fallbackStart, lenUTF16: chunkLen}
+		fallbackStart += chunkLen
 	}
-	kept := all[:0:0]
+	return ranges
+}
+
+func mentionsByChunk(all []pkgproto.Mention, ranges []chunkRange) ([][]pkgproto.Mention, int) {
+	out := make([][]pkgproto.Mention, len(ranges))
+	dropped := 0
+	for _, m := range all {
+		start := m.Position
+		end := m.Position + m.Length
+		if start < 0 || m.Length <= 0 {
+			dropped++
+			continue
+		}
+		chunkIdx := containingChunk(start, end, ranges)
+		if chunkIdx < 0 {
+			dropped++
+			continue
+		}
+		local := m
+		local.Position = start - ranges[chunkIdx].startUTF16
+		out[chunkIdx] = append(out[chunkIdx], local)
+	}
+	return out, dropped
+}
+
+func stylesByChunk(all []common.Style, ranges []chunkRange) ([][]common.Style, int) {
+	out := make([][]common.Style, len(ranges))
 	dropped := 0
 	for _, s := range all {
-		if s.Start >= 0 && s.Start+s.Len <= chunk0UTF16 {
-			kept = append(kept, s)
-		} else {
+		start := s.Start
+		end := s.Start + s.Len
+		if start < 0 || s.Len <= 0 {
 			dropped++
+			continue
+		}
+		chunkIdx := containingChunk(start, end, ranges)
+		if chunkIdx < 0 {
+			dropped++
+			continue
+		}
+		local := s
+		local.Start = start - ranges[chunkIdx].startUTF16
+		out[chunkIdx] = append(out[chunkIdx], local)
+	}
+	return out, dropped
+}
+
+func containingChunk(start, end int, ranges []chunkRange) int {
+	for i, r := range ranges {
+		rangeEnd := r.startUTF16 + r.lenUTF16
+		if start >= r.startUTF16 && end <= rangeEnd {
+			return i
 		}
 	}
-	return kept, dropped
+	return -1
+}
+
+func countMentions(chunks [][]pkgproto.Mention) int {
+	n := 0
+	for _, chunk := range chunks {
+		n += len(chunk)
+	}
+	return n
+}
+
+func countStyles(chunks [][]common.Style) int {
+	n := 0
+	for _, chunk := range chunks {
+		n += len(chunk)
+	}
+	return n
 }
