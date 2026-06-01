@@ -12,6 +12,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
@@ -132,6 +133,40 @@ func TestWriteFileDeliverDefault_IsTrue(t *testing.T) {
 	resolvedPath := filepath.Join(workspaceCanonical, "data.txt")
 	if !dm.IsDelivered(resolvedPath) {
 		t.Errorf("expected dm.IsDelivered(%q) = true when deliver omitted, got false", resolvedPath)
+	}
+}
+
+func TestWriteFileScratchPath_DefaultDeliverySuppressed(t *testing.T) {
+	workspace := t.TempDir()
+	workspaceCanonical, _ := filepath.EvalSymlinks(workspace)
+
+	tool := NewWriteFileTool(workspaceCanonical, true)
+
+	dm := NewDeliveredMedia()
+	ctx := WithDeliveredMedia(context.Background(), dm)
+
+	result := tool.Execute(ctx, map[string]any{
+		"path":    "_tmp_render_report.py",
+		"content": "print('render')\n",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if len(result.Media) != 0 {
+		t.Fatalf("expected scratch file delivery to be suppressed, got %d media entries", len(result.Media))
+	}
+	msg := strings.ToLower(result.ForLLM)
+	if !strings.Contains(msg, "delivery suppressed") || !strings.Contains(msg, "final result") {
+		t.Fatalf("expected suppression guidance in ForLLM, got: %s", result.ForLLM)
+	}
+
+	resolvedPath := filepath.Join(workspaceCanonical, "_tmp_render_report.py")
+	if dm.IsDelivered(resolvedPath) {
+		t.Fatalf("expected scratch file not to be marked delivered: %s", resolvedPath)
+	}
+	if _, err := os.Stat(resolvedPath); err != nil {
+		t.Fatalf("expected scratch file to still be written: %v", err)
 	}
 }
 
