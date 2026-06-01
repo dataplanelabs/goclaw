@@ -48,7 +48,7 @@ func (m *mockTokenCounter) CountMessages(_ string, msgs []providers.Message) int
 	return len(msgs) * m.countPerMessage
 }
 func (m *mockTokenCounter) CountToolSchemas(_ string, _ []providers.ToolDefinition) int { return 0 }
-func (m *mockTokenCounter) ModelContextWindow(_ string) int                              { return 200_000 }
+func (m *mockTokenCounter) ModelContextWindow(_ string) int                             { return 200_000 }
 
 // --- ThinkStage tests ---
 
@@ -1782,6 +1782,29 @@ func TestFinalizeStage_DropsPublishedMedia(t *testing.T) {
 	}
 }
 
+func TestFinalizeStage_DropsScratchMedia(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	const scratch = "/workspace/_tmp_render_report.py"
+	const final = "/workspace/generated/2026-06-01/report.png"
+	state.Tool.MediaResults = []MediaResult{
+		{Path: scratch, ContentType: "text/x-python"},
+		{Path: final, ContentType: "image/png"},
+	}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if len(state.Tool.MediaResults) != 1 {
+		t.Fatalf("MediaResults len = %d, want 1 (scratch path filtered)", len(state.Tool.MediaResults))
+	}
+	if state.Tool.MediaResults[0].Path != final {
+		t.Errorf("survivor = %q, want %q", state.Tool.MediaResults[0].Path, final)
+	}
+}
+
 // TestFinalizeStage_PersistsFromObserveAccumulator verifies that FinalizeStage
 // sources assistant images from state.Observe.AssistantImages, NOT from
 // LastResponse.Images. This guards against the regression where a mid-loop
@@ -2338,8 +2361,8 @@ func TestParseTTL_ValidInputs(t *testing.T) {
 		{"5m", 5 * time.Minute},
 		{"30s", 30 * time.Second},
 		{"1h30m", 90 * time.Minute},
-		{"bogus", 5 * time.Minute},  // invalid → fallback
-		{"-1m", 5 * time.Minute},    // negative → fallback
+		{"bogus", 5 * time.Minute}, // invalid → fallback
+		{"-1m", 5 * time.Minute},   // negative → fallback
 	}
 	for _, tc := range cases {
 		got := parseTTL(tc.in)

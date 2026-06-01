@@ -214,6 +214,30 @@ func TestSendFile_T8_AbsoluteInsideWorkspaceAllowed(t *testing.T) {
 	}
 }
 
+func TestSendFile_T8b_ScratchPathRejected(t *testing.T) {
+	ws, _, _, _ := mkSendFileWorkspace(t)
+	tmpScript := filepath.Join(ws, "_tmp_render_report.py")
+	if err := os.WriteFile(tmpScript, []byte("print('render')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tool := NewSendFileTool(ws, true)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"path": tmpScript,
+	})
+
+	if !result.IsError {
+		t.Fatal("expected scratch send_file path to be rejected, got success")
+	}
+	msg := strings.ToLower(result.ForLLM)
+	if !strings.Contains(msg, "temp") || !strings.Contains(msg, "final result") {
+		t.Fatalf("expected temp/final-result guidance, got: %s", result.ForLLM)
+	}
+	if len(result.Media) != 0 {
+		t.Fatalf("expected no media for rejected scratch path, got %d", len(result.Media))
+	}
+}
+
 // TestSendFile_T9_DuplicateBlocksSameToolCall verifies that calling send_file twice
 // with the same path in the same ctx causes the second call to return an error.
 func TestSendFile_T9_DuplicateBlocksSameToolCall(t *testing.T) {

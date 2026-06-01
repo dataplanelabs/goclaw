@@ -278,6 +278,11 @@ func (t *MessageTool) validateChannelTenant(ctx context.Context, channel, target
 
 // sendMedia sends a file as a media attachment via the outbound message bus.
 func (t *MessageTool) sendMedia(ctx context.Context, channel, target, filePath string) *Result {
+	if IsScratchDeliveryPath(filePath) {
+		return ErrorResult(fmt.Sprintf(
+			"refusing to send temp/staging/scratch file %s. Send only the final result file.",
+			filepath.Base(filePath)))
+	}
 	if _, err := os.Stat(filePath); err != nil {
 		return ErrorResult(fmt.Sprintf("file not found: %s", filePath))
 	}
@@ -340,6 +345,9 @@ func (t *MessageTool) extractEmbeddedMedia(ctx context.Context, message string) 
 		// Extract each MEDIA: path and resolve via security-checked path resolution.
 		for _, raw := range matches {
 			if resolved, ok := t.resolveMediaPath(ctx, raw); ok {
+				if IsScratchDeliveryPath(resolved) {
+					continue
+				}
 				media = append(media, bus.MediaAttachment{
 					URL:         resolved,
 					ContentType: mimeFromPath(resolved),

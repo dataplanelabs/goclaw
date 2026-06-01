@@ -223,6 +223,10 @@ func (s *FinalizeStage) processMedia(ctx context.Context, state *RunState) {
 		if seen[m.Path] {
 			continue
 		}
+		if tools.IsScratchDeliveryPath(m.Path) {
+			slog.Warn("finalize: dropped temp/staging/scratch media", "path", m.Path)
+			continue
+		}
 		if pm != nil && pm.IsPublished(m.Path) {
 			continue
 		}
