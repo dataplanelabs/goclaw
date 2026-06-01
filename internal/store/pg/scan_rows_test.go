@@ -192,6 +192,25 @@ func TestEpisodicSummaryRow_ToEpisodicSummary(t *testing.T) {
 	}
 }
 
+func TestEpisodicSummaryRow_ToEpisodicSummaryNilTopics(t *testing.T) {
+	r := episodicSummaryRow{
+		ID:         uuid.New().String(),
+		TenantID:   uuid.New().String(),
+		AgentID:    uuid.New().String(),
+		UserID:     "u1",
+		SessionKey: "sess-1",
+		Summary:    "did X",
+		CreatedAt:  time.Now(),
+	}
+	got := r.toEpisodicSummary()
+	if got.KeyTopics == nil {
+		t.Fatal("KeyTopics is nil, want empty slice for stable JSON")
+	}
+	if len(got.KeyTopics) != 0 {
+		t.Fatalf("KeyTopics = %v, want empty", got.KeyTopics)
+	}
+}
+
 func TestEpisodicScoredRow_ToEpisodicScored(t *testing.T) {
 	created := time.Now()
 	r := episodicScoredRow{

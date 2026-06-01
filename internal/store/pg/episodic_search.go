@@ -122,7 +122,7 @@ func scanEpisodic(row *sql.Row) (*store.EpisodicSummary, error) {
 	if err != nil {
 		return nil, err
 	}
-	ep.KeyTopics = []string(topics)
+	ep.KeyTopics = nonNilStringSlice([]string(topics))
 	return &ep, nil
 }
 

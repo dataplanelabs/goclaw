@@ -4,6 +4,7 @@ import { useHttp } from "@/hooks/use-ws";
 import { queryKeys } from "@/lib/query-keys";
 import { toast } from "@/stores/use-toast-store";
 import i18n from "@/i18n";
+import { normalizeMemoryAgentId, requireMemoryAgentId } from "../lib/memory-agent";
 import type {
   MemoryDocument,
   MemoryDocumentDetail,
@@ -19,21 +20,26 @@ export interface MemoryDocFilters {
 export function useMemoryDocuments(filters: MemoryDocFilters) {
   const http = useHttp();
   const queryClient = useQueryClient();
+  const selectedAgentId = normalizeMemoryAgentId(filters.agentId);
+  const selectedUserId = filters.userId || undefined;
 
-  const queryKey = queryKeys.memory.list({ ...filters });
+  const queryKey = queryKeys.memory.list({
+    agentId: selectedAgentId || undefined,
+    userId: selectedUserId,
+  });
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey,
     queryFn: async () => {
       // No agent selected → list all memory across all agents
-      if (!filters.agentId) {
+      if (!selectedAgentId) {
         const res = await http.get<MemoryDocument[]>("/v1/memory/documents");
         return res ?? [];
       }
       const params: Record<string, string> = {};
-      if (filters.userId) params.user_id = filters.userId;
+      if (selectedUserId) params.user_id = selectedUserId;
       const res = await http.get<MemoryDocument[]>(
-        `/v1/agents/${filters.agentId}/memory/documents`,
+        `/v1/agents/${selectedAgentId}/memory/documents`,
         params,
       );
       return res ?? [];
@@ -51,20 +57,22 @@ export function useMemoryDocuments(filters: MemoryDocFilters) {
 
   const getDocument = useCallback(
     async (path: string, userId?: string) => {
+      const agentId = requireMemoryAgentId(selectedAgentId);
       const params: Record<string, string> = {};
       if (userId) params.user_id = userId;
       return http.get<MemoryDocumentDetail>(
-        `/v1/agents/${filters.agentId}/memory/documents/${path}`,
+        `/v1/agents/${agentId}/memory/documents/${path}`,
         params,
       );
     },
-    [http, filters.agentId],
+    [http, selectedAgentId],
   );
 
   const createDocument = useCallback(
     async (path: string, content: string, userId?: string) => {
       try {
-        await http.put(`/v1/agents/${filters.agentId}/memory/documents/${path}`, {
+        const agentId = requireMemoryAgentId(selectedAgentId);
+        await http.put(`/v1/agents/${agentId}/memory/documents/${path}`, {
           content,
           user_id: userId || "",
         });
@@ -75,13 +83,14 @@ export function useMemoryDocuments(filters: MemoryDocFilters) {
         throw err;
       }
     },
-    [http, filters.agentId, invalidate],
+    [http, selectedAgentId, invalidate],
   );
 
   const updateDocument = useCallback(
     async (path: string, content: string, userId?: string) => {
       try {
-        await http.put(`/v1/agents/${filters.agentId}/memory/documents/${path}`, {
+        const agentId = requireMemoryAgentId(selectedAgentId);
+        await http.put(`/v1/agents/${agentId}/memory/documents/${path}`, {
           content,
           user_id: userId || "",
         });
@@ -92,17 +101,13 @@ export function useMemoryDocuments(filters: MemoryDocFilters) {
         throw err;
       }
     },
-    [http, filters.agentId, invalidate],
+    [http, selectedAgentId, invalidate],
   );
 
   const deleteDocument = useCallback(
     async (path: string, userId?: string, agentId?: string) => {
-      const aid = agentId || filters.agentId;
-      if (!aid) {
-        toast.error(i18n.t("memory:toast.docDeleteFailed"), "No agent selected");
-        return;
-      }
       try {
+        const aid = requireMemoryAgentId(agentId || selectedAgentId);
         const qs = userId ? `?user_id=${encodeURIComponent(userId)}` : "";
         await http.delete(`/v1/agents/${aid}/memory/documents/${path}${qs}`);
         await invalidate();
@@ -112,25 +117,27 @@ export function useMemoryDocuments(filters: MemoryDocFilters) {
         throw err;
       }
     },
-    [http, filters.agentId, invalidate],
+    [http, selectedAgentId, invalidate],
   );
 
   const getChunks = useCallback(
     async (path: string, userId?: string) => {
+      const agentId = requireMemoryAgentId(selectedAgentId);
       const params: Record<string, string> = { path };
       if (userId) params.user_id = userId;
       return http.get<MemoryChunk[]>(
-        `/v1/agents/${filters.agentId}/memory/chunks`,
+        `/v1/agents/${agentId}/memory/chunks`,
         params,
       );
     },
-    [http, filters.agentId],
+    [http, selectedAgentId],
   );
 
   const indexDocument = useCallback(
-    async (path: string, userId?: string) => {
+    async (path: string, userId?: string, agentIdOverride?: string) => {
       try {
-        await http.post(`/v1/agents/${filters.agentId}/memory/index`, {
+        const agentId = requireMemoryAgentId(agentIdOverride || selectedAgentId);
+        await http.post(`/v1/agents/${agentId}/memory/index`, {
           path,
           user_id: userId || "",
         });
@@ -140,13 +147,14 @@ export function useMemoryDocuments(filters: MemoryDocFilters) {
         throw err;
       }
     },
-    [http, filters.agentId],
+    [http, selectedAgentId],
   );
 
   const indexAll = useCallback(
     async (userId?: string) => {
       try {
-        await http.post(`/v1/agents/${filters.agentId}/memory/index-all`, {
+        const agentId = requireMemoryAgentId(selectedAgentId);
+        await http.post(`/v1/agents/${agentId}/memory/index-all`, {
           user_id: userId || "",
         });
         toast.success(i18n.t("memory:toast.allIndexed"));
@@ -155,7 +163,7 @@ export function useMemoryDocuments(filters: MemoryDocFilters) {
         throw err;
       }
     },
-    [http, filters.agentId],
+    [http, selectedAgentId],
   );
 
   return {
@@ -177,13 +185,15 @@ export function useMemorySearch(agentId: string) {
   const http = useHttp();
   const [results, setResults] = useState<MemorySearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const selectedAgentId = normalizeMemoryAgentId(agentId);
 
   const search = useCallback(
     async (query: string, userId?: string, maxResults?: number, minScore?: number) => {
       setSearching(true);
       try {
+        const aid = requireMemoryAgentId(selectedAgentId);
         const res = await http.post<{ results: MemorySearchResult[]; count: number }>(
-          `/v1/agents/${agentId}/memory/search`,
+          `/v1/agents/${aid}/memory/search`,
           {
             query,
             user_id: userId || "",
@@ -201,7 +211,7 @@ export function useMemorySearch(agentId: string) {
         setSearching(false);
       }
     },
-    [http, agentId],
+    [http, selectedAgentId],
   );
 
   return { results, searching, search };

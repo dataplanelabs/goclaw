@@ -23,6 +23,9 @@ func (h *MemoryHandler) handleListAllDocuments(w http.ResponseWriter, r *http.Re
 
 func (h *MemoryHandler) handleListDocuments(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("agentID")
+	if !requireAgentUUID(w, agentID) {
+		return
+	}
 	userID := r.URL.Query().Get("user_id")
 
 	var docs []store.DocumentInfo
@@ -46,6 +49,9 @@ func (h *MemoryHandler) handleListDocuments(w http.ResponseWriter, r *http.Reque
 func (h *MemoryHandler) handleGetDocument(w http.ResponseWriter, r *http.Request) {
 	locale := extractLocale(r)
 	agentID := r.PathValue("agentID")
+	if !requireAgentUUID(w, agentID) {
+		return
+	}
 	path := r.PathValue("path")
 	userID := r.URL.Query().Get("user_id")
 
@@ -61,6 +67,9 @@ func (h *MemoryHandler) handleGetDocument(w http.ResponseWriter, r *http.Request
 func (h *MemoryHandler) handlePutDocument(w http.ResponseWriter, r *http.Request) {
 	locale := extractLocale(r)
 	agentID := r.PathValue("agentID")
+	if !requireAgentUUID(w, agentID) {
+		return
+	}
 	path := r.PathValue("path")
 
 	var body struct {
@@ -81,6 +90,9 @@ func (h *MemoryHandler) handlePutDocument(w http.ResponseWriter, r *http.Request
 
 func (h *MemoryHandler) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("agentID")
+	if !requireAgentUUID(w, agentID) {
+		return
+	}
 	path := r.PathValue("path")
 	userID := r.URL.Query().Get("user_id")
 
@@ -95,6 +107,9 @@ func (h *MemoryHandler) handleDeleteDocument(w http.ResponseWriter, r *http.Requ
 func (h *MemoryHandler) handleListChunks(w http.ResponseWriter, r *http.Request) {
 	locale := extractLocale(r)
 	agentID := r.PathValue("agentID")
+	if !requireAgentUUID(w, agentID) {
+		return
+	}
 	path := r.URL.Query().Get("path")
 	userID := r.URL.Query().Get("user_id")
 
@@ -118,6 +133,9 @@ func (h *MemoryHandler) handleListChunks(w http.ResponseWriter, r *http.Request)
 func (h *MemoryHandler) handleIndexDocument(w http.ResponseWriter, r *http.Request) {
 	locale := extractLocale(r)
 	agentID := r.PathValue("agentID")
+	if !requireAgentUUID(w, agentID) {
+		return
+	}
 
 	var body struct {
 		Path   string `json:"path"`
@@ -142,6 +160,9 @@ func (h *MemoryHandler) handleIndexDocument(w http.ResponseWriter, r *http.Reque
 func (h *MemoryHandler) handleIndexAll(w http.ResponseWriter, r *http.Request) {
 	locale := extractLocale(r)
 	agentID := r.PathValue("agentID")
+	if !requireAgentUUID(w, agentID) {
+		return
+	}
 
 	var body struct {
 		UserID string `json:"user_id"`
@@ -164,6 +185,9 @@ func (h *MemoryHandler) handleIndexAll(w http.ResponseWriter, r *http.Request) {
 func (h *MemoryHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	locale := extractLocale(r)
 	agentID := r.PathValue("agentID")
+	if !requireAgentUUID(w, agentID) {
+		return
+	}
 
 	var body struct {
 		Query      string  `json:"query"`

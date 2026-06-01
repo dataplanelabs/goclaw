@@ -111,7 +111,7 @@ export function MemoryPage() {
   };
 
   const handleReindex = async (doc: MemoryDocument) => {
-    await indexDocument(doc.path, doc.user_id);
+    await indexDocument(doc.path, doc.user_id, doc.agent_id);
   };
 
   return (
@@ -269,4 +269,3 @@ export function MemoryPage() {
     </div>
   );
 }
-

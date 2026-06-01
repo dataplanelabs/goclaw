@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useEpisodicSummaries, useEpisodicSearch } from "../hooks/use-episodic";
+import { getEpisodicKeyTopics } from "./episodic-utils";
 import { formatRelativeTime } from "@/lib/format";
 import type { EpisodicSummary, EpisodicSearchResult } from "@/types/memory";
 
@@ -71,7 +72,7 @@ export function EpisodicTab({ agentId }: Props) {
         <Badge variant="outline" className={SOURCE_COLORS[s.source_type] ?? ""}>
           {t(`episodic.source.${s.source_type}`)}
         </Badge>
-        {s.key_topics.map((topic) => (
+        {getEpisodicKeyTopics(s).map((topic) => (
           <Badge key={topic} variant="secondary" className="text-xs">{topic}</Badge>
         ))}
         <span className="text-xs text-muted-foreground ml-auto">
