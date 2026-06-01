@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -47,13 +48,13 @@ func DefaultWalkOptions() WalkOptions {
 
 // SafeWalkWorkspace walks root directory collecting eligible files.
 // Symlinks are skipped unconditionally. Excluded paths are filtered.
-// Resource limits (file count, total size, context deadline) are enforced.
+// Resource limits are applied after discovery with recent files first so a
+// large older subtree cannot starve newly generated workspace files.
 func SafeWalkWorkspace(ctx context.Context, root string, opts WalkOptions) ([]WalkEntry, WalkStats, error) {
 	root = filepath.Clean(root)
 	var (
-		entries    []WalkEntry
+		candidates []WalkEntry
 		stats      WalkStats
-		totalBytes int64
 		walkCount  int
 	)
 
@@ -141,21 +142,7 @@ func SafeWalkWorkspace(ctx context.Context, root string, opts WalkOptions) ([]Wa
 			return nil
 		}
 
-		// Total size limit.
-		if opts.MaxTotalBytes > 0 && totalBytes+info.Size() > opts.MaxTotalBytes {
-			stats.Truncated = true
-			return filepath.SkipAll
-		}
-
-		// File count limit.
-		if opts.MaxFiles > 0 && len(entries) >= opts.MaxFiles {
-			stats.Truncated = true
-			return filepath.SkipAll
-		}
-
-		totalBytes += info.Size()
-		stats.Eligible++
-		entries = append(entries, WalkEntry{
+		candidates = append(candidates, WalkEntry{
 			RelPath: relPath,
 			AbsPath: path,
 			Size:    info.Size(),
@@ -166,9 +153,38 @@ func SafeWalkWorkspace(ctx context.Context, root string, opts WalkOptions) ([]Wa
 
 	// Context cancellation is expected, not an error for partial results.
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return entries, stats, err
+		return candidates, stats, err
 	}
-	return entries, stats, err
+	if err != nil {
+		return nil, stats, err
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if !candidates[i].ModTime.Equal(candidates[j].ModTime) {
+			return candidates[i].ModTime.After(candidates[j].ModTime)
+		}
+		return candidates[i].RelPath < candidates[j].RelPath
+	})
+
+	entries := make([]WalkEntry, 0, len(candidates))
+	var totalBytes int64
+	for _, entry := range candidates {
+		if opts.MaxFiles > 0 && len(entries) >= opts.MaxFiles {
+			stats.Truncated = true
+			break
+		}
+		if opts.MaxTotalBytes > 0 && totalBytes+entry.Size > opts.MaxTotalBytes {
+			stats.Truncated = true
+			continue
+		}
+		totalBytes += entry.Size
+		entries = append(entries, entry)
+	}
+	if len(entries) < len(candidates) {
+		stats.Truncated = true
+	}
+	stats.Eligible = len(entries)
+	return entries, stats, nil
 }
 
 // isExcludedDir returns true if an entire directory subtree should be skipped.

@@ -7,6 +7,13 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
+func nonNilStringSlice(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}
+
 // documentInfoRow is an sqlx scan struct for memory_documents SELECT queries.
 // Handles TIMESTAMPTZ→int64 (UnixMilli) and nullable user_id conversion.
 type documentInfoRow struct {
@@ -140,7 +147,7 @@ func (r *episodicSummaryRow) toEpisodicSummary() store.EpisodicSummary {
 	_ = ep.ID.Scan(r.ID)
 	_ = ep.TenantID.Scan(r.TenantID)
 	_ = ep.AgentID.Scan(r.AgentID)
-	ep.KeyTopics = []string(r.KeyTopics)
+	ep.KeyTopics = nonNilStringSlice([]string(r.KeyTopics))
 	return ep
 }
 

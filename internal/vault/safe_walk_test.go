@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestSafeWalkWorkspace_BasicFiles(t *testing.T) {
@@ -141,6 +142,36 @@ func TestSafeWalkWorkspace_MaxTotalBytes(t *testing.T) {
 	_ = stats
 }
 
+func TestSafeWalkWorkspace_TruncationKeepsRecentFiles(t *testing.T) {
+	dir := t.TempDir()
+	oldContent := make([]byte, 1024)
+	oldTime := time.Now().Add(-72 * time.Hour)
+	for i := range 10 {
+		path := filepath.Join("generated", "2026-05-29", string(rune('a'+i))+".txt")
+		writeFile(t, dir, path, string(oldContent))
+		touchFile(t, dir, path, oldTime)
+	}
+	todayPath := filepath.Join("generated", "2026-06-01", "plan-training.csv")
+	writeFile(t, dir, todayPath, "today")
+	touchFile(t, dir, todayPath, time.Now())
+
+	opts := DefaultWalkOptions()
+	opts.MaxTotalBytes = 2 * 1024
+	entries, stats, err := SafeWalkWorkspace(context.Background(), dir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stats.Truncated {
+		t.Fatal("expected truncated=true")
+	}
+	for _, entry := range entries {
+		if entry.RelPath == filepath.ToSlash(todayPath) {
+			return
+		}
+	}
+	t.Fatalf("recent file %q missing from truncated scan: %+v", filepath.ToSlash(todayPath), entries)
+}
+
 func TestSafeWalkWorkspace_ContextCancel(t *testing.T) {
 	dir := t.TempDir()
 	for i := range 50 {
@@ -230,6 +261,14 @@ func writeFile(t *testing.T, dir, relPath, content string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func touchFile(t *testing.T, dir, relPath string, ts time.Time) {
+	t.Helper()
+	abs := filepath.Join(dir, relPath)
+	if err := os.Chtimes(abs, ts, ts); err != nil {
 		t.Fatal(err)
 	}
 }

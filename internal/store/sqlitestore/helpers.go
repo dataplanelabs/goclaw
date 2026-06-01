@@ -54,10 +54,18 @@ func jsonStringArray(arr []string) string {
 
 // scanJSONStringArray parses a JSON array stored as TEXT into a Go string slice.
 func scanJSONStringArray(data []byte, dest *[]string) {
+	*dest = []string{}
 	if data == nil || len(data) == 0 {
 		return
 	}
-	_ = json.Unmarshal(data, dest)
+	var values []string
+	if err := json.Unmarshal(data, &values); err != nil {
+		return
+	}
+	if values == nil {
+		values = []string{}
+	}
+	*dest = values
 }
 
 // sqliteVal marshals complex Go types (maps, slices) to JSON strings
@@ -127,4 +135,3 @@ func requireTenantID(ctx context.Context) (uuid.UUID, error) {
 	}
 	return tid, nil
 }
-

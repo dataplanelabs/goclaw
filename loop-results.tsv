@@ -1,0 +1,3 @@
+iteration	timestamp	commit	metric	delta	status	description
+0	2026-06-01T05:23:40Z	baseline	3	-	baseline	memory undefined agent route, null episodic topics, vault recent-file starvation under scan truncation
+1	2026-06-01T05:23:40Z	kept	0	-3	keep	normalize memory contracts and prioritize recent vault scan candidates

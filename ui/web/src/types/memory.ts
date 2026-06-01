@@ -41,7 +41,7 @@ export interface EpisodicSummary {
   user_id: string;
   session_key: string;
   summary: string;
-  key_topics: string[];
+  key_topics: string[] | null;
   l0_abstract: string;
   source_type: "session" | "v2_daily" | "manual";
   turn_count: number;
