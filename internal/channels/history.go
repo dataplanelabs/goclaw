@@ -23,6 +23,10 @@ import (
 // maxHistoryKeys is the max number of distinct groups/topics tracked in RAM.
 const maxHistoryKeys = 1000
 
+// CurrentMessageMarker labels the inbound message inside the prepended group
+// context. Shared so the agent pipeline can locate it to attach a timestamp.
+const CurrentMessageMarker = "[Your current message]"
+
 // DefaultGroupHistoryLimit is the default pending message limit per group.
 const DefaultGroupHistoryLimit = 200
 
@@ -74,6 +78,10 @@ type PendingHistory struct {
 	// Compaction (optional — nil means no auto-compaction)
 	compactionCfg *CompactionConfig
 
+	// loc renders buffer timestamps in the agent's preferred timezone.
+	// nil → UTC. Set once at load via SetTimezone, read-only thereafter.
+	loc *time.Location
+
 	// Compaction guard: per-key flag to prevent concurrent compactions
 	compacting sync.Map // historyKey → bool
 }
@@ -103,6 +111,18 @@ func (ph *PendingHistory) IsPersistent() bool { return ph.store != nil }
 // SetCompactionConfig sets the LLM compaction config. Call after creation.
 func (ph *PendingHistory) SetCompactionConfig(cfg *CompactionConfig) {
 	ph.compactionCfg = cfg
+}
+
+// SetTimezone sets the IANA timezone used to render buffer timestamps.
+// Empty or invalid → UTC. Call once at load before messages flow.
+func (ph *PendingHistory) SetTimezone(tz string) {
+	if tz == "" {
+		ph.loc = nil
+		return
+	}
+	if l, err := time.LoadLocation(tz); err == nil {
+		ph.loc = l
+	}
 }
 
 // LoadFromDB loads pending history from the database into RAM.
@@ -251,17 +271,21 @@ func (ph *PendingHistory) BuildContext(historyKey, currentMessage string, limit 
 		return currentMessage
 	}
 
+	loc := ph.loc
+	if loc == nil {
+		loc = time.UTC
+	}
 	var lines []string
 	for _, e := range entriesCopy {
 		ts := ""
 		if !e.Timestamp.IsZero() {
-			ts = fmt.Sprintf(" [%s]", e.Timestamp.Format("15:04"))
+			ts = fmt.Sprintf(" [%s]", e.Timestamp.In(loc).Format("2006-01-02 15:04"))
 		}
 		lines = append(lines, fmt.Sprintf("  %s%s: %s", e.Sender, ts, e.Body))
 	}
 
-	return fmt.Sprintf("[Chat messages since your last reply - for context]\n%s\n\n[Your current message]\n%s",
-		strings.Join(lines, "\n"), currentMessage)
+	return fmt.Sprintf("[Chat messages since your last reply - for context]\n%s\n\n%s\n%s",
+		strings.Join(lines, "\n"), CurrentMessageMarker, currentMessage)
 }
 
 // GetEntries returns a copy of pending entries for a group.

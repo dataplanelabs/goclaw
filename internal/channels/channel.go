@@ -261,6 +261,13 @@ func (c *BaseChannel) SetGroupHistory(gh *PendingHistory) { c.groupHistory = gh 
 // GroupHistory returns the pending group history tracker (may be nil).
 func (c *BaseChannel) GroupHistory() *PendingHistory { return c.groupHistory }
 
+// SetPendingHistoryTimezone sets the timezone used to render buffer timestamps.
+func (c *BaseChannel) SetPendingHistoryTimezone(tz string) {
+	if c.groupHistory != nil {
+		c.groupHistory.SetTimezone(tz)
+	}
+}
+
 // SetHistoryLimit sets the per-group message accumulation limit.
 func (c *BaseChannel) SetHistoryLimit(n int) { c.historyLimit = n }
 

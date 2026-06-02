@@ -43,6 +43,7 @@ type InstanceLoader struct {
 	manager           *Manager
 	msgBus            *bus.MessageBus
 	pairingSvc        store.PairingStore
+	defaultTimezone   string // workspace default IANA tz for buffer timestamps (channel config overrides)
 	mu                sync.Mutex
 	loaded            map[string]struct{} // channel names managed by this loader
 }
@@ -76,6 +77,12 @@ func (l *InstanceLoader) SetProviderRegistry(reg *providers.Registry) {
 // Must be called before LoadAll/Reload.
 func (l *InstanceLoader) SetPendingCompactionConfig(cfg *config.PendingCompactionConfig) {
 	l.pendingCompactCfg = cfg
+}
+
+// SetDefaultTimezone sets the workspace default IANA timezone applied to buffer
+// timestamps when a channel has no per-instance timezone. Call before LoadAll/Reload.
+func (l *InstanceLoader) SetDefaultTimezone(tz string) {
+	l.defaultTimezone = tz
 }
 
 // RegisterFactory registers a factory for a channel type (e.g., "telegram", "discord").
@@ -283,6 +290,15 @@ func (l *InstanceLoader) loadInstance(ctx context.Context, inst store.ChannelIns
 	// Factory creates PendingHistory before SetTenantID is called, so tenantID is uuid.Nil at construction.
 	if ph, ok := ch.(interface{ SetPendingHistoryTenantID(uuid.UUID) }); ok {
 		ph.SetPendingHistoryTenantID(inst.TenantID)
+	}
+	// Render buffer timestamps in the agent's preferred timezone: channel-instance
+	// config.timezone, else the workspace default. Empty → UTC (existing behavior).
+	if ph, ok := ch.(interface{ SetPendingHistoryTimezone(string) }); ok {
+		tz := TimezoneFromConfig(inst.Config)
+		if tz == "" {
+			tz = l.defaultTimezone
+		}
+		ph.SetPendingHistoryTimezone(tz)
 	}
 
 	// Wire pending message auto-compaction.
