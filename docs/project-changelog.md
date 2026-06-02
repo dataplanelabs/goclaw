@@ -4,6 +4,30 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ---
 
+## 2026-06-02 — Create Image reference safety
+
+### fix(create_image): fail closed when required refs cannot be applied
+
+Reference-image requests now use only providers that can actually forward image
+references. If a skill logo, user photo, or other explicit reference resolves
+but the refs-capable provider chain fails, `create_image` returns a tool error
+instead of silently generating a prompt-only image.
+
+**Fixes:**
+- Prevented text-only fallback artifacts when an exact logo/face/reference was
+  required.
+- Normalized native Codex image generation so image-tool models such as
+  `gpt-image-2` are treated as `image_model`, while Codex-only parent models
+  such as `gpt-5.3-codex` fall back to the provider default parent model.
+- Updated tool schema text to make the fail-closed reference behavior explicit.
+
+**Tests:**
+- Added regression coverage for resolved refs plus failed refs-provider chain:
+  the text-only fallback provider must not be called.
+- Added native image model normalization coverage for Codex image generation.
+
+---
+
 ## 2026-05-26 — VieNeu Vietnamese TTS provider
 
 ### feat(tts): add VieNeu Vietnamese TTS with voice cloning

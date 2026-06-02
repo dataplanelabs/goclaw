@@ -91,7 +91,7 @@ func (t *CreateImageTool) Parameters() map[string]any {
 			"reference_image_ids": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Optional. Reference images for face/composition/style preservation and exact logos. Accepts media IDs from <media:image id='...'> tags, file paths from path='...' attrs, skill asset paths returned by use_skill, or the bare filename (basename of the path). Looks across the current turn, user-uploaded history, and activated skill assets. First entry is the primary reference. Max 4 (provider-aware: Gemini 4, OpenRouter 4, OpenAI gpt-image-* 4, MiniMax 1 — character only). DashScope and BytePlus drop refs silently. Animated GIFs and SVG not supported. If any id cannot be resolved, the tool returns an error (nothing is generated) and lists the references you can use — correct the id or ask the user to resend the image.",
+				"description": "Optional. Reference images for face/composition/style preservation and exact logos. Accepts media IDs from <media:image id='...'> tags, file paths from path='...' attrs, skill asset paths returned by use_skill, or the bare filename (basename of the path). Looks across the current turn, user-uploaded history, and activated skill assets. First entry is the primary reference. Max 4 (provider-aware: Gemini 4, OpenRouter 4, OpenAI gpt-image-* 4, MiniMax 1 — character only). Animated GIFs and SVG not supported. If any id cannot be resolved, or if the configured Create Image chain cannot generate with references, the tool returns an error and no prompt-only image is generated.",
 			},
 		},
 		"required": []string{"prompt"},
@@ -120,7 +120,6 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 
 	var refImages []providers.ImageContent
 	var trimmedRefIDs []string
-	var requestedRefIDs []string
 	_, explicitRefIDs := args["reference_image_ids"]
 	if idsAny, ok := args["reference_image_ids"]; ok {
 		ids := toStringSlice(idsAny)
@@ -128,7 +127,6 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 			availableRefs := t.appendWorkspaceImageRefs(ctx, availableImageRefs(ctx), ids)
 			var missingRefIDs, unusableRefIDs []string
 			refImages, missingRefIDs, unusableRefIDs, trimmedRefIDs = resolveRefImageIDsDetailed(ids, availableRefs, maxResolvedRefImages)
-			requestedRefIDs = ids
 			slog.Info("create_image: reference images resolved",
 				"requested", len(ids), "loaded", len(refImages), "missing", len(missingRefIDs),
 				"unusable", len(unusableRefIDs), "trimmed", len(trimmedRefIDs))
@@ -167,7 +165,6 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 			}
 			refImages = resolveRefImageIDs(ctx, ids, currentRefs, maxRefImages)
 			if len(refImages) > 0 {
-				requestedRefIDs = ids
 				slog.Info("create_image: auto-injected user current-turn images as references",
 					"ref_count", len(refImages), "ref_ids", ids)
 			}
@@ -177,18 +174,16 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 	originalChain := ResolveMediaProviderChain(ctx, "create_image", "", "",
 		imageGenProviderPriority, imageGenModelDefaults, t.registry)
 
-	// Refs-aware chain selection: when refs are present, prefer providers that
-	// genuinely support image-edit. If the filtered chain is empty (e.g. tenant
-	// configured only dashscope+byteplus which silently drop refs), fall through
-	// to text-only generation with an explicit notice — better UX than a 53s
-	// chain-exhausted error followed by an LLM retry that lands at the same
-	// dead-end via auto-inject.
-	chainResult, degradedReason, err := runImageGenChain(ctx, t, originalChain, prompt, aspectRatio, refImages)
+	// Refs-aware chain selection: when refs are present, use only providers that
+	// genuinely support image-edit. Do not degrade to text-only generation for
+	// explicit refs: producing an image without the requested face/logo is worse
+	// than surfacing a tool error.
+	chainResult, err := runImageGenChain(ctx, t, originalChain, prompt, aspectRatio, refImages)
 	if err != nil {
 		if len(refImages) > 0 {
 			return ErrorResult(fmt.Sprintf(
-				"image generation with reference images failed (chain exhausted with refs; text-only fallback also failed). "+
-					"Configured providers may not support image-to-image edits. Underlying error: %v", err))
+				"image generation with reference images failed; no prompt-only image was generated because the reference image(s) are required. "+
+					"Fix the Create Image provider chain or retry with a refs-capable provider. Underlying error: %v", err))
 		}
 		return ErrorResult(fmt.Sprintf("image generation failed: %v", err))
 	}
@@ -228,10 +223,7 @@ func (t *CreateImageTool) Execute(ctx context.Context, args map[string]any) (res
 	if len(trimmedRefIDs) > 0 {
 		forLLM += formatRefTrimmedNote(trimmedRefIDs)
 	}
-	if degradedReason != "" {
-		forLLM += formatRefsDroppedNote(degradedReason, requestedRefIDs,
-			refsCapableProviderNamesInRegistry(ctx, t.registry))
-	} else if refCap := t.refCapForProvider(ctx, chainResult.Provider); len(refImages) > refCap {
+	if refCap := t.refCapForProvider(ctx, chainResult.Provider); len(refImages) > refCap {
 		// Refs were valid but the selected provider accepts fewer than supplied —
 		// distinct from "did not resolve" (genuinely missing) above.
 		forLLM += formatRefsOverProviderCapNote(chainResult.Provider, refCap, len(refImages))
@@ -288,62 +280,39 @@ func injectImageGenParams(chain []MediaProviderEntry, prompt, aspectRatio string
 	}
 }
 
-// runImageGenChain tries refs-mode first when refs present + refs-capable
-// providers exist, then falls back to text-only. Returns chainResult, a
-// degradedReason ("" / "no_refs_capable_provider" / "refs_failed"), and err.
+// runImageGenChain tries refs-mode when refs are present. It intentionally
+// refuses prompt-only fallback for ref requests: a wrong face/logo/subject is a
+// bad artifact, not a degraded success.
 func runImageGenChain(
 	ctx context.Context,
 	t *CreateImageTool,
 	chain []MediaProviderEntry,
 	prompt, aspectRatio string,
 	refImages []providers.ImageContent,
-) (*ChainResult, string, error) {
+) (*ChainResult, error) {
 	if len(refImages) > 0 {
 		refsChain := filterChainForRefs(ctx, chain, t.registry)
 		if len(refsChain) > 0 {
 			injectImageGenParams(refsChain, prompt, aspectRatio, refImages)
 			if res, err := ExecuteWithChain(ctx, refsChain, t.registry, t.callProvider); err == nil {
-				return res, "", nil
+				return res, nil
 			} else {
-				slog.Warn("create_image: refs-mode chain failed, falling back to text-only",
+				slog.Warn("create_image: refs-mode chain failed; refusing text-only fallback",
 					"err", truncateError(err), "refs_chain_len", len(refsChain))
+				return nil, fmt.Errorf("refs-capable provider chain failed: %w", err)
 			}
-			injectImageGenParams(chain, prompt, aspectRatio, nil)
-			res, err := ExecuteWithChain(ctx, chain, t.registry, t.callProvider)
-			return res, "refs_failed", err
 		}
-		slog.Warn("create_image: no refs-capable provider in chain, falling back to text-only",
+		slog.Warn("create_image: no refs-capable provider in chain; refusing text-only fallback",
 			"chain_len", len(chain))
-		injectImageGenParams(chain, prompt, aspectRatio, nil)
-		res, err := ExecuteWithChain(ctx, chain, t.registry, t.callProvider)
-		return res, "no_refs_capable_provider", err
+		suggestion := "add Gemini, OpenAI (gpt-image-*), OpenRouter, or MiniMax to the Create Image provider chain"
+		if available := refsCapableProviderNamesInRegistry(ctx, t.registry); len(available) > 0 {
+			suggestion = fmt.Sprintf("reorder or add one of these refs-capable providers already enabled in your tenant: %v", available)
+		}
+		return nil, fmt.Errorf("reference images were requested but no configured provider in the Create Image chain supports image-to-image edits; %s", suggestion)
 	}
 	injectImageGenParams(chain, prompt, aspectRatio, nil)
 	res, err := ExecuteWithChain(ctx, chain, t.registry, t.callProvider)
-	return res, "", err
-}
-
-// formatRefsDroppedNote returns an explicit LLM-facing note explaining why
-// the user's reference photo wasn't applied. When availableRefsCapable is
-// non-empty, the note suggests reordering by listing actual tenant providers
-// that DO support refs — concrete operator-actionable hint vs generic advice.
-func formatRefsDroppedNote(reason string, refIDs, availableRefsCapable []string) string {
-	switch reason {
-	case "refs_failed":
-		return fmt.Sprintf(
-			"\n\n⚠️ NOTE TO ASSISTANT: Reference image(s) %v could not be applied — refs-capable providers in the chain all failed. Generated from prompt only. **Tell the user explicitly** that their attached photo could not be used and the result is based on the description alone.",
-			refIDs)
-	case "no_refs_capable_provider":
-		suggestion := "add Gemini, OpenAI (gpt-image-*), OpenRouter, or MiniMax to the Create Image provider chain"
-		if len(availableRefsCapable) > 0 {
-			suggestion = fmt.Sprintf("reorder or add one of these refs-capable providers already enabled in your tenant: %v", availableRefsCapable)
-		}
-		return fmt.Sprintf(
-			"\n\n⚠️ NOTE TO ASSISTANT: Reference image(s) %v dropped — no configured provider in the Create Image chain supports image-to-image edits. Generated from prompt only. **Tell the user explicitly** that the system can't apply their photo as a reference with the current chain order, and suggest the operator %s.",
-			refIDs, suggestion)
-	default:
-		return ""
-	}
+	return res, err
 }
 
 // refCapForProvider mirrors callProvider's branching: native providers
@@ -441,6 +410,7 @@ func (t *CreateImageTool) callProvider(ctx context.Context, cp credentialProvide
 			prompt := GetParamString(params, "prompt", "")
 			aspectRatio := GetParamString(params, "aspect_ratio", "1:1")
 			imageModel := GetParamString(params, "image_model", "")
+			parentModel, imageModel := normalizeNativeImageModels(rawProvider, model, imageModel)
 			refs, _ := params["reference_images"].([]providers.ImageContent)
 			if len(refs) > codexImageRefCap {
 				slog.Warn("create_image: native image refs truncated at cap",
@@ -448,7 +418,7 @@ func (t *CreateImageTool) callProvider(ctx context.Context, cp credentialProvide
 				refs = refs[:codexImageRefCap]
 			}
 			result, err := np.GenerateImage(ctx, providers.NativeImageRequest{
-				Model:           model,
+				Model:           parentModel,
 				ImageModel:      imageModel,
 				Prompt:          prompt,
 				AspectRatio:     aspectRatio,
@@ -481,8 +451,7 @@ func (t *CreateImageTool) callProvider(ctx context.Context, cp credentialProvide
 		// /v1/images/generations (JSON). NOTE: this branch only fires for
 		// API-key-backed OpenAI providers. OAuth-backed providers (Codex,
 		// ChatGPTOAuthRouter) short-circuit above on `_native_provider` and
-		// route through NativeImageProvider.GenerateImage — currently edit-
-		// unsupported (see Phase 06 investigation).
+		// route through NativeImageProvider.GenerateImage.
 		if refImages, _ := params["reference_images"].([]providers.ImageContent); len(refImages) > 0 {
 			return callOpenAIImageEdit(ctx, cp.APIKey(), cp.APIBase(), model, prompt, params)
 		}
@@ -499,6 +468,36 @@ func (t *CreateImageTool) callProvider(ctx context.Context, cp credentialProvide
 		warnIfRefsDropped(params, providerName, "openai-compat fallthrough does not forward refs")
 		return t.callStandardImageGenAPI(ctx, cp.APIKey(), cp.APIBase(), model, prompt, params)
 	}
+}
+
+func normalizeNativeImageModels(rawProvider any, parentModel, imageModel string) (string, string) {
+	parentModel = strings.TrimSpace(parentModel)
+	imageModel = strings.TrimSpace(imageModel)
+
+	if imageModel == "" && isNativeImageModel(parentModel) {
+		imageModel = parentModel
+		parentModel = ""
+	}
+
+	if isCodexOnlyChatModel(parentModel) {
+		if p, ok := rawProvider.(interface{ DefaultModel() string }); ok {
+			if fallback := strings.TrimSpace(p.DefaultModel()); fallback != "" {
+				slog.Warn("create_image: native image parent model normalized to provider default",
+					"configured_model", parentModel, "fallback_model", fallback)
+				parentModel = fallback
+			}
+		}
+	}
+
+	return parentModel, imageModel
+}
+
+func isNativeImageModel(model string) bool {
+	return strings.HasPrefix(model, "gpt-image-")
+}
+
+func isCodexOnlyChatModel(model string) bool {
+	return strings.Contains(model, "-codex")
 }
 
 // warnIfRefsDropped logs (best-effort) when a provider call function will
