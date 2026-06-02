@@ -194,11 +194,13 @@ func (t *ReadImageTool) callProvider(ctx context.Context, cp credentialProvider,
 	prompt := GetParamString(params, "prompt", "Describe this image in detail.")
 	images, _ := params["images"].([]providers.ImageContent)
 
-	// Get the full provider for Chat() access
-	p, err := t.registry.Get(ctx, providerName)
+	// Use the provider resolved by ExecuteWithChain when present so wrapped
+	// providers (e.g. ChatGPT OAuth pools) are preserved for this media call.
+	p, err := providerFromChainParams(ctx, t.registry, providerName, params)
 	if err != nil {
 		return nil, nil, fmt.Errorf("provider %q not available: %w", providerName, err)
 	}
+	model = normalizeCodexOnlyModelForProvider("read_image", p, model)
 
 	slog.Info("read_image: calling vision provider", "provider", providerName, "model", model, "images", len(images))
 

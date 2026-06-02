@@ -52,6 +52,14 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **`create_image` resolves current media IDs even when upload paths are reused** —
+  same-path aliases from history/current-turn media refs are preserved for
+  lookup, while provider payloads still dedupe by file path. This prevents
+  prompt-facing `<media:image id="...">` values from failing when `.uploads/`
+  already contains the same persisted file under an older ref. Media analysis
+  fallbacks now also use the chain-resolved provider wrapper and normalize
+  Codex-only chat models to the provider default for ChatGPT OAuth calls.
+
 - **Zalo OA refresh-token rotation now persists under the channel tenant** —
   background refresh paths such as team analytics could call the token source
   with a context that had no tenant scope, causing the rotated refresh token to
