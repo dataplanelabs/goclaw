@@ -6,6 +6,13 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- **Per-message local timestamps** — the agent now sees each inbound message's
+  arrival time (`HH:MM`) in its resolved timezone. Group-buffer timestamps are
+  localized to the agent's preferred TZ (previously rendered in raw UTC), and the
+  current inbound message is now stamped with its local time. This gives the agent
+  a consistent time-of-day dimension across the whole thread instead of a 7h jump
+  between buffered context and the message it's replying to.
+
 - **`GOCLAW_BROWSER_ACTION_TIMEOUT_MS`** — env overlay for the browser tool's
   per-action timeout (default 30000ms). Raise it (e.g. 180000 = 3min) so the
   agent can navigate + snapshot heavy authenticated pages (e.g. a logged-in

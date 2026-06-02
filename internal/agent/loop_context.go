@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -390,6 +391,7 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 		AgentToolKey:        l.id,
 		TenantAllowedPaths:  l.tenantAllowedPaths,
 		UserTimezone:        userTimezone(channelMeta, l.defaultTimezone),
+		TurnStartedAt:       time.Now(),
 	}
 	ctx = store.WithRunContext(ctx, rc)
 

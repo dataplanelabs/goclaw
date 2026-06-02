@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
+	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -279,13 +281,37 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		l.sessions.Save(ctx, sessionKey)
 	}
 
-	// Current user message
+	// Current user message — stamp local arrival time so the agent has a
+	// per-message time-of-day dimension consistent with the group buffer.
 	messages = append(messages, providers.Message{
 		Role:    "user",
-		Content: userMessage,
+		Content: stampCurrentMessageTime(ctx, userMessage),
 	})
 
 	return messages, hadBootstrap
+}
+
+// stampCurrentMessageTime prefixes the inbound message with its local arrival
+// time (HH:MM) in the agent's resolved timezone. When the group buffer is
+// present it attaches the time to the current-message marker; otherwise it
+// prepends a time line. No-op without a RunContext (subagent paths, tests).
+func stampCurrentMessageTime(ctx context.Context, msg string) string {
+	rc := store.RunContextFromCtx(ctx)
+	if rc == nil || rc.TurnStartedAt.IsZero() {
+		return msg
+	}
+	loc := time.UTC
+	if rc.UserTimezone != "" {
+		if l, err := time.LoadLocation(rc.UserTimezone); err == nil {
+			loc = l
+		}
+	}
+	hhmm := rc.TurnStartedAt.In(loc).Format("15:04")
+	marker := channels.CurrentMessageMarker + "\n"
+	if strings.Contains(msg, marker) {
+		return strings.Replace(msg, marker, channels.CurrentMessageMarker+" ["+hhmm+"]\n", 1)
+	}
+	return "[" + hhmm + "]\n" + msg
 }
 
 // resolveContextFiles merges base context files (from resolver, e.g. auto-generated
