@@ -25,10 +25,10 @@ func TestStampCurrentMessageTime_Group(t *testing.T) {
 	msg := "[Chat messages since your last reply - for context]\n  Writer One [15:50]: hi\n\n" +
 		channels.CurrentMessageMarker + "\n[From: Writer Two]\nquestion"
 	out := stampCurrentMessageTime(ctx, msg)
-	if !strings.Contains(out, channels.CurrentMessageMarker+" [15:59]\n") {
-		t.Fatalf("expected marker stamped with [15:59], got:\n%s", out)
+	if !strings.Contains(out, channels.CurrentMessageMarker+" [2026-01-02 15:59]\n") {
+		t.Fatalf("expected marker stamped with [2026-01-02 15:59], got:\n%s", out)
 	}
-	if strings.Contains(out, "Writer One [15:50]: hi [15:59]") {
+	if strings.Contains(out, "Writer One [15:50]: hi [2026-01-02 15:59]") {
 		t.Fatalf("must not stamp buffer lines, got:\n%s", out)
 	}
 }
@@ -36,16 +36,16 @@ func TestStampCurrentMessageTime_Group(t *testing.T) {
 func TestStampCurrentMessageTime_DM(t *testing.T) {
 	ctx := ctxWithTurn("Asia/Ho_Chi_Minh", stampUTC)
 	out := stampCurrentMessageTime(ctx, "[From: Writer Two]\nhi")
-	if !strings.HasPrefix(out, "[15:59]\n") {
-		t.Fatalf("expected DM prefix [15:59], got:\n%s", out)
+	if !strings.HasPrefix(out, "[2026-01-02 15:59]\n") {
+		t.Fatalf("expected DM prefix [2026-01-02 15:59], got:\n%s", out)
 	}
 }
 
 func TestStampCurrentMessageTime_UTCFallback(t *testing.T) {
 	ctx := ctxWithTurn("", stampUTC)
 	out := stampCurrentMessageTime(ctx, "hi")
-	if !strings.HasPrefix(out, "[08:59]\n") {
-		t.Fatalf("expected UTC fallback [08:59], got:\n%s", out)
+	if !strings.HasPrefix(out, "[2026-01-02 08:59]\n") {
+		t.Fatalf("expected UTC fallback [2026-01-02 08:59], got:\n%s", out)
 	}
 }
 

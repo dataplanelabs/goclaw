@@ -16,10 +16,10 @@ func TestBuildContextLocalizesBufferTimestamp(t *testing.T) {
 	ph.Record(key, HistoryEntry{Sender: "Writer One", Body: "hello", Timestamp: fixedUTC}, 50)
 
 	out := ph.BuildContext(key, "current", 50)
-	if !strings.Contains(out, "[15:59]") {
-		t.Fatalf("expected localized 15:59 in buffer, got:\n%s", out)
+	if !strings.Contains(out, "[2026-01-02 15:59]") {
+		t.Fatalf("expected localized 2026-01-02 15:59 in buffer, got:\n%s", out)
 	}
-	if strings.Contains(out, "[08:59]") {
+	if strings.Contains(out, "[2026-01-02 08:59]") {
 		t.Fatalf("buffer must not show raw UTC 08:59, got:\n%s", out)
 	}
 	if !strings.Contains(out, CurrentMessageMarker) {
@@ -33,7 +33,7 @@ func TestBuildContextDefaultsToUTC(t *testing.T) {
 	ph.Record(key, HistoryEntry{Sender: "Writer One", Body: "hi", Timestamp: fixedUTC}, 50)
 
 	out := ph.BuildContext(key, "current", 50)
-	if !strings.Contains(out, "[08:59]") {
+	if !strings.Contains(out, "[2026-01-02 08:59]") {
 		t.Fatalf("expected UTC 08:59 fallback, got:\n%s", out)
 	}
 }
@@ -45,7 +45,7 @@ func TestSetTimezoneInvalidKeepsUTC(t *testing.T) {
 	ph.Record(key, HistoryEntry{Sender: "Writer One", Body: "hi", Timestamp: fixedUTC}, 50)
 
 	out := ph.BuildContext(key, "current", 50)
-	if !strings.Contains(out, "[08:59]") {
+	if !strings.Contains(out, "[2026-01-02 08:59]") {
 		t.Fatalf("invalid tz should fall back to UTC, got:\n%s", out)
 	}
 }

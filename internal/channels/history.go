@@ -279,7 +279,7 @@ func (ph *PendingHistory) BuildContext(historyKey, currentMessage string, limit 
 	for _, e := range entriesCopy {
 		ts := ""
 		if !e.Timestamp.IsZero() {
-			ts = fmt.Sprintf(" [%s]", e.Timestamp.In(loc).Format("15:04"))
+			ts = fmt.Sprintf(" [%s]", e.Timestamp.In(loc).Format("2006-01-02 15:04"))
 		}
 		lines = append(lines, fmt.Sprintf("  %s%s: %s", e.Sender, ts, e.Body))
 	}

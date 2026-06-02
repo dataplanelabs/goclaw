@@ -292,9 +292,10 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 }
 
 // stampCurrentMessageTime prefixes the inbound message with its local arrival
-// time (HH:MM) in the agent's resolved timezone. When the group buffer is
-// present it attaches the time to the current-message marker; otherwise it
-// prepends a time line. No-op without a RunContext (subagent paths, tests).
+// date-time (YYYY-MM-DD HH:MM) in the agent's resolved timezone. When the group
+// buffer is present it attaches the stamp to the current-message marker;
+// otherwise it prepends a stamp line. No-op without a RunContext (subagent
+// paths, tests).
 func stampCurrentMessageTime(ctx context.Context, msg string) string {
 	rc := store.RunContextFromCtx(ctx)
 	if rc == nil || rc.TurnStartedAt.IsZero() {
@@ -306,12 +307,12 @@ func stampCurrentMessageTime(ctx context.Context, msg string) string {
 			loc = l
 		}
 	}
-	hhmm := rc.TurnStartedAt.In(loc).Format("15:04")
+	stamp := rc.TurnStartedAt.In(loc).Format("2006-01-02 15:04")
 	marker := channels.CurrentMessageMarker + "\n"
 	if strings.Contains(msg, marker) {
-		return strings.Replace(msg, marker, channels.CurrentMessageMarker+" ["+hhmm+"]\n", 1)
+		return strings.Replace(msg, marker, channels.CurrentMessageMarker+" ["+stamp+"]\n", 1)
 	}
-	return "[" + hhmm + "]\n" + msg
+	return "[" + stamp + "]\n" + msg
 }
 
 // resolveContextFiles merges base context files (from resolver, e.g. auto-generated
