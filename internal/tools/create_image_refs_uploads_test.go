@@ -116,6 +116,30 @@ func TestAvailableImageRefs_IncludesAgedOutUploads(t *testing.T) {
 	}
 }
 
+// Regression for trace 019e87b1: the current prompt-facing <media:image id>
+// can point at the same persisted upload path as an older history ref. The
+// current alias must remain resolvable even though only one copy of the bytes is
+// sent downstream.
+func TestAvailableImageRefs_PreservesSamePathIDAliases(t *testing.T) {
+	ws := t.TempDir()
+	upload := mkUpload(t, ws, "20260602-093717_van-duc_image_2d844dc8.jpg")
+	ctx := WithToolWorkspace(WithMediaImageRefs(t.Context(), []providers.MediaRef{
+		{ID: "older-history-id", Kind: "image", MimeType: "image/jpeg", Path: upload},
+		{ID: "4cf3e00a-ee2e-4540-b62e-9f1fd56d5abc", Kind: "image", MimeType: "image/jpeg", Path: upload},
+	}), ws)
+
+	refs := availableImageRefs(ctx)
+	out, missing, unusable, trimmed := resolveRefImageIDsDetailed(
+		[]string{"4cf3e00a-ee2e-4540-b62e-9f1fd56d5abc"},
+		refs,
+		maxResolvedRefImages,
+	)
+	if len(out) != 1 || len(missing) != 0 || len(unusable) != 0 || len(trimmed) != 0 {
+		t.Fatalf("current alias must resolve once; out=%d missing=%v unusable=%v trimmed=%v refs=%+v",
+			len(out), missing, unusable, trimmed, refs)
+	}
+}
+
 // sizedRef creates a sparse fixture of the given on-disk size (Stat-reported)
 // without allocating/writing the full bytes — for exercising byte caps cheaply.
 func sizedRef(t *testing.T, dir, name string, size int64) providers.MediaRef {

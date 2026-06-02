@@ -911,13 +911,15 @@ func toStringSlice(v any) []string {
 // availableImageRefs is the single set of references create_image can resolve:
 // activated skill assets, user uploads still in the conversation window, and
 // every image on disk in the session .uploads/ folder (so uploads that aged out
-// of the window still resolve — trace 019e7256). Skill refs first so user
-// uploads win basename collisions in the lookup maps; deduped by path.
+// of the window still resolve — trace 019e7256). Same-path aliases are
+// intentionally preserved: the LLM may have seen a current-turn <media:image
+// id="..."> while an older history ref points at the same persisted upload.
+// resolveRefImageIDsDetailed dedupes provider payloads by path after lookup.
 func availableImageRefs(ctx context.Context) []providers.MediaRef {
 	out := append([]providers.MediaRef(nil), skillAssetImageRefsFromCtx(ctx)...)
 	out = append(out, MediaImageRefsFromCtx(ctx)...)
 	out = append(out, uploadsImageRefs(ToolWorkspaceFromCtx(ctx))...)
-	return dedupRefsByPath(out)
+	return out
 }
 
 // appendWorkspaceImageRefs resolves path-type ref ids (absolute or containing a
@@ -997,28 +999,6 @@ func uploadsImageRefs(workspace string) []providers.MediaRef {
 			continue
 		}
 		out = append(out, providers.MediaRef{ID: e.Name(), Path: real, MimeType: mime, Kind: "image"})
-	}
-	return out
-}
-
-// dedupRefsByPath keeps the first ref per Path (or ID when Path is empty),
-// preserving caller order.
-func dedupRefsByPath(refs []providers.MediaRef) []providers.MediaRef {
-	if len(refs) <= 1 {
-		return refs
-	}
-	seen := make(map[string]bool, len(refs))
-	out := make([]providers.MediaRef, 0, len(refs))
-	for _, r := range refs {
-		key := r.Path
-		if key == "" {
-			key = r.ID
-		}
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		out = append(out, r)
 	}
 	return out
 }
