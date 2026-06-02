@@ -14,8 +14,8 @@ type fakeRefsCapableProvider struct {
 	imageRefs bool
 }
 
-func (f *fakeRefsCapableProvider) Name() string                                            { return f.name }
-func (f *fakeRefsCapableProvider) DefaultModel() string                                    { return "" }
+func (f *fakeRefsCapableProvider) Name() string         { return f.name }
+func (f *fakeRefsCapableProvider) DefaultModel() string { return "" }
 func (f *fakeRefsCapableProvider) Chat(context.Context, providers.ChatRequest) (*providers.ChatResponse, error) {
 	return nil, nil
 }
@@ -107,39 +107,4 @@ func TestFilterChainForRefs_UnregisteredEntrySkipped(t *testing.T) {
 	if len(got) != 1 || got[0].Provider != "gemini" {
 		t.Errorf("unregistered entry should be skipped silently; got: %+v", got)
 	}
-}
-
-func TestFormatRefsDroppedNote(t *testing.T) {
-	ids := []string{"abc-123"}
-
-	got := formatRefsDroppedNote("refs_failed", ids, nil)
-	if got == "" || !contains(got, "could not be applied") || !contains(got, "abc-123") {
-		t.Errorf("refs_failed note malformed: %q", got)
-	}
-
-	// Generic fallback when no tenant info available.
-	got = formatRefsDroppedNote("no_refs_capable_provider", ids, nil)
-	if got == "" || !contains(got, "no configured provider") || !contains(got, "Gemini") {
-		t.Errorf("no_refs_capable_provider generic note malformed: %q", got)
-	}
-
-	// Tenant-aware suggestion lists actual provider names.
-	got = formatRefsDroppedNote("no_refs_capable_provider", ids, []string{"gemini", "openai"})
-	if got == "" || !contains(got, "[gemini openai]") {
-		t.Errorf("tenant-aware suggestion missing actual provider names: %q", got)
-	}
-
-	got = formatRefsDroppedNote("", ids, nil)
-	if got != "" {
-		t.Errorf("empty reason must return empty note, got %q", got)
-	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

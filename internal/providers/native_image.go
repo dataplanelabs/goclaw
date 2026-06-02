@@ -64,10 +64,8 @@ type NativeImageRequest struct {
 	OutputFormat string
 
 	// ReferenceImages is an optional list of reference images for image-to-image
-	// editing or face/composition preservation. Reserved for future native
-	// providers that support edits via the Responses API. The current Codex
-	// implementation ignores this field — see Phase 06 of the image-gen-refs
-	// plan for the live-verification of `action: "edit"` support.
+	// editing or face/composition preservation. Codex forwards these as
+	// input_image parts and switches the image_generation tool to edit mode.
 	ReferenceImages []ImageContent
 }
 

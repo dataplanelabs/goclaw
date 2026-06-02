@@ -13,18 +13,22 @@ import (
 type nativeImageProvider struct {
 	name        string
 	model       string
+	imageRefs   bool
 	calledWith  *providers.NativeImageRequest
 	returnData  []byte
 	returnError error
 }
 
 func (p *nativeImageProvider) Name() string         { return p.name }
-func (p *nativeImageProvider) DefaultModel() string  { return p.model }
+func (p *nativeImageProvider) DefaultModel() string { return p.model }
 func (p *nativeImageProvider) Chat(_ context.Context, _ providers.ChatRequest) (*providers.ChatResponse, error) {
 	return &providers.ChatResponse{}, nil
 }
 func (p *nativeImageProvider) ChatStream(_ context.Context, _ providers.ChatRequest, _ func(providers.StreamChunk)) (*providers.ChatResponse, error) {
 	return &providers.ChatResponse{}, nil
+}
+func (p *nativeImageProvider) Capabilities() providers.ProviderCapabilities {
+	return providers.ProviderCapabilities{ImageRefs: p.imageRefs}
 }
 func (p *nativeImageProvider) GenerateImage(_ context.Context, req providers.NativeImageRequest) (*providers.NativeImageResult, error) {
 	p.calledWith = &req
@@ -198,7 +202,7 @@ func TestCreateImageTool_ThreadsImageModel(t *testing.T) {
 		{
 			name:            "default (empty params.image_model)",
 			chainImageModel: "",
-			wantImageModel:  "", // provider validator defaults to gpt-image-2
+			wantImageModel:  "gpt-image-2",
 		},
 		{
 			name:            "legacy gpt-image-1.5",
@@ -257,6 +261,56 @@ func TestCreateImageTool_ThreadsImageModel(t *testing.T) {
 			gotImageModel := fakeProvider.calledWith.ImageModel
 			if gotImageModel != tc.wantImageModel {
 				t.Errorf("NativeImageRequest.ImageModel = %q, want %q", gotImageModel, tc.wantImageModel)
+			}
+		})
+	}
+}
+
+func TestCreateImageTool_NormalizesNativeImageModels(t *testing.T) {
+	tests := []struct {
+		name            string
+		providerDefault string
+		chainModel      string
+		chainImageModel string
+		wantParentModel string
+		wantImageModel  string
+	}{
+		{
+			name:            "codex-only parent model falls back to provider default",
+			providerDefault: "gpt-5.5",
+			chainModel:      "gpt-5.3-codex",
+			wantParentModel: "gpt-5.5",
+			wantImageModel:  "",
+		},
+		{
+			name:            "image tool model moves to image_model",
+			providerDefault: "gpt-5.5",
+			chainModel:      "gpt-image-2",
+			wantParentModel: "",
+			wantImageModel:  "gpt-image-2",
+		},
+		{
+			name:            "explicit image_model is preserved with codex parent fallback",
+			providerDefault: "gpt-5.5",
+			chainModel:      "gpt-5.3-codex",
+			chainImageModel: "gpt-image-1.5",
+			wantParentModel: "gpt-5.5",
+			wantImageModel:  "gpt-image-1.5",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			parent, image := normalizeNativeImageModels(
+				&nativeImageProvider{name: "codex-cnb", model: tc.providerDefault},
+				tc.chainModel,
+				tc.chainImageModel,
+			)
+			if parent != tc.wantParentModel {
+				t.Errorf("parent model = %q, want %q", parent, tc.wantParentModel)
+			}
+			if image != tc.wantImageModel {
+				t.Errorf("image model = %q, want %q", image, tc.wantImageModel)
 			}
 		})
 	}

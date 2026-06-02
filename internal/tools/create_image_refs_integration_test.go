@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -55,6 +56,62 @@ func TestExecute_WithRefs_ErrorNormalization(t *testing.T) {
 	// which requires refImages to be populated upstream.
 	if !strings.Contains(result.ForLLM, "reference images") {
 		t.Errorf("error message should mention 'reference images', got: %s", result.ForLLM)
+	}
+}
+
+func TestExecute_WithRefs_FailedRefsChainDoesNotGenerateTextOnlyFallback(t *testing.T) {
+	dir := t.TempDir()
+	jpegPath := filepath.Join(dir, "logo.jpg")
+	if err := os.WriteFile(jpegPath, []byte{0xff, 0xd8, 0xff, 0xe0}, 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	refsProvider := &nativeImageProvider{
+		name:        "refs-provider",
+		model:       "gpt-5.5",
+		imageRefs:   true,
+		returnError: errors.New("refs route unavailable"),
+	}
+	textOnlyFallback := &nativeImageProvider{
+		name:       "text-only-fallback",
+		model:      "fallback-model",
+		imageRefs:  false,
+		returnData: []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a},
+	}
+
+	reg := providers.NewRegistry(nil)
+	reg.Register(refsProvider)
+	reg.Register(textOnlyFallback)
+
+	chainJSON := []byte(`{"providers":[` +
+		`{"provider":"refs-provider","model":"gpt-5.5","enabled":true,"timeout":30,"max_retries":1},` +
+		`{"provider":"text-only-fallback","model":"fallback-model","enabled":true,"timeout":30,"max_retries":1}` +
+		`]}`)
+	ctx := WithBuiltinToolSettings(context.Background(), BuiltinToolSettings{"create_image": chainJSON})
+	ctx = WithToolWorkspace(ctx, t.TempDir())
+	ctx = WithMediaImageRefs(ctx, []providers.MediaRef{
+		{ID: "logo", MimeType: "image/jpeg", Kind: "image", Path: jpegPath},
+	})
+
+	result := NewCreateImageTool(reg).Execute(ctx, map[string]any{
+		"prompt":              "Reproduce the exact logo from the reference image.",
+		"reference_image_ids": []any{"logo"},
+	})
+
+	if result == nil || !result.IsError {
+		t.Fatalf("expected refs failure to be a tool error, got: %+v", result)
+	}
+	if !strings.Contains(result.ForLLM, "no prompt-only image was generated") {
+		t.Fatalf("error must explain that text-only fallback was blocked, got: %s", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, "Generated image saved to") {
+		t.Fatalf("must not save a text-only image when references are required: %s", result.ForLLM)
+	}
+	if refsProvider.calledWith == nil {
+		t.Fatal("refs-capable provider was not attempted")
+	}
+	if textOnlyFallback.calledWith != nil {
+		t.Fatal("text-only fallback provider was called despite required references")
 	}
 }
 
