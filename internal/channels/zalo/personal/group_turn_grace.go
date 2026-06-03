@@ -114,7 +114,7 @@ func mergeInboundTurns(existing, next inboundTurn) inboundTurn {
 }
 
 func inboundTurnKey(turn inboundTurn) string {
-	return turn.peerKind + ":" + turn.threadID
+	return turn.peerKind + ":" + turn.threadID + ":" + turn.senderID
 }
 
 func joinNonEmpty(sep string, parts ...string) string {

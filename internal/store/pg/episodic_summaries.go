@@ -25,7 +25,7 @@ func NewPGEpisodicStore(db *sql.DB) *PGEpisodicStore {
 }
 
 func (s *PGEpisodicStore) SetEmbeddingProvider(p store.EmbeddingProvider) { s.embProvider = p }
-func (s *PGEpisodicStore) Close() error                                  { return nil }
+func (s *PGEpisodicStore) Close() error                                   { return nil }
 
 // Create inserts a new episodic summary with optional embedding.
 func (s *PGEpisodicStore) Create(ctx context.Context, ep *store.EpisodicSummary) error {
@@ -33,7 +33,12 @@ func (s *PGEpisodicStore) Create(ctx context.Context, ep *store.EpisodicSummary)
 	ep.ID = id
 
 	topics := pq.Array(ep.KeyTopics)
-	now := time.Now().UTC()
+	now := ep.CreatedAt
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
 
 	var embStr *string
 	if s.embProvider != nil && ep.Summary != "" {

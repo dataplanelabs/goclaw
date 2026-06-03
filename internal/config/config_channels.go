@@ -143,6 +143,7 @@ type WhatsAppConfig struct {
 	RequireMention *bool               `json:"require_mention,omitempty"` // only respond in groups when bot is @mentioned (default false)
 	HistoryLimit   int                 `json:"history_limit,omitempty"`   // max pending group messages for context (default 200, 0=disabled)
 	BlockReply     *bool               `json:"block_reply,omitempty"`     // override gateway block_reply (nil = inherit)
+	DisableReactions bool              `json:"disable_reactions,omitempty"` // kill switch for inbound reaction feedback storage
 }
 
 type ZaloConfig struct {

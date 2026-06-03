@@ -552,6 +552,10 @@ The WhatsApp channel connects directly to the WhatsApp network via the multi-dev
 - **Auto-reconnect**: Built-in reconnection with exponential backoff
 - **DM and group support**: Full group messaging with mention detection via JID format
 - **Media handling**: Direct media download/upload to WhatsApp servers with type detection
+- **Reaction feedback**: Inbound reactions are stored as memory feedback with the
+  reactor, emoji, timestamp, target message id, and a short preview of the
+  reacted message/file. Set `disable_reactions: true` on a WhatsApp instance to
+  disable this feedback path.
 - **Typing indicators**: Typing state managed per chat with auto-refresh
 - **Group mention gating**: Detects when bot is mentioned via LID (Local ID) and JID (standard format)
 

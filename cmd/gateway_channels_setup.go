@@ -13,8 +13,8 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/discord"
-	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/feishu"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	slackchannel "github.com/nextlevelbuilder/goclaw/internal/channels/slack"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/telegram"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/whatsapp"
@@ -81,6 +81,9 @@ func registerConfigChannels(cfg *config.Config, channelMgr *channels.Manager, ms
 			channelMgr.RecordFailure(channels.TypeWhatsApp, "", err)
 			slog.Error("failed to initialize whatsapp channel", "error", err)
 		} else {
+			if pgStores.Episodic != nil {
+				wa.SetEpisodicStore(pgStores.Episodic)
+			}
 			channelMgr.RegisterChannel(channels.TypeWhatsApp, wa)
 			slog.Info("whatsapp channel enabled (config)")
 		}
@@ -291,4 +294,3 @@ func wireChannelEventSubscribers(
 		})
 	}
 }
-

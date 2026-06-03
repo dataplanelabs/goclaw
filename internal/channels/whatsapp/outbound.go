@@ -43,9 +43,11 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 					if waMsg.AudioMessage != nil {
 						waMsg.AudioMessage.PTT = new(true)
 					}
-					if _, sendErr := c.client.SendMessage(c.ctx, chatJID, waMsg); sendErr != nil {
+					resp, sendErr := c.client.SendMessage(c.ctx, chatJID, waMsg)
+					if sendErr != nil {
 						slog.Warn("whatsapp: tts auto-apply voice send failed, falling back to text", "error", sendErr)
 					} else {
+						c.recordMessagePreview(ctx, string(resp.ID), mediaAttachmentPreview("voice", ttsResult.AudioPath, ""), resp.Timestamp)
 						// Voice sent successfully, stop typing and return
 						if cancel, ok := c.typingCancel.LoadAndDelete(msg.ChatID); ok {
 							if fn, ok := cancel.(context.CancelFunc); ok {
@@ -82,9 +84,11 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 				return fmt.Errorf("build media message: %w", buildErr)
 			}
 
-			if _, sendErr := c.client.SendMessage(c.ctx, chatJID, waMsg); sendErr != nil {
+			resp, sendErr := c.client.SendMessage(c.ctx, chatJID, waMsg)
+			if sendErr != nil {
 				return fmt.Errorf("send whatsapp media: %w", sendErr)
 			}
+			c.recordMessagePreview(ctx, string(resp.ID), mediaAttachmentPreview(mediaKindFromMIME(m.ContentType), m.URL, caption), resp.Timestamp)
 		}
 		// Skip text if caption was used on first media.
 		if msg.Media[0].Caption == "" && msg.Content != "" {
@@ -100,9 +104,11 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 			waMsg := &waE2E.Message{
 				Conversation: new(chunk),
 			}
-			if _, err := c.client.SendMessage(c.ctx, chatJID, waMsg); err != nil {
+			resp, err := c.client.SendMessage(c.ctx, chatJID, waMsg)
+			if err != nil {
 				return fmt.Errorf("send whatsapp message: %w", err)
 			}
+			c.recordMessagePreview(ctx, string(resp.ID), chunk, resp.Timestamp)
 		}
 	}
 

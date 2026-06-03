@@ -60,6 +60,12 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **WhatsApp reactions now preserve the reacted message context** — inbound
+  reaction events are stored as feedback with the reactor, emoji, platform
+  timestamp, target message id, and short message/file preview. The agent now
+  sees total reactions and reactor names instead of inferring from a vague
+  recent-reaction signal.
+
 - **Zalo Personal no longer misses media sent just after an addressed message** —
   inbound media now participates in gateway debounce instead of bypassing it,
   and Zalo Personal addressed turns wait briefly for follow-up media before

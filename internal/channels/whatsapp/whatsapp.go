@@ -35,15 +35,16 @@ func init() {
 // Auth state is stored in PostgreSQL (standard) or SQLite (desktop).
 type Channel struct {
 	*channels.BaseChannel
-	client    *whatsmeow.Client
-	container *sqlstore.Container
-	config    config.WhatsAppConfig
-	mu        sync.Mutex
-	ctx       context.Context
-	cancel    context.CancelFunc
-	parentCtx        context.Context       // stored from Start() for Reauth() context chain
-	audioMgr         *audio.Manager        // unified STT via audio.Manager (nil = no STT)
+	client           *whatsmeow.Client
+	container        *sqlstore.Container
+	config           config.WhatsAppConfig
+	mu               sync.Mutex
+	ctx              context.Context
+	cancel           context.CancelFunc
+	parentCtx        context.Context        // stored from Start() for Reauth() context chain
+	audioMgr         *audio.Manager         // unified STT via audio.Manager (nil = no STT)
 	builtinToolStore store.BuiltinToolStore // reads stt settings (whatsapp_enabled) per voice message; nil = opt-out
+	episodicStore    store.EpisodicStore    // optional reaction feedback + message preview cache
 
 	// QR state
 	lastQRMu        sync.RWMutex
@@ -59,6 +60,9 @@ type Channel struct {
 	reauthMu sync.Mutex
 	// pairingService, pairingDebounce, approvedGroups, groupHistory are inherited from channels.BaseChannel.
 }
+
+// SetEpisodicStore wires optional reaction feedback storage.
+func (c *Channel) SetEpisodicStore(s store.EpisodicStore) { c.episodicStore = s }
 
 // GetLastQRB64 returns the most recent QR PNG (base64).
 func (c *Channel) GetLastQRB64() string {

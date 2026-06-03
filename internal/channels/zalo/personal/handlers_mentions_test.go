@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
 	pkgproto "github.com/nextlevelbuilder/goclaw/pkg/protocol"
@@ -298,6 +299,45 @@ func TestZaloTurnGraceMergesDirectFollowupMedia(t *testing.T) {
 	}
 	if got.Metadata["message_id"] != "media-1" {
 		t.Fatalf("message_id = %q, want latest metadata", got.Metadata["message_id"])
+	}
+}
+
+func TestZaloGroupTurnGraceDoesNotMergeDifferentSenders(t *testing.T) {
+	t.Parallel()
+	ch, mb := newHandlerTestChannel(t)
+	ch.turnCoalescer = channels.NewTurnCoalescer[inboundTurn](50*time.Millisecond, mergeInboundTurns, ch.dispatchInboundTurn)
+
+	ch.enqueueInboundTurn(inboundTurn{
+		senderID:   "user-a",
+		threadID:   "group-1",
+		content:    "[From: User A (uid:user-a)]\nfirst request",
+		metadata:   map[string]string{"message_id": "mention-a"},
+		peerKind:   "group",
+		threadType: protocol.ThreadTypeGroup,
+	})
+	ch.enqueueInboundTurn(inboundTurn{
+		senderID:   "user-b",
+		threadID:   "group-1",
+		content:    "[From: User B (uid:user-b)]\nsecond request",
+		metadata:   map[string]string{"message_id": "mention-b"},
+		peerKind:   "group",
+		threadType: protocol.ThreadTypeGroup,
+	})
+
+	first := drainInbound(t, mb)
+	second := drainInbound(t, mb)
+	bySender := map[string]bus.InboundMessage{
+		first.SenderID:  first,
+		second.SenderID: second,
+	}
+	if len(bySender) != 2 {
+		t.Fatalf("expected two separate sender turns, got first=%+v second=%+v", first, second)
+	}
+	if strings.Contains(bySender["user-a"].Content, "second request") {
+		t.Fatalf("user-a turn was merged with user-b content:\n%s", bySender["user-a"].Content)
+	}
+	if strings.Contains(bySender["user-b"].Content, "first request") {
+		t.Fatalf("user-b turn was merged with user-a content:\n%s", bySender["user-b"].Content)
 	}
 }
 
