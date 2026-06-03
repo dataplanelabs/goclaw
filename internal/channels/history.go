@@ -271,12 +271,47 @@ func (ph *PendingHistory) BuildContext(historyKey, currentMessage string, limit 
 		return currentMessage
 	}
 
+	return ph.formatContext(entriesCopy, currentMessage)
+}
+
+// BuildContextAndCollectMedia retrieves pending history and media paths under
+// the same lock so the prompt text and attached media are from one snapshot.
+func (ph *PendingHistory) BuildContextAndCollectMedia(historyKey, currentMessage string, limit int) (string, []string) {
+	if limit <= 0 || historyKey == "" {
+		return currentMessage, nil
+	}
+
+	ph.mu.Lock()
+	entries := ph.entries[historyKey]
+	entriesCopy := make([]HistoryEntry, len(entries))
+	copy(entriesCopy, entries)
+	var paths []string
+	for i := range entries {
+		paths = append(paths, entries[i].Media...)
+		entries[i].Media = nil // prevent double-cleanup
+	}
+	ph.mu.Unlock()
+
+	// DB fallback: if RAM is empty but we have a DB store, load from DB. Persisted
+	// history intentionally carries text only; RAM-only media cannot survive restart.
+	if len(entriesCopy) == 0 && ph.store != nil {
+		entriesCopy = ph.loadFromDB(historyKey)
+	}
+
+	if len(entriesCopy) == 0 {
+		return currentMessage, paths
+	}
+
+	return ph.formatContext(entriesCopy, currentMessage), paths
+}
+
+func (ph *PendingHistory) formatContext(entries []HistoryEntry, currentMessage string) string {
 	loc := ph.loc
 	if loc == nil {
 		loc = time.UTC
 	}
 	var lines []string
-	for _, e := range entriesCopy {
+	for _, e := range entries {
 		ts := ""
 		if !e.Timestamp.IsZero() {
 			ts = fmt.Sprintf(" [%s]", e.Timestamp.In(loc).Format("2006-01-02 15:04"))

@@ -60,6 +60,13 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Zalo Personal no longer misses media sent just after an addressed message** —
+  inbound media now participates in gateway debounce instead of bypassing it,
+  and Zalo Personal addressed turns wait briefly for follow-up media before
+  dispatch. In groups, pending-history text and media are collected from the
+  same snapshot before clearing, so an image sent after a mention can still
+  reach the same agent turn.
+
 - **`create_image` resolves current media IDs even when upload paths are reused** —
   same-path aliases from history/current-turn media refs are preserved for
   lookup, while provider payloads still dedupe by file path. This prevents

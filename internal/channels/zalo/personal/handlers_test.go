@@ -535,6 +535,7 @@ func newHandlerTestChannel(t *testing.T) (*Channel, *bus.MessageBus) {
 		Enabled:                 true,
 		DMPolicy:                "open",
 		GroupPolicy:             "open",
+		TurnGraceMs:             -1,
 		QuoteUserMessageInDM:    &enabled,
 		QuoteUserMessageInGroup: &enabled,
 	}, mb, nil, nil)
@@ -613,7 +614,10 @@ func TestHandleDM_QuoteDisabledByConfig(t *testing.T) {
 	mb := bus.New()
 	disabled := false
 	ch, err := New(config.ZaloPersonalConfig{
-		Enabled: true, DMPolicy: "open", GroupPolicy: "open",
+		Enabled:              true,
+		DMPolicy:             "open",
+		GroupPolicy:          "open",
+		TurnGraceMs:          -1,
 		QuoteUserMessageInDM: &disabled,
 	}, mb, nil, nil)
 	if err != nil {
@@ -731,6 +735,7 @@ func TestHandleDM_NoQuoteQuoteDisabledStampsNothing(t *testing.T) {
 	ch, err := New(config.ZaloPersonalConfig{
 		Enabled:              true,
 		DMPolicy:             "open",
+		TurnGraceMs:          -1,
 		QuoteUserMessageInDM: &disabled,
 	}, mb, nil, nil)
 	if err != nil {

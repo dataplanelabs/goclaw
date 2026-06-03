@@ -3,9 +3,11 @@ package personal
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
 	pkgproto "github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
@@ -219,6 +221,83 @@ func TestHandleGroupMessage_RequireMention_SilentWhenNotMentioned(t *testing.T) 
 	defer cancel()
 	if msg, ok := mb.ConsumeInbound(ctx); ok {
 		t.Fatalf("expected NO dispatch (RequireMention=true, no mention), got %+v", msg)
+	}
+}
+
+func TestZaloGroupTurnGraceCollectsFollowupMedia(t *testing.T) {
+	t.Parallel()
+	ch, mb := newHandlerTestChannel(t)
+	ch.turnCoalescer = channels.NewTurnCoalescer[inboundTurn](100*time.Millisecond, mergeInboundTurns, ch.dispatchInboundTurn)
+
+	ch.enqueueInboundTurn(inboundTurn{
+		senderID:   "user-1",
+		threadID:   "group-1",
+		content:    "[From: Example User (uid:user-1)]\nplease update this using the image",
+		metadata:   map[string]string{"message_id": "mention-1"},
+		peerKind:   "group",
+		threadType: protocol.ThreadTypeGroup,
+	})
+
+	const mediaTag = `<media:image id="late-image" path="/tmp/followup.jpg">`
+	ch.GroupHistory().Record("group-1", channels.HistoryEntry{
+		Sender:    "Example User",
+		SenderID:  "user-1",
+		Body:      mediaTag,
+		Media:     []string{"/tmp/followup.jpg"},
+		Timestamp: time.Date(2026, 6, 3, 9, 12, 0, 0, time.UTC),
+		MessageID: "media-1",
+	}, ch.HistoryLimit())
+
+	got := drainInbound(t, mb)
+	if !strings.Contains(got.Content, mediaTag) {
+		t.Fatalf("content missing follow-up media tag:\n%s", got.Content)
+	}
+	if !strings.Contains(got.Content, channels.CurrentMessageMarker) {
+		t.Fatalf("content missing current message marker:\n%s", got.Content)
+	}
+	if len(got.Media) != 1 || got.Media[0].Path != "/tmp/followup.jpg" {
+		t.Fatalf("media = %+v, want follow-up media path", got.Media)
+	}
+	if entries := ch.GroupHistory().GetEntries("group-1"); len(entries) != 0 {
+		t.Fatalf("pending history should be cleared after dispatch, got %d entries", len(entries))
+	}
+}
+
+func TestZaloTurnGraceMergesDirectFollowupMedia(t *testing.T) {
+	t.Parallel()
+	ch, mb := newHandlerTestChannel(t)
+	ch.turnCoalescer = channels.NewTurnCoalescer[inboundTurn](100*time.Millisecond, mergeInboundTurns, ch.dispatchInboundTurn)
+
+	ch.enqueueInboundTurn(inboundTurn{
+		senderID:   "user-1",
+		threadID:   "user-1",
+		content:    "[From: Example User]\nplease inspect this",
+		metadata:   map[string]string{"message_id": "text-1"},
+		peerKind:   "direct",
+		threadType: protocol.ThreadTypeUser,
+	})
+	ch.enqueueInboundTurn(inboundTurn{
+		senderID:   "user-1",
+		threadID:   "user-1",
+		content:    `<media:image id="dm-image" path="/tmp/dm-followup.jpg">`,
+		media:      []string{"/tmp/dm-followup.jpg"},
+		metadata:   map[string]string{"message_id": "media-1"},
+		peerKind:   "direct",
+		threadType: protocol.ThreadTypeUser,
+	})
+
+	got := drainInbound(t, mb)
+	if got.PeerKind != "direct" {
+		t.Fatalf("peer kind = %q, want direct", got.PeerKind)
+	}
+	if !strings.Contains(got.Content, "please inspect this") || !strings.Contains(got.Content, "dm-image") {
+		t.Fatalf("content did not merge text and media tag:\n%s", got.Content)
+	}
+	if len(got.Media) != 1 || got.Media[0].Path != "/tmp/dm-followup.jpg" {
+		t.Fatalf("media = %+v, want direct follow-up media", got.Media)
+	}
+	if got.Metadata["message_id"] != "media-1" {
+		t.Fatalf("message_id = %q, want latest metadata", got.Metadata["message_id"])
 	}
 }
 

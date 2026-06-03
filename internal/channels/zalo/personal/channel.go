@@ -19,6 +19,8 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
+const defaultTurnGrace = 2 * time.Second
+
 // Channel connects to Zalo Personal Chat via the internal protocol port (from zcago, MIT).
 // WARNING: Zalo Personal is an unofficial, reverse-engineered integration. Account may be locked/banned.
 type Channel struct {
@@ -49,6 +51,7 @@ type Channel struct {
 	memberFetcher      func(ctx context.Context, sess *protocol.Session, groupID string) ([]protocol.GroupMember, error)
 
 	enableNativeStyles bool
+	turnCoalescer      *channels.TurnCoalescer[inboundTurn]
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -80,6 +83,13 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 	if cfg.EnableNativeStyles != nil {
 		enableNativeStyles = *cfg.EnableNativeStyles
 	}
+	turnGrace := defaultTurnGrace
+	switch {
+	case cfg.TurnGraceMs < 0:
+		turnGrace = 0
+	case cfg.TurnGraceMs > 0:
+		turnGrace = time.Duration(cfg.TurnGraceMs) * time.Millisecond
+	}
 
 	ch := &Channel{
 		BaseChannel:        base,
@@ -91,6 +101,7 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 		memberFetcher:      protocol.FetchGroupMembers,
 		enableNativeStyles: enableNativeStyles,
 	}
+	ch.turnCoalescer = channels.NewTurnCoalescer[inboundTurn](turnGrace, mergeInboundTurns, ch.dispatchInboundTurn)
 	ch.SetPairingService(pairingSvc)
 	ch.SetGroupHistory(channels.MakeHistory(channels.TypeZaloPersonal, pendingStore, base.TenantID()))
 	ch.SetHistoryLimit(historyLimit)
@@ -203,6 +214,7 @@ func (c *Channel) SetPendingHistoryTenantID(id uuid.UUID) {
 
 // Stop gracefully shuts down the Zalo Personal channel.
 func (c *Channel) Stop(_ context.Context) error {
+	c.flushPendingInboundTurns()
 	if gh := c.GroupHistory(); gh != nil {
 		gh.StopFlusher()
 	}

@@ -768,6 +768,16 @@ Zalo Personal uses an unofficial, reverse-engineered protocol. The account used 
 - Special handling for error code 3000: 60-second initial delay
 - Typing controller per thread
 
+### Turn Assembly
+
+Zalo may deliver text and media as separate nearby events. Zalo Personal buffers
+addressed DM and group turns for `turn_grace_ms` before dispatching to the agent
+so follow-up media can join the same turn. The default is 2000ms; set
+`turn_grace_ms: -1` on the channel instance to disable the grace window. For
+mention-gated groups, pending group history is rebuilt at flush time so
+unmentioned follow-up media sent during the window is included before history is
+cleared.
+
 ### Polls + Reactions
 
 Polls and reactions are first-class for Zalo Personal:
