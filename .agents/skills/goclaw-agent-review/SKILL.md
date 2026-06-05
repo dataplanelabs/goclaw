@@ -61,11 +61,13 @@ Use `-U postgres` (peer auth); the app role needs a password over TCP.
 ### 2. Locate the agent + sessions
 ```sql
 SELECT id, agent_key, display_name, model, tenant_id FROM agents WHERE display_name ILIKE '%<name>%' OR agent_key ILIKE '%<name>%';
--- recent sessions (groups, DMs, cron) for the agent's channel, last 24h
+-- ALL recent sessions for the agent — every group it belongs to + DMs + cron, not one group
 SELECT session_key, channel, jsonb_array_length(messages) msgs, updated_at
-FROM sessions WHERE channel ILIKE '%<channel>%' AND updated_at > now() - interval '24 hours' ORDER BY updated_at DESC;
+FROM sessions WHERE agent_id = '<agent-uuid>' AND updated_at > now() - interval '7 days' ORDER BY updated_at DESC;
 ```
-Group names live in `channel_contacts.display_name` keyed by `sender_id` (the group id in the session_key `agent:<key>:<channel>:group:<id>`). Session `metadata->>'display_name'` = last sender, NOT the group name.
+Review **all** of them (each group/DM has its own context); don't scope to a single
+group unless the user explicitly asks. Skip `ws`/`http` sessions (web-playground/test);
+focus on real messaging channels (`zalo-*`, telegram, etc.). Group names live in `channel_contacts.display_name` keyed by `sender_id` (the group id in the session_key `agent:<key>:<channel>:group:<id>`). Session `metadata->>'display_name'` = last sender, NOT the group name.
 
 ### 3. Extract to a working dir (`plans/<date>-<slug>/raw/`)
 - **Sessions → readable transcripts:** dump `jsonb_array_elements(messages)` to JSONL per session, then `scripts/build_transcript.py` (handles the `[From: name (uid)]` user prefix, assistant tool_calls, security-wrapped tool results). Message shape: `role` user/assistant/tool, `content`, `created_at`, assistant `tool_calls[]`, tool `tool_call_id`.
