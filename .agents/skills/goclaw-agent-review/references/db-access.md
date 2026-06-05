@@ -10,6 +10,13 @@ PSQL()  { kubectl exec    -n databases goclaw-db-1-1 -c postgres -- psql -U post
 PSQLi() { kubectl exec -i -n databases goclaw-db-1-1 -c postgres -- psql -U postgres -d goclaw -X -q "$@"; }
 ```
 - Use `-U postgres` (peer auth as the OS user). The `goclaw` role fails peer auth; it needs a password over TCP.
+
+**Read-only / unattended runs:** prefer the SELECT-only role `goclaw_ro` via the
+`goclaw-ro-psql` helper (`~/.local/bin/goclaw-ro-psql -t -A -c "SELECT ..."`; password
+in `~/.config/goclaw/cron-ro.env`, chmod 600). Writes are rejected at the DB. The
+weekly auto-review cron (`com.dataplanelabs.goclaw-agent-review` launchd job) uses
+only this path. Use the superuser path above solely for the apply/cleanup steps a
+human has approved.
 - Write large/UTF-8 content safely with base64 over stdin:
   `printf "UPDATE … SET content=convert_from(decode('%s','base64'),'UTF8') WHERE …;" "$(base64 < file | tr -d '\n')" | PSQLi`
 
