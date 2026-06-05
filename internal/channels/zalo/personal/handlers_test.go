@@ -72,11 +72,13 @@ func TestExtractContentAndMedia_ImageWithCaption_PrefersAttachment(t *testing.T)
 	}
 	got, _ := extractContentAndMedia(c)
 	// Buggy behavior would return just "tao poster voi buc hinh nay" via the title
-	// probe. Fixed behavior routes through extractAttachment → on download fail,
-	// AttachmentText returns "[User sent an image: <title>]".
-	want := "[User sent an image: tao poster voi buc hinh nay]"
-	if got != want {
-		t.Errorf("content = %q, want %q (ordering regression: title probe won over attachment path)", got, want)
+	// probe. Fixed behavior routes through extractAttachment → on download fail it
+	// returns the informative "could not be downloaded" text (still carrying the caption).
+	if got == "tao poster voi buc hinh nay" {
+		t.Fatalf("ordering regression: title probe won over attachment path: %q", got)
+	}
+	if !strings.Contains(got, "could not be downloaded") || !strings.Contains(got, "tao poster voi buc hinh nay") {
+		t.Errorf("content = %q, want attachment-failure text containing the caption", got)
 	}
 }
 

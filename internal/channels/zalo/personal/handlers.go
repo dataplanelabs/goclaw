@@ -3,6 +3,7 @@ package personal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -665,10 +666,9 @@ func extractAttachment(content protocol.Content, att *protocol.Attachment) (stri
 	filePath, err := downloadFile(context.Background(), att.Href)
 	if err != nil {
 		slog.Warn("zalo_personal: failed to download attachment", "url", att.Href, "error", err)
-		if text := content.AttachmentText(); text != "" {
-			return text, nil
-		}
-		return "", nil
+		// Surface the real reason so the agent can tell the user (e.g. "too large")
+		// instead of silently rendering a generic placeholder and guessing.
+		return attachmentUnavailableText(att, err), nil
 	}
 
 	mimeType := media.DetectMIMEType(filePath)
@@ -691,7 +691,31 @@ func extractAttachment(content protocol.Content, att *protocol.Attachment) (stri
 	return tag, []string{filePath}
 }
 
-const maxMediaBytes = 20 * 1024 * 1024 // 20MB (matches Telegram default)
+// attachmentUnavailableText tells the agent a file/image arrived but could not be
+// loaded, and WHY — so it relays the real reason instead of inventing one.
+func attachmentUnavailableText(att *protocol.Attachment, err error) string {
+	kind := "a file"
+	if att.IsImage() {
+		kind = "an image"
+	}
+	if name := strings.TrimSpace(att.Title); name != "" {
+		kind = fmt.Sprintf("%s %q", kind, name)
+	}
+	if errors.Is(err, errFileTooLarge) {
+		return fmt.Sprintf("[User sent %s but it could not be loaded: it exceeds the %d MB size limit. "+
+			"Tell the user the file is too large to process here and ask them to share it via a download link "+
+			"or send screenshots of the content.]", kind, maxMediaBytes/(1024*1024))
+	}
+	return fmt.Sprintf("[User sent %s but it could not be downloaded (temporary error). "+
+		"Ask the user to resend it or share it via a download link.]", kind)
+}
+
+const maxMediaBytes = 100 * 1024 * 1024 // 100MB inbound media cap
+const downloadTimeout = 120 * time.Second // generous for large files on slow CDN shards
+
+// errFileTooLarge marks a download that exceeded maxMediaBytes (vs a transient
+// network/HTTP failure) so callers can surface the right reason to the agent.
+var errFileTooLarge = errors.New("file too large")
 
 // downloadRetryConfig: 3 attempts, 300ms→600ms→1.2s exponential backoff with
 // ±10% jitter, capped at 5s. Covers Zalo CDN's DNS cold-miss SERVFAIL pattern
@@ -720,7 +744,7 @@ func downloadFile(ctx context.Context, fileURL string) (string, error) {
 // Status-code failures are wrapped as *providers.HTTPError so RetryDo's
 // classifier handles 5xx/429 + Retry-After header uniformly.
 func doDownload(ctx context.Context, fileURL string) (string, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: downloadTimeout}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("download: %w", err)
@@ -765,7 +789,7 @@ func doDownload(ctx context.Context, fileURL string) (string, error) {
 	}
 	if written > maxMediaBytes {
 		os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("file too large: %d bytes (max %d)", written, maxMediaBytes)
+		return "", fmt.Errorf("%w: %d bytes (max %d)", errFileTooLarge, written, maxMediaBytes)
 	}
 
 	return tmpFile.Name(), nil
