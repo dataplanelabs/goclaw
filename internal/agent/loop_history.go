@@ -307,7 +307,8 @@ func stampCurrentMessageTime(ctx context.Context, msg string) string {
 			loc = l
 		}
 	}
-	stamp := rc.TurnStartedAt.In(loc).Format("2006-01-02 15:04")
+	// Include the tz offset so the LLM never mistakes the wall-clock for UTC.
+	stamp := rc.TurnStartedAt.In(loc).Format("2006-01-02 15:04 -07")
 	marker := channels.CurrentMessageMarker + "\n"
 	if strings.Contains(msg, marker) {
 		return strings.Replace(msg, marker, channels.CurrentMessageMarker+" ["+stamp+"]\n", 1)
