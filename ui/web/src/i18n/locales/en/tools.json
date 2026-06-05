@@ -235,7 +235,14 @@
       "saving": "Saving...",
       "imageModelLabel": "Image model",
       "imageModelDefaultOption": "Default · gpt-image-2 (recommended)",
-      "imageModelLegacyOption": "Legacy · gpt-image-1.5"
+      "imageModelLegacyOption": "Legacy · gpt-image-1.5",
+      "dailyLimit": "Daily limit",
+      "dailyLimitHelp": "Max successful generations per day. Leave empty for no limit. Counts only successes; resets at UTC midnight.",
+      "scope": "Scope",
+      "scopeChannel": "Per channel-instance",
+      "scopeThread": "Per chat/group",
+      "scopeAgent": "Per agent",
+      "scopeTool": "Per tenant (global)"
     },
     "toast": {
       "toggled": "Tool updated",
