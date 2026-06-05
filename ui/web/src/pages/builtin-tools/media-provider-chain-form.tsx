@@ -18,6 +18,7 @@ import {
 import { Plus, Loader2 } from "lucide-react";
 import { uniqueId } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useProviders } from "@/pages/providers/hooks/use-providers";
 import { SortableProviderCard } from "./media-sortable-provider-card";
@@ -47,6 +48,14 @@ export function MediaProviderChainForm({
     parseInitialEntries(initialSettings, providers),
   );
   const [saving, setSaving] = useState(false);
+  const [dailyLimit, setDailyLimit] = useState<string>(() => {
+    const v = initialSettings.daily_limit;
+    return typeof v === "number" && v > 0 ? String(v) : "";
+  });
+  const [dailyScope, setDailyScope] = useState<string>(() => {
+    const s = initialSettings.daily_limit_scope;
+    return typeof s === "string" && s ? s : "channel";
+  });
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -92,7 +101,17 @@ export function MediaProviderChainForm({
     setSaving(true);
     try {
       const serialized = entries.map(({ id: _id, ...rest }) => rest);
-      await onSave({ providers: serialized });
+      // Preserve settings keys this form doesn't manage (don't clobber daily_limit etc.).
+      const next: Record<string, unknown> = { ...initialSettings, providers: serialized };
+      const limit = Number.parseInt(dailyLimit, 10);
+      if (Number.isFinite(limit) && limit > 0) {
+        next.daily_limit = limit;
+        next.daily_limit_scope = dailyScope;
+      } else {
+        delete next.daily_limit;
+        delete next.daily_limit_scope;
+      }
+      await onSave(next);
     } catch {
       // toast shown by hook
     } finally {
@@ -137,6 +156,32 @@ export function MediaProviderChainForm({
           <Plus className="size-3.5 mr-1.5" />
           {t("builtin.mediaChain.addProvider")}
         </Button>
+      </div>
+
+      <div className="rounded-md border p-3 mb-4 space-y-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="text-sm font-medium whitespace-nowrap">{t("builtin.mediaChain.dailyLimit")}</label>
+          <Input
+            type="number"
+            min={0}
+            value={dailyLimit}
+            onChange={(e) => setDailyLimit(e.target.value)}
+            placeholder="0"
+            className="w-24"
+          />
+          <select
+            value={dailyScope}
+            onChange={(e) => setDailyScope(e.target.value)}
+            aria-label={t("builtin.mediaChain.scope")}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="channel">{t("builtin.mediaChain.scopeChannel")}</option>
+            <option value="thread">{t("builtin.mediaChain.scopeThread")}</option>
+            <option value="agent">{t("builtin.mediaChain.scopeAgent")}</option>
+            <option value="tool">{t("builtin.mediaChain.scopeTool")}</option>
+          </select>
+        </div>
+        <p className="text-xs text-muted-foreground">{t("builtin.mediaChain.dailyLimitHelp")}</p>
       </div>
 
       <DialogFooter>
