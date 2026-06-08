@@ -310,6 +310,76 @@ func TestCodexGenerateImage_SSEFallback(t *testing.T) {
 	}
 }
 
+// sseImageErrorServer streams the given SSE frames and asserts the returned error
+// contains wantSubstr (so the real failure reason reaches callers, not the generic
+// "no image in SSE stream").
+func sseImageErrorServer(t *testing.T, frames []codexSSEEvent, wantSubstr string) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, ev := range frames {
+			b, _ := json.Marshal(ev)
+			fmt.Fprintf(w, "data: %s\n\n", b)
+		}
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	p := NewCodexProvider("codex-test", &staticTokenSource{token: "tok"}, server.URL, "gpt-image-2")
+	p.retryConfig.Attempts = 1
+
+	_, err := p.GenerateImage(context.Background(), NativeImageRequest{Prompt: "x", OutputFormat: "png"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), wantSubstr) {
+		t.Errorf("error %q does not contain %q", err.Error(), wantSubstr)
+	}
+	if strings.Contains(err.Error(), "no image in SSE stream") {
+		t.Errorf("error %q masked the real reason with the generic message", err.Error())
+	}
+}
+
+// TestCodexGenerateImage_SSEResponseFailed verifies a response.failed frame surfaces
+// the underlying error.message instead of "no image in SSE stream".
+func TestCodexGenerateImage_SSEResponseFailed(t *testing.T) {
+	sseImageErrorServer(t, []codexSSEEvent{{
+		Type: "response.failed",
+		Response: &codexAPIResponse{
+			Status: "failed",
+			Error:  &codexErrorDetail{Code: "image_generation_user_error", Message: "Image generation is not available for this account."},
+		},
+	}}, "Image generation is not available for this account.")
+}
+
+// TestCodexGenerateImage_SSETopLevelError verifies a top-level error frame surfaces
+// its message.
+func TestCodexGenerateImage_SSETopLevelError(t *testing.T) {
+	sseImageErrorServer(t, []codexSSEEvent{{
+		Type:    "error",
+		Code:    "moderation_blocked",
+		Message: "Your request was rejected by the safety system.",
+	}}, "Your request was rejected by the safety system.")
+}
+
+// TestCodexGenerateImage_SSEResponseFailedCodeOnly verifies the error code is used
+// when no message is present.
+func TestCodexGenerateImage_SSEResponseFailedCodeOnly(t *testing.T) {
+	sseImageErrorServer(t, []codexSSEEvent{{
+		Type:     "response.failed",
+		Response: &codexAPIResponse{Status: "failed", Error: &codexErrorDetail{Code: "rate_limit_exceeded"}},
+	}}, "rate_limit_exceeded")
+}
+
+// TestCodexGenerateImage_SSEIncompleteNoImage verifies an incomplete stream with no
+// image returns an explicit incomplete error.
+func TestCodexGenerateImage_SSEIncompleteNoImage(t *testing.T) {
+	sseImageErrorServer(t, []codexSSEEvent{{
+		Type:     "response.incomplete",
+		Response: &codexAPIResponse{Status: "incomplete"},
+	}}, "response incomplete")
+}
+
 // TestCodexGenerateImage_NoPrompt verifies that an empty prompt returns an error
 // before making any HTTP request.
 func TestCodexGenerateImage_NoPrompt(t *testing.T) {

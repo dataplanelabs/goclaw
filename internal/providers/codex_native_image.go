@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -161,11 +162,15 @@ func parseNativeImageResponse(data []byte) (*NativeImageResult, error) {
 
 // parseNativeImageSSE parses SSE-streamed lines when the server unexpectedly returns
 // a stream despite stream:false. Looks for response.completed or output_item.done events.
+// response.failed / response.incomplete / top-level error frames carry the real reason
+// (entitlement, moderation refusal, model unavailable) — surface them instead of the
+// generic "no image" message so failures are diagnosable.
 func parseNativeImageSSE(data []byte) (*NativeImageResult, error) {
 	// Scan lines for "data: {...}" frames.
 	var b64 string
 	var outputFormat string
 	var usage *Usage
+	var streamErr error
 
 	for line := range bytes.SplitSeq(data, []byte("\n")) {
 		if !bytes.HasPrefix(line, []byte("data: ")) {
@@ -187,7 +192,7 @@ func parseNativeImageSSE(data []byte) (*NativeImageResult, error) {
 				b64 = event.Item.Result
 				outputFormat = event.Item.OutputFormat
 			}
-		case "response.completed":
+		case "response.completed", "response.incomplete":
 			if event.Response != nil {
 				for i := range event.Response.Output {
 					item := &event.Response.Output[i]
@@ -204,11 +209,27 @@ func parseNativeImageSSE(data []byte) (*NativeImageResult, error) {
 						TotalTokens:      u.TotalTokens,
 					}
 				}
+				if event.Type == "response.incomplete" {
+					if msg := codexSSEErrorMessage(&event); msg != "" {
+						streamErr = fmt.Errorf("codex native image: response incomplete: %s", msg)
+					} else {
+						streamErr = errors.New("codex native image: response incomplete")
+					}
+				}
+			}
+		case "response.failed", "error":
+			if msg := codexSSEErrorMessage(&event); msg != "" {
+				streamErr = fmt.Errorf("codex native image: %s", msg)
+			} else {
+				streamErr = errors.New("codex native image: response failed during generation")
 			}
 		}
 	}
 
 	if b64 == "" {
+		if streamErr != nil {
+			return nil, streamErr
+		}
 		return nil, fmt.Errorf("codex native image: no image in SSE stream")
 	}
 
@@ -222,6 +243,24 @@ func parseNativeImageSSE(data []byte) (*NativeImageResult, error) {
 		Data:     raw,
 		Usage:    usage,
 	}, nil
+}
+
+// codexSSEErrorMessage extracts a human-readable reason from a failure SSE frame:
+// response.failed/response.incomplete carry it under response.error; a top-level
+// error event carries it as message/code.
+func codexSSEErrorMessage(event *codexSSEEvent) string {
+	if event.Response != nil && event.Response.Error != nil {
+		if event.Response.Error.Message != "" {
+			return event.Response.Error.Message
+		}
+		if event.Response.Error.Code != "" {
+			return event.Response.Error.Code
+		}
+	}
+	if event.Message != "" {
+		return event.Message
+	}
+	return event.Code
 }
 
 // GenerateImage implements NativeImageProvider for CodexAdapter.
