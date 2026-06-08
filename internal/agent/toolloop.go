@@ -134,8 +134,10 @@ func (s *toolLoopState) detect(toolName string, argsHash string) (level, message
 	if noProgressCount >= toolLoopWarningThreshold {
 		return "warning", fmt.Sprintf(
 			"[System: WARNING — %s has been called %d times with the same arguments and identical results. "+
-				"This is not making progress. Try a completely different approach, use different tools, "+
-				"or respond directly to the user with what you know.]", toolName, noProgressCount)
+				"This is not making progress. Do not call this same tool with the same arguments again. "+
+				"If this is an MCP lookup, run mcp_tool_search for an alternate provider/tool before retrying; "+
+				"otherwise try a completely different approach or respond directly to the user with what you know.]",
+			toolName, noProgressCount)
 	}
 
 	return "", ""

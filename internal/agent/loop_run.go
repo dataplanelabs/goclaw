@@ -14,6 +14,11 @@ import (
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
+const (
+	loopKilledFailureClass = "tool_loop"
+	loopKilledErrorMessage = "loop detector killed run: repeated tool calls without progress"
+)
+
 // Run processes a single message through the agent loop.
 // It blocks until completion and returns the final response.
 func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
@@ -208,10 +213,18 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		elapsed := time.Since(runStart)
 		logAttrs := []any{
 			"agent", l.id, "duration_ms", elapsed.Milliseconds(),
-			"iterations", result.Iterations,
 		}
-		if result.Usage != nil {
-			logAttrs = append(logAttrs, "total_tokens", result.Usage.TotalTokens)
+		if result != nil {
+			logAttrs = append(logAttrs, "iterations", result.Iterations)
+			if result.LoopKilled {
+				logAttrs = append(logAttrs,
+					"loop_killed", true,
+					"failure_class", loopKilledFailureClass,
+				)
+			}
+			if result.Usage != nil {
+				logAttrs = append(logAttrs, "total_tokens", result.Usage.TotalTokens)
+			}
 		}
 		slog.Info("v3.run.completed", logAttrs...)
 
@@ -222,15 +235,11 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 			result.TraceID = traceID
 		}
 		if isChildTrace && l.traceCollector != nil && traceID != uuid.Nil {
-			l.traceCollector.SetTraceStatus(ctx, traceID, store.TraceStatusCompleted)
+			status, _, _ := traceCompletionForRunResult(result, l.traceCollector.PreviewMaxLen())
+			l.traceCollector.SetTraceStatus(ctx, traceID, status)
 		}
-		completedPayload := map[string]any{
-			"content":     result.Content,
-			"duration_ms": int(elapsed.Milliseconds()),
-			"iterations":  result.Iterations,
-			"tool_calls":  result.ToolCalls,
-		}
-		if result.Thinking != "" {
+		completedPayload := runCompletedPayload(result, elapsed)
+		if result != nil && result.Thinking != "" {
 			completedPayload["thinking"] = result.Thinking
 		}
 		if result != nil && result.Usage != nil {
@@ -248,11 +257,8 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		emitRun(AgentEvent{Type: protocol.AgentEventRunCompleted, AgentID: l.id, RunID: req.RunID, Payload: completedPayload})
 		if !isChildTrace && l.traceCollector != nil && traceID != uuid.Nil {
 			traceFinalized = true
-			if result != nil {
-				l.traceCollector.FinishTrace(ctx, traceID, store.TraceStatusCompleted, "", truncateStr(result.Content, l.traceCollector.PreviewMaxLen()))
-			} else {
-				l.traceCollector.FinishTrace(ctx, traceID, store.TraceStatusCompleted, "", "")
-			}
+			status, errMsg, outputPreview := traceCompletionForRunResult(result, l.traceCollector.PreviewMaxLen())
+			l.traceCollector.FinishTrace(ctx, traceID, status, errMsg, outputPreview)
 		}
 		if !isChildTrace && l.replayStore != nil && req.SessionKey != "" {
 			cutoff := runStart
@@ -267,4 +273,33 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		}
 		return result, nil
 	}
+}
+
+func runCompletedPayload(result *RunResult, elapsed time.Duration) map[string]any {
+	payload := map[string]any{
+		"duration_ms": int(elapsed.Milliseconds()),
+	}
+	if result == nil {
+		payload["content"] = ""
+		return payload
+	}
+	payload["content"] = result.Content
+	payload["iterations"] = result.Iterations
+	payload["tool_calls"] = result.ToolCalls
+	if result.LoopKilled {
+		payload["loop_killed"] = true
+		payload["failure_class"] = loopKilledFailureClass
+	}
+	return payload
+}
+
+func traceCompletionForRunResult(result *RunResult, previewMaxLen int) (status, errMsg, outputPreview string) {
+	if result == nil {
+		return store.TraceStatusCompleted, "", ""
+	}
+	outputPreview = truncateStr(result.Content, previewMaxLen)
+	if result.LoopKilled {
+		return store.TraceStatusError, loopKilledErrorMessage, outputPreview
+	}
+	return store.TraceStatusCompleted, "", outputPreview
 }
