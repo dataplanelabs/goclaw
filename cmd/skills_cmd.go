@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -14,6 +15,8 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
 )
+
+var skillsGatewayHTTPGet = gatewayHTTPGet
 
 func skillsCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -120,7 +123,7 @@ func skillsShowCmd() *cobra.Command {
 // runSkillsShowHTTP looks up a skill by slug via /v1/skills.
 // Returns true if found + printed; false if not found (caller falls back to FS).
 func runSkillsShowHTTP(slug string) bool {
-	resp, err := gatewayHTTPGet("/v1/skills")
+	resp, err := skillsGatewayHTTPGet("/v1/skills")
 	if err != nil {
 		return false
 	}
@@ -130,22 +133,63 @@ func runSkillsShowHTTP(slug string) bool {
 		return false
 	}
 	for _, s := range skills {
-		if str(s["slug"]) != slug {
+		if !httpSkillMatches(s, slug) {
 			continue
 		}
-		fmt.Printf("Slug:        %s\n", str(s["slug"]))
-		fmt.Printf("Name:        %s\n", str(s["name"]))
-		fmt.Printf("Description: %s\n", str(s["description"]))
-		fmt.Printf("Source:      %s\n", str(s["source"]))
-		if v := str(s["version"]); v != "" {
-			fmt.Printf("Version:     %s\n", v)
-		}
-		if v := str(s["visibility"]); v != "" {
-			fmt.Printf("Visibility:  %s\n", v)
-		}
+		printHTTPSkill(s)
+		printHTTPSkillContent(s)
 		return true
 	}
 	return false
+}
+
+func httpSkillMatches(skill map[string]any, name string) bool {
+	return str(skill["slug"]) == name || str(skill["name"]) == name
+}
+
+func printHTTPSkill(s map[string]any) {
+	fmt.Printf("Slug:        %s\n", str(s["slug"]))
+	fmt.Printf("Name:        %s\n", str(s["name"]))
+	fmt.Printf("Description: %s\n", str(s["description"]))
+	fmt.Printf("Source:      %s\n", str(s["source"]))
+	if v := str(s["version"]); v != "" {
+		fmt.Printf("Version:     %s\n", v)
+	}
+	if v := str(s["visibility"]); v != "" {
+		fmt.Printf("Visibility:  %s\n", v)
+	}
+}
+
+func printHTTPSkillContent(skill map[string]any) {
+	id := str(skill["id"])
+	if id == "" {
+		id = str(skill["slug"])
+	}
+	if id == "" {
+		return
+	}
+	resp, err := skillsGatewayHTTPGet("/v1/skills/" + url.PathEscape(id) + "/files/SKILL.md")
+	if err != nil {
+		return
+	}
+	content, ok := resp["content"].(string)
+	if !ok {
+		return
+	}
+	fmt.Println()
+	fmt.Println("--- Content ---")
+	fmt.Println(stripSkillFrontmatter(content))
+}
+
+func stripSkillFrontmatter(content string) string {
+	if !strings.HasPrefix(content, "---\n") {
+		return content
+	}
+	end := strings.Index(content[4:], "\n---\n")
+	if end < 0 {
+		return content
+	}
+	return content[end+9:]
 }
 
 func str(v any) string {
@@ -159,7 +203,7 @@ func str(v any) string {
 // Covers DB-backed skills (gcplane upload, manual POST /v1/skills/upload) that
 // the filesystem loader misses since they live in the skills-store + DB row.
 func runSkillsListTenantHTTP(jsonOutput bool) {
-	resp, err := gatewayHTTPGet("/v1/skills")
+	resp, err := skillsGatewayHTTPGet("/v1/skills")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
