@@ -9,8 +9,11 @@ export interface StorageFile {
   name: string;
   isDir: boolean;
   size: number;
+  modTime?: string;
   hasChildren?: boolean;
   protected: boolean;
+  label?: string;
+  kind?: string;
 }
 
 interface StorageListResponse {

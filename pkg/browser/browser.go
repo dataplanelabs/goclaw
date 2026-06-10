@@ -13,22 +13,25 @@ import (
 
 // Manager handles the Chrome browser lifecycle and page management.
 type Manager struct {
-	mu          sync.Mutex
-	browser     *rod.Browser
-	launcher    *launcher.Launcher // retained for PID-based cleanup on crash
-	refs        *RefStore
-	pages       map[string]*rod.Page        // targetID → page
-	console     map[string][]ConsoleMessage // targetID → console messages
-	tenantCtxs  map[string]*rod.Browser     // tenantID → incognito browser context
-	pageTenants map[string]string           // targetID → tenantID (for filtering)
-	pageLastUsed map[string]time.Time       // targetID → last access time
-	headless      bool
-	remoteURL     string        // CDP endpoint for remote Chrome (sidecar); skips local launcher
-	actionTimeout time.Duration // per-action context timeout (default 30s)
-	idleTimeout   time.Duration // auto-close pages idle longer than this (default 10m, 0=disabled)
-	maxPages      int           // max open pages per tenant (default 5)
-	stopReaper    chan struct{} // signal to stop the reaper goroutine
-	logger        *slog.Logger
+	mu                sync.Mutex
+	browser           *rod.Browser
+	browserCancel     context.CancelFunc // cancels the browser's lifetime context (set on connect, called on Stop/cleanup)
+	launcher          *launcher.Launcher // retained for PID-based cleanup on crash
+	refs              *RefStore
+	pages             map[string]*rod.Page        // targetID → page
+	console           map[string][]ConsoleMessage // targetID → console messages
+	tenantCtxs        map[string]*rod.Browser     // tenantID → incognito browser context
+	pageTenants       map[string]string           // targetID → tenantID (for filtering)
+	pageSessions      map[string]string           // targetID → sessionKey (shared browser, per-session tab ownership)
+	pageLastUsed      map[string]time.Time        // targetID → last access time
+	headless          bool
+	persistentProfile bool          // share one authenticated default-context browser across all tenants (single-identity only)
+	remoteURL         string        // CDP endpoint for remote Chrome (sidecar); skips local launcher
+	actionTimeout     time.Duration // per-action context timeout (default 30s)
+	idleTimeout       time.Duration // auto-close pages idle longer than this (default 10m, 0=disabled)
+	maxPages          int           // max open pages per tenant (default 5)
+	stopReaper        chan struct{} // signal to stop the reaper goroutine
+	logger            *slog.Logger
 }
 
 // Option configures a Manager.
@@ -43,6 +46,14 @@ func WithHeadless(h bool) Option {
 // When set, Start() connects to the remote Chrome instead of launching locally.
 func WithRemoteURL(url string) Option {
 	return func(m *Manager) { m.remoteURL = url }
+}
+
+// WithPersistentProfile makes every tenant share the one default-context browser
+// (the only context backed by the remote Chrome's --user-data-dir), so a human's
+// one-time login persists and the agent inherits it. SINGLE-IDENTITY ONLY: all
+// tenants share one cookie jar — never enable on a multi-identity deployment.
+func WithPersistentProfile(p bool) Option {
+	return func(m *Manager) { m.persistentProfile = p }
 }
 
 // WithLogger sets a custom logger.
@@ -73,6 +84,7 @@ func New(opts ...Option) *Manager {
 		console:       make(map[string][]ConsoleMessage),
 		tenantCtxs:    make(map[string]*rod.Browser),
 		pageTenants:   make(map[string]string),
+		pageSessions:  make(map[string]string),
 		pageLastUsed:  make(map[string]time.Time),
 		actionTimeout: 30 * time.Second,
 		idleTimeout:   10 * time.Minute,
@@ -88,6 +100,32 @@ func New(opts ...Option) *Manager {
 // ActionTimeout returns the configured per-action timeout.
 func (m *Manager) ActionTimeout() time.Duration {
 	return m.actionTimeout
+}
+
+// PersistentProfile reports whether the shared default-context browser is in use.
+func (m *Manager) PersistentProfile() bool {
+	return m.persistentProfile
+}
+
+// sessionTargetLocked resolves an optional targetID to the calling session's own
+// most-recently-used tab, so an empty targetID never lands on another session's
+// tab on the shared browser. Empty sessionKey keeps the legacy global fallback.
+// Must be called with mu held.
+func (m *Manager) sessionTargetLocked(sessionKey, targetID string) string {
+	if targetID != "" || sessionKey == "" {
+		return targetID
+	}
+	var bestID string
+	var bestTime time.Time
+	for tid, lu := range m.pageLastUsed {
+		if m.pageSessions[tid] != sessionKey {
+			continue
+		}
+		if bestID == "" || lu.After(bestTime) {
+			bestID, bestTime = tid, lu
+		}
+	}
+	return bestID
 }
 
 // touchPageLocked updates the last-used timestamp for a page. Must be called with mu held.
@@ -150,21 +188,33 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.logger.Info("Chrome launched", "cdp", controlURL, "headless", m.headless, "pid", l.PID())
 	}
 
-	connectCtx, connectCancel := context.WithTimeout(ctx, 15*time.Second)
-	defer connectCancel()
+	// Browser ctx must OUTLIVE Start(): go-rod ties the CDP client lifetime to it,
+	// so a defer-cancelled connect ctx kills the connection on return → next action
+	// fails "context canceled". Cancel only on Stop/cleanup; watchdog bounds the dial.
+	browserCtx, browserCancel := context.WithCancel(context.Background())
+	b := rod.New().Context(browserCtx).ControlURL(controlURL)
 
-	b := rod.New().Context(connectCtx).ControlURL(controlURL)
-	if err := b.Connect(); err != nil {
+	connectDone := make(chan error, 1)
+	go func() { connectDone <- b.Connect() }()
+	var connErr error
+	select {
+	case connErr = <-connectDone:
+	case <-time.After(15 * time.Second):
+		connErr = fmt.Errorf("timeout after 15s")
+	}
+	if connErr != nil {
+		browserCancel()
 		// If local launch succeeded but connect failed, kill the orphan process
 		if m.launcher != nil {
 			m.launcher.Kill()
 			m.launcher.Cleanup()
 			m.launcher = nil
 		}
-		return fmt.Errorf("connect to Chrome: %w", err)
+		return fmt.Errorf("connect to Chrome: %w", connErr)
 	}
 
 	m.browser = b
+	m.browserCancel = browserCancel
 
 	// Start idle-page reaper if configured
 	if m.idleTimeout > 0 && m.stopReaper == nil {
@@ -209,10 +259,15 @@ func (m *Manager) Stop(ctx context.Context) error {
 	}
 	// Remote Chrome — just drop the connection; sidecar stays alive
 
+	if m.browserCancel != nil {
+		m.browserCancel()
+		m.browserCancel = nil
+	}
 	m.browser = nil
 	m.pages = make(map[string]*rod.Page)
 	m.console = make(map[string][]ConsoleMessage)
 	m.pageTenants = make(map[string]string)
+	m.pageSessions = make(map[string]string)
 	m.pageLastUsed = make(map[string]time.Time)
 	return err
 }
@@ -231,6 +286,10 @@ func (m *Manager) closeTenantContextsLocked() {
 // Must be called with mu held.
 func (m *Manager) cleanupDeadBrowserLocked() {
 	m.closeTenantContextsLocked()
+	if m.browserCancel != nil {
+		m.browserCancel()
+		m.browserCancel = nil
+	}
 	if m.launcher != nil {
 		m.launcher.Kill()
 		m.launcher.Cleanup()
@@ -240,8 +299,40 @@ func (m *Manager) cleanupDeadBrowserLocked() {
 	m.pages = make(map[string]*rod.Page)
 	m.console = make(map[string][]ConsoleMessage)
 	m.pageTenants = make(map[string]string)
+	m.pageSessions = make(map[string]string)
 	m.pageLastUsed = make(map[string]time.Time)
 	m.refs = NewRefStore()
+}
+
+// CloseSessionTabs closes only the calling session's tabs, leaving the shared
+// browser connection and human login alive. Returns the number of tabs closed.
+func (m *Manager) CloseSessionTabs(ctx context.Context) int {
+	sessionKey := sessionKeyFromCtx(ctx)
+	if sessionKey == "" {
+		return 0
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var owned []string
+	for tid, sk := range m.pageSessions {
+		if sk == sessionKey {
+			owned = append(owned, tid)
+		}
+	}
+	for _, tid := range owned {
+		if page, ok := m.pages[tid]; ok && page != nil {
+			_ = page.Close()
+		}
+		delete(m.pages, tid)
+		delete(m.console, tid)
+		delete(m.pageTenants, tid)
+		delete(m.pageSessions, tid)
+		delete(m.pageLastUsed, tid)
+		m.refs.Remove(tid)
+	}
+	return len(owned)
 }
 
 // MasterTenantID is the well-known master tenant UUID string.
@@ -254,6 +345,11 @@ const MasterTenantID = "0193a5b0-7000-7000-8000-000000000001"
 func (m *Manager) tenantBrowserLocked(tenantID string) (*rod.Browser, error) {
 	if m.browser == nil {
 		return nil, fmt.Errorf("browser not running")
+	}
+	// Persistent-profile mode: every tenant shares the default-context browser
+	// (the only one backed by --user-data-dir) so the human login persists.
+	if m.persistentProfile {
+		return m.browser, nil
 	}
 	// Master tenant or no tenant: use main browser
 	if tenantID == "" || tenantID == MasterTenantID {

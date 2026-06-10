@@ -125,7 +125,7 @@ func decryptCapturedForm(t *testing.T, body []byte) map[string]any {
 func makeQuotePayload(t *testing.T, globalMsgID, msg string) string {
 	t.Helper()
 	q := protocol.TQuote{
-		OwnerID:     "111",
+		OwnerID:     json.Number("111"),
 		GlobalMsgID: json.Number(globalMsgID),
 		CliMsgID:    json.Number("1709300000123"),
 		CliMsgType:  1,
@@ -182,10 +182,18 @@ func TestPersonalBuildQuoteSendPayload_WithQuote(t *testing.T) {
 		t.Errorf("quoted hits = %d, want 1", *quoted)
 	}
 	payload := decryptCapturedForm(t, (*cap)[0].body)
-	for _, k := range []string{"qmsgOwner", "qmsgId", "qmsgCliId", "qmsgType", "qmsg", "qmsgAttach", "qmsgTs", "qmsgTtl"} {
+	// DM /quote: qmsgAttach omitted (zca-js sets undefined for non-group);
+	// qmsgTTL is uppercase. Sending qmsgAttach or qmsgTtl on DM returned 114.
+	for _, k := range []string{"qmsgOwner", "qmsgId", "qmsgCliId", "qmsgType", "qmsg", "qmsgTs", "qmsgTTL"} {
 		if _, ok := payload[k]; !ok {
 			t.Errorf("missing qmsg field %q in quoted send payload=%v", k, payload)
 		}
+	}
+	if _, ok := payload["qmsgAttach"]; ok {
+		t.Errorf("qmsgAttach must be omitted on DM /quote, got %v", payload["qmsgAttach"])
+	}
+	if _, ok := payload["qmsgTtl"]; ok {
+		t.Errorf("legacy lowercase qmsgTtl must not appear, got %v", payload["qmsgTtl"])
 	}
 }
 

@@ -44,8 +44,11 @@ func (l *Loop) makeExecuteToolCall(req *RunRequest, bridgeRS *runState) func(ctx
 			})
 		}
 
-		result := l.tools.ExecuteWithContext(ctx, registryName, tc.Arguments,
-			req.Channel, req.ChatID, req.PeerKind, req.SessionKey, nil)
+		result := l.enforceToolSkillRequirement(ctx, registryName)
+		if result == nil {
+			result = l.tools.ExecuteWithContext(ctx, registryName, tc.Arguments,
+				req.Channel, req.ChatID, req.PeerKind, req.SessionKey, nil)
+		}
 		toolDuration := time.Since(toolStart)
 
 		l.emitToolSpanEnd(ctx, toolSpanID, toolStart, result)
@@ -101,8 +104,11 @@ func (l *Loop) makeExecuteToolRaw(req *RunRequest) func(ctx context.Context, tc 
 			})
 		}
 
-		result := l.tools.ExecuteWithContext(ctx, registryName, tc.Arguments,
-			req.Channel, req.ChatID, req.PeerKind, req.SessionKey, nil)
+		result := l.enforceToolSkillRequirement(ctx, registryName)
+		if result == nil {
+			result = l.tools.ExecuteWithContext(ctx, registryName, tc.Arguments,
+				req.Channel, req.ChatID, req.PeerKind, req.SessionKey, nil)
+		}
 		dur := time.Since(start)
 
 		// Emit tool span end inside goroutine to prevent orphaned spans on ctx cancellation.

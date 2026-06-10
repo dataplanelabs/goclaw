@@ -33,6 +33,7 @@ type RunContext struct {
 	MessageID         string            // platform message ID (string to support Feishu "om_xxx", Telegram "12345", etc.)
 	Metadata          map[string]string // outbound routing metadata (thread_id, local_key, group_id)
 	TenantID          uuid.UUID         // tenant scope for per-tenant TTS
+	TraceID           uuid.UUID         // root trace ID — stamped on block.reply outbounds for outbound_emitted flag
 	Streaming         bool              // whether run uses streaming (to avoid double-delivery of block replies)
 	BlockReplyEnabled bool              // whether block.reply delivery is enabled for this run (resolved at RegisterRun time)
 	ToolStatusEnabled bool              // whether tool name shows in streaming preview during tool execution
@@ -56,6 +57,17 @@ type Manager struct {
 	dispatchTask     *asyncTask
 	mu               sync.RWMutex
 	contactCollector *store.ContactCollector
+	// tracingStore is used to flag outbound_emitted=true on the originating
+	// trace after a successful channel.Send. Optional; nil disables the flag.
+	tracingStore store.TracingStore
+}
+
+// SetTracingStore wires the tracing store used to mark outbound_emitted=true
+// on the originating trace after a successful channel.Send.
+func (m *Manager) SetTracingStore(s store.TracingStore) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tracingStore = s
 }
 
 type asyncTask struct {

@@ -55,7 +55,7 @@ jobs:
       # QEMU intentionally omitted: target cluster is amd64-only. Building
       # only the native platform avoids the ~16-minute QEMU-emulated arm64
       # Go compile (was ~6.5x slower than native amd64 on this codebase).
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3.11.1
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -112,3 +112,30 @@ jobs:
             echo "${{ steps.meta.outputs.tags }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  sandbox:
+    name: Build sandbox image + smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3.11.1
+
+      # Build the sandbox image locally (no push — sandbox isn't published).
+      # Smoke test runs `sandbox-smoke.py` which exercises Pillow native libs
+      # that have failed in production traces (019e62ff).
+      - name: Build sandbox image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.sandbox
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: goclaw-sandbox:ci
+          cache-from: type=gha,scope=sandbox
+          cache-to: type=gha,mode=max,scope=sandbox
+
+      - name: Smoke test sandbox runtime
+        run: docker run --rm goclaw-sandbox:ci python3 /usr/local/bin/sandbox-smoke.py

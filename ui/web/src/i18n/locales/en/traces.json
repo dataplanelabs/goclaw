@@ -34,6 +34,9 @@
     "status": "Status:",
     "duration": "Duration:",
     "channel": "Channel:",
+    "chatTitle": "Chat:",
+    "userId": "User ID:",
+    "groupId": "Group ID:",
     "tokens": "Tokens:",
     "spans": "Spans:",
     "started": "Started:",
@@ -79,9 +82,28 @@
     "failedLoad": "Failed to load traces",
     "abortStopped": "Run stopped",
     "abortForced": "Run force-stopped (still cleaning up in background)",
+    "abortOrphan": "Run stopped (process was gone — orphaned by restart)",
     "abortAlreadyAborting": "Stop already in progress",
     "abortNotFound": "Run already finished",
     "abortUnauthorized": "Not authorized to stop this run",
     "abortFailed": "Failed to stop run"
+  },
+  "retry": {
+    "button": "Retry",
+    "success": "Retry started — original trace #{{shortId}}",
+    "confirm": {
+      "title": "Retry this run?",
+      "body": "This run already sent a message to the channel. Retrying may double-send. Continue?",
+      "action": "Retry anyway",
+      "cancel": "Cancel"
+    },
+    "error": {
+      "locked": "Retry already in progress.",
+      "agent_gone": "The agent for this trace was deleted.",
+      "provider_gone": "The provider for this trace was removed.",
+      "payload_missing": "Replay data no longer available.",
+      "payload_oversize": "Payload too large to replay (>2 MB).",
+      "generic": "Retry failed: {{message}}"
+    }
   }
 }

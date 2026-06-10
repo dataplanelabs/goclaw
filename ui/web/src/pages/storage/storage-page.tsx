@@ -226,6 +226,7 @@ export function StoragePage() {
           onDownload={handleDownload}
           fetchBlob={handleFetchBlob}
           showSize
+          baseDir={baseDir}
         />
       </div>
 

@@ -235,7 +235,14 @@
       "saving": "Đang lưu...",
       "imageModelLabel": "Mô hình ảnh",
       "imageModelDefaultOption": "Mặc định · gpt-image-2 (khuyến nghị)",
-      "imageModelLegacyOption": "Cũ · gpt-image-1.5"
+      "imageModelLegacyOption": "Cũ · gpt-image-1.5",
+      "dailyLimit": "Giới hạn mỗi ngày",
+      "dailyLimitHelp": "Số lần tạo thành công tối đa mỗi ngày. Để trống = không giới hạn. Chỉ tính lần thành công; reset lúc nửa đêm UTC.",
+      "scope": "Phạm vi",
+      "scopeChannel": "Theo kênh (instance)",
+      "scopeThread": "Theo nhóm/chat",
+      "scopeAgent": "Theo agent",
+      "scopeTool": "Theo tenant (toàn cục)"
     },
     "toast": {
       "toggled": "Đã cập nhật công cụ",

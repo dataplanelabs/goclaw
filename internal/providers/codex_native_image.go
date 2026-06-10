@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // GenerateImage implements NativeImageProvider for CodexProvider.
@@ -52,11 +54,41 @@ func (p *CodexProvider) GenerateImage(ctx context.Context, req NativeImageReques
 	return parseNativeImageResponse(raw)
 }
 
-// buildNativeImageRequestBody constructs the minimal Responses API body for image generation.
-// The Responses API rejects non-streaming requests with HTTP 400 "Stream must be set to true",
-// so stream is always true. Final assembly happens in parseNativeImageSSE which scans the
-// event stream for response.output_item.done (image item) or response.completed output walk.
+// buildNativeImageRequestBody constructs the Responses API body for image generation.
+// When ReferenceImages is non-empty, input_image parts are appended and the tool runs
+// in edit mode with input_fidelity=high for face/identity preservation.
 func (p *CodexProvider) buildNativeImageRequestBody(model string, req NativeImageRequest) map[string]any {
+	content := []map[string]any{
+		{"type": "input_text", "text": req.Prompt},
+	}
+	for _, img := range req.ReferenceImages {
+		mime := img.MimeType
+		if mime == "" {
+			mime = "image/jpeg"
+		}
+		content = append(content, map[string]any{
+			"type":      "input_image",
+			"image_url": "data:" + mime + ";base64," + img.Data,
+		})
+	}
+
+	action := "generate"
+	tool := map[string]any{
+		"type":          "image_generation",
+		"action":        action,
+		"model":         req.ImageModel,
+		"output_format": req.OutputFormat,
+		"size":          SizeFromAspectForModel(req.AspectRatio, req.ImageModel),
+	}
+	if len(req.ReferenceImages) > 0 {
+		tool["action"] = "edit"
+		// input_fidelity: gpt-image-1 / 1.5 only. gpt-image-2 rejects it (handles
+		// fidelity automatically); gpt-image-1-mini rejects it (not supported).
+		if supportsInputFidelity(req.ImageModel) {
+			tool["input_fidelity"] = "high"
+		}
+	}
+
 	return map[string]any{
 		"model":        model,
 		"stream":       true,
@@ -64,25 +96,22 @@ func (p *CodexProvider) buildNativeImageRequestBody(model string, req NativeImag
 		"instructions": "Generate an image matching the user's description using the image_generation tool. Return only the image; do not describe it in text.",
 		"input": []any{
 			map[string]any{
-				"role": "user",
-				"content": []map[string]any{
-					{"type": "input_text", "text": req.Prompt},
-				},
+				"role":    "user",
+				"content": content,
 			},
 		},
-		"tools": []map[string]any{
-			{
-				"type":          "image_generation",
-				"action":        "generate",
-				"model":         req.ImageModel,
-				"output_format": req.OutputFormat,
-				"size":          SizeFromAspectForModel(req.AspectRatio, req.ImageModel),
-			},
-		},
-		"tool_choice": map[string]any{
-			"type": "image_generation",
-		},
+		"tools":       []map[string]any{tool},
+		"tool_choice": map[string]any{"type": "image_generation"},
 	}
+}
+
+// supportsInputFidelity reports whether the image model accepts input_fidelity.
+// gpt-image-1 and gpt-image-1.5 only. gpt-image-2 and gpt-image-1-mini reject it.
+func supportsInputFidelity(model string) bool {
+	if strings.HasPrefix(model, "gpt-image-1-mini") {
+		return false
+	}
+	return strings.HasPrefix(model, "gpt-image-1.5") || model == "gpt-image-1"
 }
 
 // parseNativeImageResponse extracts base64-encoded image bytes from a Responses API
@@ -133,11 +162,15 @@ func parseNativeImageResponse(data []byte) (*NativeImageResult, error) {
 
 // parseNativeImageSSE parses SSE-streamed lines when the server unexpectedly returns
 // a stream despite stream:false. Looks for response.completed or output_item.done events.
+// response.failed / response.incomplete / top-level error frames carry the real reason
+// (entitlement, moderation refusal, model unavailable) — surface them instead of the
+// generic "no image" message so failures are diagnosable.
 func parseNativeImageSSE(data []byte) (*NativeImageResult, error) {
 	// Scan lines for "data: {...}" frames.
 	var b64 string
 	var outputFormat string
 	var usage *Usage
+	var streamErr error
 
 	for line := range bytes.SplitSeq(data, []byte("\n")) {
 		if !bytes.HasPrefix(line, []byte("data: ")) {
@@ -159,7 +192,7 @@ func parseNativeImageSSE(data []byte) (*NativeImageResult, error) {
 				b64 = event.Item.Result
 				outputFormat = event.Item.OutputFormat
 			}
-		case "response.completed":
+		case "response.completed", "response.incomplete":
 			if event.Response != nil {
 				for i := range event.Response.Output {
 					item := &event.Response.Output[i]
@@ -176,11 +209,27 @@ func parseNativeImageSSE(data []byte) (*NativeImageResult, error) {
 						TotalTokens:      u.TotalTokens,
 					}
 				}
+				if event.Type == "response.incomplete" {
+					if msg := codexSSEErrorMessage(&event); msg != "" {
+						streamErr = fmt.Errorf("codex native image: response incomplete: %s", msg)
+					} else {
+						streamErr = errors.New("codex native image: response incomplete")
+					}
+				}
+			}
+		case "response.failed", "error":
+			if msg := codexSSEErrorMessage(&event); msg != "" {
+				streamErr = fmt.Errorf("codex native image: %s", msg)
+			} else {
+				streamErr = errors.New("codex native image: response failed during generation")
 			}
 		}
 	}
 
 	if b64 == "" {
+		if streamErr != nil {
+			return nil, streamErr
+		}
 		return nil, fmt.Errorf("codex native image: no image in SSE stream")
 	}
 
@@ -194,6 +243,24 @@ func parseNativeImageSSE(data []byte) (*NativeImageResult, error) {
 		Data:     raw,
 		Usage:    usage,
 	}, nil
+}
+
+// codexSSEErrorMessage extracts a human-readable reason from a failure SSE frame:
+// response.failed/response.incomplete carry it under response.error; a top-level
+// error event carries it as message/code.
+func codexSSEErrorMessage(event *codexSSEEvent) string {
+	if event.Response != nil && event.Response.Error != nil {
+		if event.Response.Error.Message != "" {
+			return event.Response.Error.Message
+		}
+		if event.Response.Error.Code != "" {
+			return event.Response.Error.Code
+		}
+	}
+	if event.Message != "" {
+		return event.Message
+	}
+	return event.Code
 }
 
 // GenerateImage implements NativeImageProvider for CodexAdapter.

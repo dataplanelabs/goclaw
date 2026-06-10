@@ -78,6 +78,9 @@ func (m *SkillsMethods) handleList(ctx context.Context, client *gateway.Client, 
 		if len(s.ManagerAgents) > 0 {
 			entry["manager_agents"] = s.ManagerAgents
 		}
+		if s.ManagedBy != nil {
+			entry["managed_by"] = s.ManagedBy
+		}
 		if len(s.MissingDeps) > 0 {
 			entry["missing_deps"] = s.MissingDeps
 		}
@@ -173,6 +176,9 @@ func (m *SkillsMethods) handleGet(ctx context.Context, client *gateway.Client, r
 	}
 	if len(info.ManagerAgents) > 0 {
 		resp["manager_agents"] = info.ManagerAgents
+	}
+	if info.ManagedBy != nil {
+		resp["managed_by"] = info.ManagedBy
 	}
 	if len(info.MissingDeps) > 0 {
 		resp["missing_deps"] = info.MissingDeps

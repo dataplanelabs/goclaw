@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 40
+const SchemaVersion = 48
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -734,6 +734,135 @@ WHERE id IN (
 	// (idempotent — already created by v33 above, kept for parity with upstream).
 	39: `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_workstation_default
     ON agent_workstation_links(agent_id) WHERE is_default = 1;`,
+
+	// Version 40 → 41: standby mode (mirrors PG 000071).
+	40: `ALTER TABLE channel_instances ADD COLUMN silence_schedule TEXT DEFAULT NULL;
+CREATE TABLE IF NOT EXISTS channel_thread_schedules (
+    channel_instance_id TEXT NOT NULL REFERENCES channel_instances(id) ON DELETE CASCADE,
+    thread_key          TEXT NOT NULL,
+    schedule            TEXT NOT NULL,
+    expires_at          DATETIME,
+    reason              TEXT DEFAULT '',
+    created_by          TEXT DEFAULT '',
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (channel_instance_id, thread_key)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_thread_schedules_expires
+    ON channel_thread_schedules(expires_at) WHERE expires_at IS NOT NULL;`,
+
+	// Version 41 → 42: source attribution for skill ownership tracking
+	// (mirrors PG 000072_skills_source_column).
+	41: `ALTER TABLE skills ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown';
+CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source);`,
+
+	// Version 42 → 43: version column on secure_cli_binaries for requires.cli
+	// cross-check (mirrors PG 000073_secure_cli_binaries_version).
+	42: `ALTER TABLE secure_cli_binaries ADD COLUMN version TEXT;
+CREATE INDEX IF NOT EXISTS idx_secure_cli_binaries_version ON secure_cli_binaries(version) WHERE version IS NOT NULL;`,
+
+	// Version 43 → 44: team_reply_evaluations (mirrors PG 000074).
+	43: `CREATE TABLE IF NOT EXISTS team_reply_evaluations (
+    id                     TEXT PRIMARY KEY,
+    channel_instance_id    TEXT NOT NULL REFERENCES channel_instances(id) ON DELETE CASCADE,
+    tenant_id              TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    thread_key             TEXT NOT NULL,
+    session_key            TEXT NOT NULL,
+    team_msg_id            TEXT NOT NULL,
+    captured_at            DATETIME NOT NULL,
+    customer_message       TEXT NOT NULL DEFAULT '',
+    team_reply             TEXT NOT NULL,
+    hypothesized_bot_reply TEXT,
+    diff_score             REAL,
+    diff_reasoning         TEXT,
+    judge_agent_key        TEXT,
+    judge_model            TEXT,
+    judge_provider         TEXT,
+    judge_latency_ms       INTEGER,
+    judge_error            TEXT,
+    judge_completed_at     DATETIME,
+    created_at             DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at             DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (channel_instance_id, team_msg_id)
+);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_tenant_time
+    ON team_reply_evaluations(tenant_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_channel_time
+    ON team_reply_evaluations(channel_instance_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_thread
+    ON team_reply_evaluations(channel_instance_id, thread_key, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_pending_judge
+    ON team_reply_evaluations(captured_at)
+    WHERE judge_completed_at IS NULL AND judge_error IS NULL;`,
+
+	// Version 44 → 45: trace replay payloads + retry locks + outbound_emitted column
+	// (mirrors PG 000075). Adds capture sibling table, double-click lock, and a
+	// boolean that records whether the trace already sent a message before failing.
+	44: `CREATE TABLE IF NOT EXISTS trace_replay_payloads (
+    trace_id        TEXT PRIMARY KEY REFERENCES traces(id) ON DELETE CASCADE,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    session_key     TEXT NOT NULL,
+    payload         TEXT,
+    payload_version INTEGER NOT NULL DEFAULT 1,
+    oversize        INTEGER NOT NULL DEFAULT 0,
+    byte_size       INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_replay_payloads_session
+    ON trace_replay_payloads(session_key, created_at);
+CREATE INDEX IF NOT EXISTS idx_replay_payloads_tenant
+    ON trace_replay_payloads(tenant_id);
+CREATE TABLE IF NOT EXISTS trace_retry_locks (
+    trace_id   TEXT PRIMARY KEY REFERENCES traces(id) ON DELETE CASCADE,
+    tenant_id  TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    locked_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    locked_by  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_retry_locks_expiry ON trace_retry_locks(locked_at);
+ALTER TABLE traces ADD COLUMN outbound_emitted INTEGER NOT NULL DEFAULT 0;`,
+	// Version 45 → 46: add write_only_hash to agents (mirrors PG migration 000076).
+	// Lets gcplane detect drift in write-only Agent fields (contextFiles,
+	// toolsConfig, etc.) without those fields appearing in the list API.
+	45: `ALTER TABLE agents ADD COLUMN write_only_hash TEXT NOT NULL DEFAULT '';`,
+	// Version 46 → 47: VieNeu cloned-voice registry (mirrors PG migration 000077).
+	46: `CREATE TABLE vieneu_cloned_voices (
+    id          TEXT PRIMARY KEY,
+    tenant_id   TEXT NOT NULL,
+    voice_id    TEXT NOT NULL,
+    ref_text    TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    deleted_at  TEXT
+);
+CREATE UNIQUE INDEX idx_vieneu_voices_tenant_voice ON vieneu_cloned_voices (tenant_id, voice_id);`,
+	// Version 47 → 48: normalize vault_documents.path to tenant-root-relative
+	// (strip leading tenants/<slug>/). Mirrors PG migration 000078. Dedupe first
+	// (stripping can collide a prefixed row with a bare row under
+	// idx_vault_docs_unique_path), then strip via substr/instr — modernc has no
+	// regexp_replace. Master-tenant desktop DBs have no prefix → near-noop.
+	// substr(path, instr(substr(path,9),'/')+9): 9 = len('tenants/')+1; instr
+	// finds the slash after the slug; +9 skips 'tenants/' + that slash.
+	47: `DELETE FROM vault_documents
+WHERE id IN (
+    SELECT id FROM (
+        SELECT id,
+               ROW_NUMBER() OVER (
+                   PARTITION BY tenant_id,
+                                COALESCE(agent_id, ''),
+                                COALESCE(team_id, ''),
+                                scope,
+                                CASE WHEN path LIKE 'tenants/%/%'
+                                     THEN substr(path, instr(substr(path, 9), '/') + 9)
+                                     ELSE path END
+                   ORDER BY updated_at DESC, id DESC
+               ) AS rn
+        FROM vault_documents
+    )
+    WHERE rn > 1
+);
+UPDATE vault_documents
+SET path = substr(path, instr(substr(path, 9), '/') + 9)
+WHERE path LIKE 'tenants/%/%';`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.
@@ -1012,6 +1141,8 @@ func idempotentColumnMigration(version int) (string, string, bool) {
 		return "agents", "model_fallback", true
 	case 34:
 		return "skill_agent_grants", "can_manage", true
+	case 45:
+		return "agents", "write_only_hash", true
 	default:
 		return "", "", false
 	}

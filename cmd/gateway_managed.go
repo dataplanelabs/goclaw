@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -13,6 +14,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/agent"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
@@ -58,7 +60,7 @@ func wireExtras(
 	sandboxMgr sandbox.Manager,
 	redisClient any, // nil when built without -tags redis or when Redis is unconfigured
 	domainBus eventbus.DomainEventBus,
-) (*tools.ContextFileInterceptor, *mcpbridge.Pool, *media.Store, tools.PostTurnProcessor) {
+) (*tools.ContextFileInterceptor, *mcpbridge.Pool, *media.Store, tools.PostTurnProcessor, *schedule.ScheduleRegistry) {
 	// 1. Build cache instances (in-memory or Redis depending on build tags)
 	agentCtxCache, userCtxCache := makeCaches(redisClient)
 
@@ -94,6 +96,7 @@ func wireExtras(
 		if execTool, ok := toolsReg.Get("exec"); ok {
 			if et, ok := execTool.(*tools.ExecTool); ok {
 				et.SetSecureCLIStore(stores.SecureCLI)
+				toolsReg.Register(tools.NewSecureCliRunTool(et))
 			}
 		}
 	}
@@ -190,6 +193,26 @@ func wireExtras(
 		slog.Info("agent hooks dispatcher wired", "handlers", "command,http,prompt")
 	}
 
+	var standbyRegistry *schedule.ScheduleRegistry
+	if stores.ChannelSchedules != nil {
+		standbyRegistry = schedule.NewRegistry(schedule.ScheduleSource{
+			ResolveInstanceID: stores.ChannelSchedules.ResolveInstanceIDByName,
+			LoadInstance:      stores.ChannelSchedules.GetInstanceSchedule,
+			LoadThreadOverride: func(ctx context.Context, instanceID, threadKey string) (*schedule.Schedule, *time.Time, error) {
+				row, err := stores.ChannelSchedules.GetThreadSchedule(ctx, instanceID, threadKey)
+				if err != nil || row == nil {
+					return nil, nil, err
+				}
+				return row.Schedule, row.ExpiresAt, nil
+			},
+		}, 60*time.Second)
+	}
+	standbyResolveFn := func(ctx context.Context, tenantID, channelName, threadKey string, now time.Time) schedule.Mode {
+		if standbyRegistry == nil {
+			return schedule.ModeActive
+		}
+		return standbyRegistry.ResolveMode(ctx, tenantID, channelName, threadKey, now)
+	}
 	resolver := agent.NewManagedResolver(agent.ResolverDeps{
 		AgentStore:             stores.Agents,
 		ProviderStore:          stores.Providers,
@@ -209,6 +232,7 @@ func wireExtras(
 		BootstrapCleanup:       buildBootstrapCleanup(stores.Agents),
 		CacheInvalidate:        buildCacheInvalidate(contextFileInterceptor),
 		DefaultTimezone:        appCfg.Cron.DefaultTimezone,
+		ChannelInstances:       stores.ChannelInstances,
 		InjectionAction:        injectionAction,
 		MaxMessageChars:        appCfg.Gateway.MaxMessageChars,
 		CompactionCfg:          appCfg.Agents.Defaults.Compaction,
@@ -228,6 +252,8 @@ func wireExtras(
 		MediaStore:             mediaStore,
 		ModelPricing:           appCfg.Telemetry.ModelPricing,
 		TracingStore:           stores.Tracing,
+		ReplayPayloadStore:     stores.ReplayPayloads,
+		ReplayRetention:        resolveReplayRetention(appCfg.Gateway.ReplayRetentionDays),
 		MemoryStore:            stores.Memory,
 		ContactStore:           stores.Contacts,
 		TenantStore:            stores.Tenants,
@@ -245,6 +271,7 @@ func wireExtras(
 				vaultIntc.AfterWrite(ctx, path, content)
 			}
 		},
+		StandbyResolveMode: standbyResolveFn,
 		OnEvent: func(event agent.AgentEvent) {
 			// Sign /v1/files/ and /v1/media/ URLs in content before delivery.
 			// Sessions store clean paths; signing happens only at delivery time.
@@ -685,7 +712,7 @@ func wireExtras(
 	})
 
 	slog.Info("resolver + interceptors + cache subscribers wired")
-	return contextFileInterceptor, mcpPool, mediaStore, postTurn
+	return contextFileInterceptor, mcpPool, mediaStore, postTurn, standbyRegistry
 }
 
 // kgSettings holds KG extraction settings from the builtin_tools table.
@@ -756,4 +783,11 @@ func buildKGExtractFunc(kgStore store.KnowledgeGraphStore, bts store.BuiltinTool
 			}
 		}
 	}
+}
+
+func resolveReplayRetention(days int) time.Duration {
+	if days <= 0 {
+		return 0
+	}
+	return time.Duration(days) * 24 * time.Hour
 }

@@ -99,6 +99,8 @@ type SystemPromptConfig struct {
 	Workspace     string
 	Channel       string                  // runtime channel instance name (e.g. "my-telegram-bot")
 	ChannelType   string                  // platform type (e.g. "zalo_personal", "telegram")
+	UserTimezone  string                  // resolved IANA tz for "Current date" rendering; "" → UTC
+
 	ChatID        string                  // current reply target chat id (drives <current_reply_target>)
 	ChatTitle     string                  // group chat display name (shown in identity line)
 	PeerKind      string                  // "direct" or "group"
@@ -206,8 +208,10 @@ var coreToolSummaries = map[string]string{
 	"create_video":           "Generate videos from text descriptions using AI",
 	"read_document":          "Analyze documents (PDF, DOCX) from <media:document> tags. If fails, use a skill instead. Path is directly accessible",
 	"create_image": "Generate images from text descriptions using AI. " +
-		"When the user attaches a photo AND asks to edit/restyle/dress/place that subject, ALWAYS pass that image's ID in reference_image_ids " +
-		"(IDs visible in <media:image id='...'> tags from the current turn). " +
+		"When the user attaches OR references a photo (current turn OR earlier in this conversation) and asks to edit/restyle/dress/place that subject, ALWAYS pass it in reference_image_ids. " +
+		"Accepts the media ID, the file path, or the bare filename from any <media:image id='...' path='...'> tag — current-turn AND historical user uploads both resolve. " +
+		"Never refuse with 'I can only use images from the current turn' — that is wrong; pass the id/path/filename and the tool will resolve it. " +
+		"If resolution still fails, the error reply will say how many refs were available — only then ask the user to resend. " +
 		"Omit reference_image_ids for pure text-to-image. " +
 		"For best face preservation, prefer gemini-3.1-flash-image-preview, gpt-image-2, or image-01 (MiniMax) when configured.",
 	"create_audio":           "Generate music or sound effects from text descriptions using AI",
@@ -236,18 +240,19 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 
 	var lines []string
 
-	// 1. Identity — channel-aware context (use ChannelType for clarity, fallback to Channel)
-	channelLabel := cfg.ChannelType
-	if channelLabel == "" {
-		channelLabel = cfg.Channel
+	identityLabel := cfg.ChannelType
+	if identityLabel == "" {
+		identityLabel = cfg.Channel
 	}
-	if channelLabel != "" {
+	replyTargetChannel := cfg.Channel
+	if replyTargetChannel == "" {
+		replyTargetChannel = cfg.ChannelType
+	}
+	if identityLabel != "" {
 		chatType := "a direct chat"
 		if cfg.PeerKind == "group" {
 			chatType = "a group chat"
 			if cfg.ChatTitle != "" {
-				// Sanitize: strip quotes/newlines, truncate to prevent prompt injection
-				// (group admins control the title).
 				title := strings.NewReplacer("\"", "", "\n", " ", "\r", "").Replace(cfg.ChatTitle)
 				if len([]rune(title)) > 100 {
 					title = string([]rune(title)[:100])
@@ -255,12 +260,9 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 				chatType = fmt.Sprintf("group chat \"%s\"", title)
 			}
 		}
-		lines = append(lines, fmt.Sprintf("You are a personal assistant running in %s (%s).", channelLabel, chatType))
+		lines = append(lines, fmt.Sprintf("You are a personal assistant running in %s (%s).", identityLabel, chatType))
 		lines = append(lines, "")
 
-		// Inject explicit reply-target block so the LLM has a copy-paste-ready
-		// value to compare against when deciding to forward. Pairs with the
-		// MessageTool cross-target guard.
 		if cfg.ChatID != "" {
 			kind := "direct"
 			if cfg.PeerKind == "group" {
@@ -268,7 +270,7 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 			}
 			lines = append(lines,
 				"<current_reply_target>",
-				fmt.Sprintf("  channel: %s", channelLabel),
+				fmt.Sprintf("  channel: %s", replyTargetChannel),
 				fmt.Sprintf("  chat_id: %s", cfg.ChatID),
 				fmt.Sprintf("  kind: %s", kind),
 				"</current_reply_target>",
@@ -478,7 +480,7 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 
 	// 8. Time (below boundary — date changes don't bust the stable cache)
 	if !isNone {
-		lines = append(lines, buildTimeSection()...)
+		lines = append(lines, buildTimeSection(cfg.UserTimezone)...)
 	}
 
 	// 9.5. Channel formatting hints — full mode only
@@ -638,34 +640,33 @@ func buildSkillsSection(skillsSummary string, hasSkillSearch, hasSkillManage boo
 	var lines []string
 
 	if skillsSummary != "" {
-		// Inline mode: skills XML is in the prompt (like TS).
-		// Agent scans <available_skills> descriptions directly.
+		// Inline mode: skills XML is in the prompt with name + slug + path.
+		// Agent activates a relevant skill via use_skill — the tool returns
+		// SKILL.md content directly, no separate read_file step needed.
 		lines = append(lines,
 			"## Skills (mandatory)",
 			"",
 			"Before replying, scan `<available_skills>` below.",
-			"If a skill clearly applies, read its SKILL.md at the `<location>` path with `read_file`, then follow it.",
-			"If multiple could apply, choose the most specific one. Never read more than one skill up front.",
+			"If a skill clearly applies, call `use_skill` with its `<slug>` — the tool returns the full SKILL.md content + bundled asset paths in one call.",
+			"If multiple could apply, choose the most specific one. Activate only one skill up front.",
 			"If none apply, proceed normally.",
 			"",
 			skillsSummary,
 			"",
 		)
 	} else if hasSkillSearch {
-		// Search mode: too many skills to inline, agent uses skill_search tool.
+		// Search mode: too many skills to inline, agent uses skill_search.
 		lines = append(lines,
 			"## Skills (mandatory)",
 			"",
 			"Before replying, check if a skill applies:",
-			"1. Run `skill_search` with **English keywords** describing the domain (e.g. \"weather\", \"translate\", \"github\").",
-			"   Even if the user writes in another language, always search in English.",
-			"2. If a match is found, read its SKILL.md at the returned `location` with `read_file`, then follow it.",
-			"3. If multiple skills match, choose the most specific one. Never read more than one skill up front.",
-			"4. If no match, proceed normally.",
+			"1. Run `skill_search` with keywords describing the domain (e.g. \"weather\", \"translate\", \"github\"). Vietnamese works too — the index folds diacritics.",
+			"2. If a match is found, call `use_skill` with its returned `slug` (or `name`) — it returns SKILL.md content inline. **Do not** chain a separate `read_file` on the location.",
+			"3. If multiple skills match, choose the most specific one. Activate only one up front.",
+			"4. If no match (and you have granted skills), `skill_search` will list them as a floor — pick the closest. Otherwise, proceed normally.",
 			"",
 			"Constraints:",
 			"- Prefer `skill_search` over `browser` or `web_search` when the domain might have a skill.",
-			"- If skill_search returns no results, fall back to other tools freely.",
 			"",
 		)
 	}

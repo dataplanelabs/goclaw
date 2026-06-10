@@ -37,6 +37,10 @@ type RunState struct {
 	Iteration int
 	RunID     string
 	ExitCode  StageResult
+
+	// StandbyMode is set by StandbyGate when a matching schedule window resolves
+	// to ModeStandby — pipeline aborts iteration but finalize still writes memory.
+	StandbyMode bool
 }
 
 // NewRunState creates a RunState with identity fields set.
@@ -103,6 +107,7 @@ type RunInput struct {
 	WorkspaceChannel  string
 	WorkspaceChatID   string
 	TeamWorkspace     string
+	EnableNativeStyles bool
 }
 
 // MediaResult represents a media file produced during tool execution.

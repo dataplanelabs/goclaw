@@ -94,6 +94,10 @@ func setupToolRegistry(
 	// Browser automation tool
 	if cfg.Tools.Browser.Enabled {
 		var opts []browser.Option
+		if cfg.Tools.Browser.PersistentProfile {
+			opts = append(opts, browser.WithPersistentProfile(true))
+			slog.Info("browser persistent profile enabled (single-identity)")
+		}
 		if cfg.Tools.Browser.RemoteURL != "" {
 			opts = append(opts, browser.WithRemoteURL(cfg.Tools.Browser.RemoteURL))
 			slog.Info("browser tool enabled", "remote", cfg.Tools.Browser.RemoteURL)
@@ -279,6 +283,17 @@ func setupToolRegistry(
 	if sf, ok := toolsReg.Get("send_file"); ok {
 		if t, ok := sf.(*tools.SendFileTool); ok {
 			t.DenyPaths(internalDenyPaths...)
+		}
+	}
+	if ri, ok := toolsReg.Get("read_image"); ok {
+		if t, ok := ri.(*tools.ReadImageTool); ok {
+			t.DenyPaths(readFileDenyPaths...)
+		}
+	}
+	// create_image resolves reference_image_ids from workspace paths like read_image.
+	if ci, ok := toolsReg.Get("create_image"); ok {
+		if t, ok := ci.(*tools.CreateImageTool); ok {
+			t.DenyPaths(readFileDenyPaths...)
 		}
 	}
 
@@ -520,7 +535,8 @@ func setupSkillsSystem(
 	skillsLoader := skills.NewLoader(workspace, globalSkillsDir, builtinSkillsDir)
 	skillSearchTool := tools.NewSkillSearchTool(skillsLoader)
 	toolsReg.Register(skillSearchTool)
-	toolsReg.Register(tools.NewUseSkillTool())
+	useSkillTool := tools.NewUseSkillTool(skillsLoader)
+	toolsReg.Register(useSkillTool)
 	slog.Info("skill_search tool registered", "skills", len(skillsLoader.ListSkills(context.Background())))
 
 	// Wire skills-store directory into filesystem loader so agents
@@ -602,6 +618,7 @@ func setupSkillsSystem(
 	if pgStores.Skills != nil {
 		if sas, ok := pgStores.Skills.(store.SkillAccessStore); ok {
 			skillSearchTool.SetSkillAccessStore(sas)
+			useSkillTool.SetSkillAccessStore(sas)
 		}
 		if pgSkills, ok := pgStores.Skills.(*pg.PGSkillStore); ok {
 			if embProvider := resolveEmbeddingProvider(pgStores.Providers, providerRegistry, pgStores.SystemConfigs); embProvider != nil {

@@ -11,6 +11,9 @@
   "description": "LLM 调用追踪和性能数据",
   "detail": {
     "channel": "Channel：",
+    "chatTitle": "聊天：",
+    "userId": "用户 ID：",
+    "groupId": "群组 ID：",
     "copy": "复制",
     "copyTraceId": "复制追踪 ID",
     "createdAt": "创建时间：",
@@ -68,6 +71,7 @@
     "failedLoad": "加载追踪失败",
     "abortStopped": "已停止运行",
     "abortForced": "已强制停止（后台仍在清理）",
+    "abortOrphan": "已停止运行（进程已消失——重启后被遗弃）",
     "abortAlreadyAborting": "停止操作进行中",
     "abortNotFound": "运行已结束",
     "abortUnauthorized": "无权停止此运行",
@@ -82,5 +86,23 @@
     "unknown": "其他"
   },
   "unnamed": "未命名",
-  "stopRun": "停止运行"
+  "stopRun": "停止运行",
+  "retry": {
+    "button": "重试",
+    "success": "重试已开始——原追踪 #{{shortId}}",
+    "confirm": {
+      "title": "重试此次运行？",
+      "body": "此次运行已向频道发送过消息。重试可能造成重复发送。是否继续？",
+      "action": "仍然重试",
+      "cancel": "取消"
+    },
+    "error": {
+      "locked": "重试正在进行中。",
+      "agent_gone": "此追踪的智能体已被删除。",
+      "provider_gone": "此追踪的提供方已被移除。",
+      "payload_missing": "重放数据已不可用。",
+      "payload_oversize": "负载过大，无法重试（>2 MB）。",
+      "generic": "重试失败：{{message}}"
+    }
+  }
 }

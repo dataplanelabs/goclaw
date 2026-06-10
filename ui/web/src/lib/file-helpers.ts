@@ -6,6 +6,9 @@ export interface TreeNode {
   hasChildren?: boolean;
   loading?: boolean;
   protected?: boolean;
+  label?: string; // human display name (e.g. contact/group name) for id folders
+  kind?: string; // peer kind: "direct" | "group"
+  modTime?: string; // RFC3339 last-modified, for relative-time display
   children: TreeNode[];
 }
 
@@ -64,11 +67,48 @@ interface TreeInput {
   size: number;
   hasChildren?: boolean;
   protected?: boolean;
+  label?: string;
+  kind?: string;
+  modTime?: string;
 }
 
 export function buildTree(files: TreeInput[]): TreeNode[] {
   const root: TreeNode[] = [];
   const dirMap = new Map<string, TreeNode>();
+
+  const attachNode = (node: TreeNode) => {
+    const parentPath = node.path.includes("/")
+      ? node.path.slice(0, node.path.lastIndexOf("/"))
+      : "";
+
+    if (parentPath) {
+      const parent = ensureDir(parentPath);
+      if (!parent.children.some((child) => child.path === node.path)) {
+        parent.children.push(node);
+      }
+      return;
+    }
+
+    if (!root.some((child) => child.path === node.path)) {
+      root.push(node);
+    }
+  };
+
+  const ensureDir = (path: string): TreeNode => {
+    const existing = dirMap.get(path);
+    if (existing) return existing;
+
+    const node: TreeNode = {
+      name: path.split("/").pop() ?? path,
+      path,
+      isDir: true,
+      size: 0,
+      children: [],
+    };
+    dirMap.set(path, node);
+    attachNode(node);
+    return node;
+  };
 
   const sorted = [...files].sort((a, b) => {
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
@@ -83,6 +123,9 @@ export function buildTree(files: TreeInput[]): TreeNode[] {
       size: f.size,
       hasChildren: f.hasChildren,
       protected: f.protected,
+      label: f.label,
+      kind: f.kind,
+      modTime: f.modTime,
       children: [],
     };
 
@@ -90,21 +133,17 @@ export function buildTree(files: TreeInput[]): TreeNode[] {
       dirMap.set(f.path, node);
     }
 
-    const parentPath = f.path.includes("/")
-      ? f.path.slice(0, f.path.lastIndexOf("/"))
-      : "";
-
-    if (parentPath && dirMap.has(parentPath)) {
-      dirMap.get(parentPath)!.children.push(node);
-    } else {
-      root.push(node);
-    }
+    attachNode(node);
   }
 
+  // Unresolved bare-id folders (numeric, no contact label) sink below named ones.
+  const isBareId = (n: TreeNode) => !n.label && /^-?\d+$/.test(n.name);
   const sortChildren = (nodes: TreeNode[]) => {
     nodes.sort((a, b) => {
       if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-      return a.name.localeCompare(b.name);
+      const aId = isBareId(a), bId = isBareId(b);
+      if (aId !== bId) return aId ? 1 : -1;
+      return (a.label || a.name).localeCompare(b.label || b.name);
     });
     for (const n of nodes) {
       if (n.children.length > 0) sortChildren(n.children);
@@ -114,14 +153,27 @@ export function buildTree(files: TreeInput[]): TreeNode[] {
   return root;
 }
 
+function findNodeByPath(nodes: TreeNode[], path: string): TreeNode | undefined {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    const found = findNodeByPath(node.children, path);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 /** Merges a loaded subtree into an existing tree, replacing the target folder's children. */
 export function mergeSubtree(tree: TreeNode[], parentPath: string, newChildren: TreeInput[]): TreeNode[] {
-  const childTree = buildTree(newChildren);
+  // newChildren carry full paths, so buildTree reconstructs the whole ancestor
+  // chain — take only parentPath's own descendants, else they'd be re-nested
+  // under a duplicate path chain inside the target node.
+  const built = buildTree(newChildren);
+  const directChildren = findNodeByPath(built, parentPath)?.children ?? built;
 
   const merge = (nodes: TreeNode[]): TreeNode[] =>
     nodes.map((node) => {
       if (node.path === parentPath && node.isDir) {
-        return { ...node, children: childTree, hasChildren: false, loading: false };
+        return { ...node, children: directChildren, hasChildren: false, loading: false };
       }
       if (node.children.length > 0) {
         return { ...node, children: merge(node.children) };

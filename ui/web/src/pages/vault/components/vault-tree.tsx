@@ -85,7 +85,15 @@ function VaultTreeNode({
           {expanded
             ? <FolderOpen className="h-4 w-4 shrink-0 text-yellow-600 dark:text-yellow-500" />
             : <Folder className="h-4 w-4 shrink-0 text-yellow-600 dark:text-yellow-500" />}
-          <span className="truncate text-xs text-foreground/80 group-hover:text-foreground">{node.name}</span>
+          {node.label ? (
+            <span className="flex min-w-0 items-center gap-1 text-xs text-foreground/80 group-hover:text-foreground">
+              <span className="truncate font-medium">{node.label}</span>
+              {node.kind && <span className="shrink-0 text-2xs text-muted-foreground">·{node.kind}</span>}
+              <span className="truncate text-2xs text-muted-foreground/70 tabular-nums" title={node.name}>{node.name}</span>
+            </span>
+          ) : (
+            <span className="truncate text-xs text-foreground/80 group-hover:text-foreground">{node.name}</span>
+          )}
           {node.loading && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground ml-auto" />}
           {!node.loading && node.children.length > 0 && (
             <span className="ml-auto shrink-0 rounded-full bg-muted px-1 text-2xs tabular-nums text-muted-foreground">

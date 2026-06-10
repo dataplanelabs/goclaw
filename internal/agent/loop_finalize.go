@@ -91,6 +91,16 @@ func (l *Loop) finalizeRun(
 		rs.mediaResults = append(rs.mediaResults, MediaResult{Path: mf.Path, ContentType: ct})
 	}
 	rs.mediaResults = deduplicateMedia(rs.mediaResults)
+	if pm := tools.PublishedMediaFromCtx(ctx); pm != nil {
+		filtered := rs.mediaResults[:0]
+		for _, mr := range rs.mediaResults {
+			if pm.IsPublished(mr.Path) {
+				continue
+			}
+			filtered = append(filtered, mr)
+		}
+		rs.mediaResults = filtered
+	}
 	for i := range rs.mediaResults {
 		if rs.mediaResults[i].Size == 0 {
 			if info, err := os.Stat(rs.mediaResults[i].Path); err == nil {

@@ -94,6 +94,20 @@ func TestInferOwnerFromPath(t *testing.T) {
 			wantScope:        "shared",
 			wantStrippedPath: "telegram/group/file.md",
 		},
+		// INVARIANT (path normalization): a leading tenants/<slug>/ prefix MISFIRES —
+		// the first segment is "tenants" (not teams/agents/<agent_key>), so inference
+		// falls through to shared and loses agent/team ownership. This proves the
+		// prefix must be stripped BEFORE inference runs (it must never reach here).
+		{
+			path:             "tenants/shtp/agents/my-bot/file.md",
+			wantScope:        "shared",
+			wantStrippedPath: "tenants/shtp/agents/my-bot/file.md",
+		},
+		{
+			path:             "tenants/shtp/teams/" + validUUID + "/doc.md",
+			wantScope:        "shared",
+			wantStrippedPath: "tenants/shtp/teams/" + validUUID + "/doc.md",
+		},
 	}
 
 	for _, tt := range tests {

@@ -37,6 +37,7 @@ func NewDefaultPipeline(deps PipelineDeps) *Pipeline {
 		NewContextStage(d),
 	}
 	iteration := []Stage{
+		NewStandbyGate(d),
 		NewThinkStage(d),
 		NewPruneStage(d, memFlush),
 		NewToolStage(d),

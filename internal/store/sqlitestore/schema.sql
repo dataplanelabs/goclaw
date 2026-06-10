@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS agents (
     status                VARCHAR(20) DEFAULT 'active',
     frontmatter           TEXT,
     budget_monthly_cents  INTEGER,
+    write_only_hash       TEXT NOT NULL DEFAULT '',
     tenant_id             TEXT NOT NULL REFERENCES tenants(id),
     created_at            TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at            TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -384,6 +385,7 @@ CREATE TABLE IF NOT EXISTS skills (
     file_hash   VARCHAR(64),
     tags        TEXT,
     is_system   BOOLEAN NOT NULL DEFAULT 0,
+    source      TEXT NOT NULL DEFAULT 'unknown',
     deps        TEXT NOT NULL DEFAULT '{}',
     enabled     BOOLEAN NOT NULL DEFAULT 1,
     tenant_id   TEXT NOT NULL REFERENCES tenants(id),
@@ -398,6 +400,7 @@ CREATE INDEX IF NOT EXISTS idx_skills_visibility ON skills(visibility) WHERE sta
 CREATE INDEX IF NOT EXISTS idx_skills_system ON skills(is_system) WHERE is_system = 1;
 CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(enabled) WHERE enabled = 0;
 CREATE INDEX IF NOT EXISTS idx_skills_tenant ON skills(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source);
 
 -- ============================================================
 -- Table: skill_agent_grants
@@ -579,6 +582,7 @@ CREATE TABLE IF NOT EXISTS traces (
     parent_trace_id     TEXT,
     team_id             TEXT REFERENCES agent_teams(id) ON DELETE SET NULL,
     tenant_id           TEXT NOT NULL REFERENCES tenants(id),
+    outbound_emitted    INTEGER NOT NULL DEFAULT 0,
     created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
@@ -757,18 +761,19 @@ CREATE INDEX IF NOT EXISTS idx_mcp_user_credentials_server ON mcp_user_credentia
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS channel_instances (
-    id           TEXT NOT NULL PRIMARY KEY,
-    name         VARCHAR(100) NOT NULL,
-    display_name VARCHAR(255) DEFAULT '',
-    channel_type VARCHAR(50) NOT NULL,
-    agent_id     TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-    credentials  BLOB,
-    config       TEXT DEFAULT '{}',
-    enabled      BOOLEAN DEFAULT 1,
-    created_by   VARCHAR(255) DEFAULT '',
-    tenant_id    TEXT NOT NULL REFERENCES tenants(id),
-    created_at   TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at   TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    id               TEXT NOT NULL PRIMARY KEY,
+    name             VARCHAR(100) NOT NULL,
+    display_name     VARCHAR(255) DEFAULT '',
+    channel_type     VARCHAR(50) NOT NULL,
+    agent_id         TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    credentials      BLOB,
+    config           TEXT DEFAULT '{}',
+    enabled          BOOLEAN DEFAULT 1,
+    created_by       VARCHAR(255) DEFAULT '',
+    tenant_id        TEXT NOT NULL REFERENCES tenants(id),
+    silence_schedule TEXT DEFAULT NULL,
+    created_at       TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at       TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 -- tenant-scoped unique name (migration 27 Phase I)
@@ -776,6 +781,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_instances_tenant_name ON channel_i
 CREATE INDEX IF NOT EXISTS idx_channel_instances_type ON channel_instances(channel_type);
 CREATE INDEX IF NOT EXISTS idx_channel_instances_agent ON channel_instances(agent_id);
 CREATE INDEX IF NOT EXISTS idx_channel_instances_tenant ON channel_instances(tenant_id);
+
+CREATE TABLE IF NOT EXISTS channel_thread_schedules (
+    channel_instance_id TEXT NOT NULL REFERENCES channel_instances(id) ON DELETE CASCADE,
+    thread_key          TEXT NOT NULL,
+    schedule            TEXT NOT NULL,
+    expires_at          DATETIME,
+    reason              TEXT DEFAULT '',
+    created_by          TEXT DEFAULT '',
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (channel_instance_id, thread_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_channel_thread_schedules_expires
+    ON channel_thread_schedules(expires_at) WHERE expires_at IS NOT NULL;
 
 -- ============================================================
 -- Table: config_secrets
@@ -1210,6 +1230,7 @@ CREATE TABLE IF NOT EXISTS secure_cli_binaries (
     enabled         BOOLEAN NOT NULL DEFAULT 1,
     created_by      TEXT NOT NULL DEFAULT '',
     tenant_id       TEXT NOT NULL REFERENCES tenants(id),
+    version         TEXT,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -1217,6 +1238,7 @@ CREATE TABLE IF NOT EXISTS secure_cli_binaries (
 CREATE INDEX IF NOT EXISTS idx_secure_cli_binary_name ON secure_cli_binaries(binary_name);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_secure_cli_unique_binary_tenant ON secure_cli_binaries(binary_name, tenant_id);
 CREATE INDEX IF NOT EXISTS idx_secure_cli_binaries_tenant ON secure_cli_binaries(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_secure_cli_binaries_version ON secure_cli_binaries(version) WHERE version IS NOT NULL;
 
 -- ============================================================
 -- Table: secure_cli_agent_grants
@@ -1823,3 +1845,96 @@ CREATE TABLE IF NOT EXISTS workstation_activity (
 CREATE INDEX IF NOT EXISTS idx_ws_activity_ws_time     ON workstation_activity(workstation_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ws_activity_tenant_time ON workstation_activity(tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ws_activity_retention   ON workstation_activity(created_at);
+
+-- ============================================================
+-- team_reply_evaluations (mirrors PG migration 000072)
+-- Stores judge verdicts on captured human team replies. Captured
+-- reply CONTENT also lives in sessions.messages JSONB for memory
+-- continuity; this table is the indexed analytics/JSONL source.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS team_reply_evaluations (
+    id                     TEXT PRIMARY KEY,
+    channel_instance_id    TEXT NOT NULL REFERENCES channel_instances(id) ON DELETE CASCADE,
+    tenant_id              TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    thread_key             TEXT NOT NULL,
+    session_key            TEXT NOT NULL,
+    team_msg_id            TEXT NOT NULL,
+    captured_at            DATETIME NOT NULL,
+    customer_message       TEXT NOT NULL DEFAULT '',
+    team_reply             TEXT NOT NULL,
+    hypothesized_bot_reply TEXT,
+    diff_score             REAL,
+    diff_reasoning         TEXT,
+    judge_agent_key        TEXT,
+    judge_model            TEXT,
+    judge_provider         TEXT,
+    judge_latency_ms       INTEGER,
+    judge_error            TEXT,
+    judge_completed_at     DATETIME,
+    created_at             DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at             DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (channel_instance_id, team_msg_id)
+);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_tenant_time
+    ON team_reply_evaluations(tenant_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_channel_time
+    ON team_reply_evaluations(channel_instance_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_thread
+    ON team_reply_evaluations(channel_instance_id, thread_key, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_team_reply_evals_pending_judge
+    ON team_reply_evaluations(captured_at)
+    WHERE judge_completed_at IS NULL AND judge_error IS NULL;
+
+-- ============================================================
+-- trace_replay_payloads (mirrors PG migration 000075)
+-- Captured RunRequest for failed-trace retry. Sibling to traces
+-- so list queries stay untouched.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS trace_replay_payloads (
+    trace_id        TEXT PRIMARY KEY REFERENCES traces(id) ON DELETE CASCADE,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    session_key     TEXT NOT NULL,
+    payload         TEXT,
+    payload_version INTEGER NOT NULL DEFAULT 1,
+    oversize        INTEGER NOT NULL DEFAULT 0,
+    byte_size       INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_replay_payloads_session
+    ON trace_replay_payloads(session_key, created_at);
+CREATE INDEX IF NOT EXISTS idx_replay_payloads_tenant
+    ON trace_replay_payloads(tenant_id);
+
+-- ============================================================
+-- trace_retry_locks (mirrors PG migration 000075)
+-- Short-TTL lock blocking double-click retries on the same trace.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS trace_retry_locks (
+    trace_id   TEXT PRIMARY KEY REFERENCES traces(id) ON DELETE CASCADE,
+    tenant_id  TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    locked_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    locked_by  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_retry_locks_expiry ON trace_retry_locks(locked_at);
+
+-- ============================================================
+-- vieneu_cloned_voices (mirrors PG migration 000077)
+-- Per-tenant cloned-voice registry; the `id` column doubles as the on-disk
+-- filename under <data_dir>/vieneu-refs/{tenant_id}/{id}.wav. voice_id is
+-- "cloned:<id>" — the opaque handle the LLM / dashboard uses to invoke it.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS vieneu_cloned_voices (
+    id          TEXT PRIMARY KEY,
+    tenant_id   TEXT NOT NULL,
+    voice_id    TEXT NOT NULL,
+    ref_text    TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    deleted_at  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vieneu_voices_tenant_voice
+    ON vieneu_cloned_voices (tenant_id, voice_id);

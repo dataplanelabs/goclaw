@@ -31,10 +31,21 @@ import { Methods, Events } from "@/api/protocol";
 import { queryKeys } from "@/lib/query-keys";
 import { toast } from "@/stores/use-toast-store";
 
-/** Strip media placeholder tags like <media:image> from preview text */
-function cleanPreview(text: string): string {
+/**
+ * Clean preview text shown on the row line 2: strip the leading chat_title
+ * prefix (group name or DM sender name often prepended on inbound), drop the
+ * `[From: <Name> (uid:...)]` annotation (sender/UID live in the detail modal),
+ * and replace `<media:*>` tags with a `[media]` placeholder.
+ */
+function cleanPreview(text: string, chatTitle?: string): string {
   if (!text) return text;
-  return text.replace(/<media:\w+>/g, "[media]");
+  let out = text;
+  if (chatTitle && out.startsWith(chatTitle)) {
+    out = out.slice(chatTitle.length).trimStart();
+  }
+  out = out.replace(/^\[From:[^\]]*\]\s*/, "");
+  out = out.replace(/<media:\w+>/g, "[media]");
+  return out.trim();
 }
 
 /** Parse session_key to extract source type: Direct, Group, Cron, Team, WS */
@@ -91,7 +102,7 @@ export function TracesPage() {
 
   const [abortingRunId, setAbortingRunId] = useState<string | null>(null);
 
-  const { traces, total, loading, fetching, refresh, getTrace } = useTraces({
+  const { traces, total, loading, fetching, refresh, getTrace, retryTrace } = useTraces({
     agentId: agentFilter,
     channel: channelFilter,
     limit: pageSize,
@@ -119,6 +130,7 @@ export function TracesPage() {
           aborted?: boolean;
           stopped?: boolean;
           forced?: boolean;
+          orphaned?: boolean;
           alreadyAborting?: boolean;
           notFound?: boolean;
           unauthorized?: boolean;
@@ -127,6 +139,8 @@ export function TracesPage() {
           toast.success(t("toast.abortStopped"));
         } else if (res?.forced) {
           toast.warning(t("toast.abortForced"));
+        } else if (res?.orphaned) {
+          toast.info(t("toast.abortOrphan"));
         } else if (res?.alreadyAborting) {
           toast.info(t("toast.abortAlreadyAborting"));
         } else if (res?.unauthorized) {
@@ -218,7 +232,11 @@ export function TracesPage() {
               <tbody>
                 {traces.map((trace: TraceData) => {
                   const source = parseSourceType(trace.session_key);
-                  const userLabel = formatUserLabel(trace.user_id, resolve);
+                  const rawUserLabel = formatUserLabel(trace.user_id, resolve);
+                  // Suppress the redundant `Channel chatId` chip when the user_id is
+                  // a group key — channel badge + chat_title below already carry it,
+                  // and the full chat_id lives in the trace detail modal.
+                  const userLabel = trace.user_id?.startsWith("group:") ? "" : rawUserLabel;
                   const agentName = trace.agent_id ? agentMap.get(trace.agent_id) : undefined;
                   const SourceIcon = SOURCE_ICONS[source.type] || Bot;
 
@@ -228,16 +246,21 @@ export function TracesPage() {
                       className="cursor-pointer border-b last:border-0 hover:bg-muted/30"
                       onClick={() => setSelectedTraceId(trace.id)}
                     >
-                      <td className="px-4 py-2.5 max-w-[300px] lg:max-w-[400px]">
+                      <td className="px-4 py-2.5 max-w-[300px] lg:max-w-[500px] xl:max-w-[700px] 2xl:max-w-[900px]">
                         <div className="flex items-center gap-1.5 text-sm font-medium min-w-0">
                           {trace.parent_trace_id && (
                             <GitFork className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           )}
                           <span className="truncate">{agentName || trace.name || t("unnamed")}</span>
-                          {userLabel && (
+                          {(trace.chat_title || userLabel) && (
                             <>
                               <span className="shrink-0 text-muted-foreground">·</span>
-                              <span className="truncate text-xs text-muted-foreground max-w-[140px]">{userLabel}</span>
+                              <span
+                                className="truncate text-muted-foreground max-w-[180px] lg:max-w-[360px] xl:max-w-[560px] 2xl:max-w-[760px]"
+                                title={trace.chat_title || userLabel}
+                              >
+                                {trace.chat_title || userLabel}
+                              </span>
                             </>
                           )}
                         </div>
@@ -254,7 +277,7 @@ export function TracesPage() {
                           )}
                           {trace.input_preview && (
                             <span className="truncate text-xs text-muted-foreground">
-                              {cleanPreview(trace.input_preview)}
+                              {cleanPreview(trace.input_preview, trace.chat_title)}
                             </span>
                           )}
                         </div>
@@ -312,6 +335,8 @@ export function TracesPage() {
           traceId={selectedTraceId}
           onClose={() => setSelectedTraceId(null)}
           getTrace={getTrace}
+          retryTrace={retryTrace}
+          onRetried={() => refresh()}
           onNavigateTrace={setSelectedTraceId}
           onAbortRun={handleAbortRun}
         />

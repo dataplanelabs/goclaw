@@ -21,6 +21,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/common"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
@@ -67,16 +68,29 @@ type Channel struct {
 
 	bootstrapDroppedCount atomic.Int64
 
-	reactions       sync.Map // key: "<userID>:<sourceMessageID>" → *zaloReactionController
-	reactionWG      sync.WaitGroup
-	reactionCtx     context.Context
-	reactionCancel  context.CancelFunc
-	lastReplyChars  sync.Map // key: chatID → int (latest reply char count, used to scale terminal-reaction delay)
+	reactions      sync.Map // key: "<userID>:<sourceMessageID>" → *zaloReactionController
+	reactionWG     sync.WaitGroup
+	reactionCtx    context.Context
+	reactionCancel context.CancelFunc
+	lastReplyChars sync.Map // key: chatID → int (latest reply char count, used to scale terminal-reaction delay)
 
 	// downloadMediaFn lets tests inject a fixture writer that bypasses SSRF
 	// on httptest loopback URLs. nil → downloadOAMedia.
 	downloadMediaFn func(ctx context.Context, fileURL string) (string, error)
+
+	// Team-reply capture (Phase 4) — nil unless wired via FactoryWithDeps.
+	teamReplyBus      eventbus.DomainEventBus
+	teamReplySessions store.SessionStore
+	teamReplyEvals    store.TeamReplyEvalStore
+	teamReplyAtomic   store.AtomicTeamReplyWriter
+	teamReplyContacts *store.ContactCollector
+	teamReplyWorker   *PollWorker
+	teamReplyTenantID string
+	judgeResolver     JudgeAgentResolver
 }
+
+// JudgeAgentResolver mirrors consolidation.JudgeAgentResolver — re-declared to avoid import cycle.
+type JudgeAgentResolver func(ctx context.Context, tenantID, channelInstanceID string) (uuid.UUID, string, error)
 
 // creds returns a read-only snapshot. Refresh swaps the pointer atomically;
 // callers must not mutate the returned struct.
@@ -131,6 +145,13 @@ func New(name string, cfg config.ZaloOAConfig, creds *ChannelCreds,
 func (c *Channel) SetInstanceID(id uuid.UUID) {
 	c.instanceID = id
 	c.tokens.instanceID = id
+}
+
+func (c *Channel) SetTenantID(id uuid.UUID) {
+	c.BaseChannel.SetTenantID(id)
+	if c.tokens != nil {
+		c.tokens.tenantID = id
+	}
 }
 
 // SetTestEndpointsForTest overrides the OAuth + API hosts for integration tests.
@@ -193,6 +214,8 @@ func (c *Channel) Start(_ context.Context) error {
 	c.tickerWG.Add(1)
 	go c.runSafetyTicker()
 
+	c.startTeamReplyWorker()
+
 	transport := c.cfg.Transport
 	switch transport {
 	case "webhook":
@@ -218,6 +241,9 @@ func (c *Channel) Start(_ context.Context) error {
 // Idempotent.
 func (c *Channel) Stop(_ context.Context) error {
 	c.stopOnce.Do(func() { close(c.stopCh) })
+	if c.teamReplyWorker != nil {
+		c.teamReplyWorker.Stop()
+	}
 	if c.cfg.Transport == "webhook" && c.webhookRouter != nil {
 		c.webhookRouter.UnregisterInstance(c.instanceID)
 	}

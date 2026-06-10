@@ -1,6 +1,10 @@
 package browser
 
-import "context"
+import (
+	"context"
+
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
+)
 
 // browserTenantKey is a context key for passing tenant ID to browser operations.
 type browserTenantKey struct{}
@@ -17,4 +21,9 @@ func tenantIDFromCtx(ctx context.Context) string {
 		return v
 	}
 	return ""
+}
+
+// sessionKeyFromCtx extracts the calling agent session key for per-session tab ownership.
+func sessionKeyFromCtx(ctx context.Context) string {
+	return tools.ToolSessionKeyFromCtx(ctx)
 }

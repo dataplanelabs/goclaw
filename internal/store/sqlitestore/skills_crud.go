@@ -134,16 +134,20 @@ func (s *SQLiteSkillStore) CreateSkillManaged(ctx context.Context, p store.Skill
 		"SELECT id FROM skills WHERE tenant_id = ? AND slug = ?", tenantID, p.Slug,
 	).Scan(&existingID)
 
+	src := p.Source
+	if src == "" {
+		src = "unknown"
+	}
 	var returnedID uuid.UUID
 	if err == nil {
 		// Update existing.
 		_, err = tx.ExecContext(ctx,
 			`UPDATE skills SET name = ?, description = ?, version = ?, frontmatter = ?,
-			 file_path = ?, file_size = ?, file_hash = ?, deps = ?,
+			 file_path = ?, file_size = ?, file_hash = ?, deps = ?, source = ?,
 			 visibility = CASE WHEN status IN ('archived', 'deleted') THEN 'private' ELSE visibility END,
 			 status = ?, updated_at = ? WHERE id = ?`,
 			p.Name, p.Description, version, fmJSON,
-			p.FilePath, p.FileSize, p.FileHash, depsJSON, status, now, existingID,
+			p.FilePath, p.FileSize, p.FileHash, depsJSON, src, status, now, existingID,
 		)
 		if err != nil {
 			return uuid.Nil, fmt.Errorf("update skill: %w", err)
@@ -153,10 +157,10 @@ func (s *SQLiteSkillStore) CreateSkillManaged(ctx context.Context, p store.Skill
 		// Insert new.
 		newID := store.GenNewID()
 		_, err = tx.ExecContext(ctx,
-			`INSERT INTO skills (id, name, slug, description, owner_id, tenant_id, visibility, version, status, deps, frontmatter, file_path, file_size, file_hash, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO skills (id, name, slug, description, owner_id, tenant_id, visibility, version, status, deps, frontmatter, file_path, file_size, file_hash, source, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			newID, p.Name, p.Slug, p.Description, p.OwnerID, tenantID, p.Visibility, version,
-			status, depsJSON, fmJSON, p.FilePath, p.FileSize, p.FileHash, now, now,
+			status, depsJSON, fmJSON, p.FilePath, p.FileSize, p.FileHash, src, now, now,
 		)
 		if err != nil {
 			return uuid.Nil, fmt.Errorf("insert skill: %w", err)
@@ -185,6 +189,29 @@ func (s *SQLiteSkillStore) GetSkillFilePath(ctx context.Context, id uuid.UUID) (
 	}
 	err := s.db.QueryRowContext(ctx, q, args...).Scan(&filePath, &slug, &version, &isSystem)
 	return filePath, slug, version, isSystem, err == nil
+}
+
+// GetSkillSourceBySlug returns the ownership-source attribution of the latest
+// non-deleted skill version for the given slug, scoped to the current tenant.
+// Returns ok=false when no matching row exists. Used by the upload handler to
+// gate overwrites of gcplane-managed skills (source='gcplane').
+func (s *SQLiteSkillStore) GetSkillSourceBySlug(ctx context.Context, slug string) (string, bool) {
+	tid := store.TenantIDFromContext(ctx)
+	if tid == uuid.Nil {
+		tid = store.MasterTenantID
+	}
+	var source string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT source FROM skills
+		 WHERE slug = ? AND tenant_id = ? AND status <> 'deleted'
+		 ORDER BY version DESC
+		 LIMIT 1`,
+		slug, tid,
+	).Scan(&source)
+	if err != nil {
+		return "", false
+	}
+	return source, true
 }
 
 // GetSkillHashBySlug returns the file_hash and version of the latest non-deleted skill

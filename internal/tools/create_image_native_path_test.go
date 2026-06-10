@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
@@ -12,18 +13,22 @@ import (
 type nativeImageProvider struct {
 	name        string
 	model       string
+	imageRefs   bool
 	calledWith  *providers.NativeImageRequest
 	returnData  []byte
 	returnError error
 }
 
 func (p *nativeImageProvider) Name() string         { return p.name }
-func (p *nativeImageProvider) DefaultModel() string  { return p.model }
+func (p *nativeImageProvider) DefaultModel() string { return p.model }
 func (p *nativeImageProvider) Chat(_ context.Context, _ providers.ChatRequest) (*providers.ChatResponse, error) {
 	return &providers.ChatResponse{}, nil
 }
 func (p *nativeImageProvider) ChatStream(_ context.Context, _ providers.ChatRequest, _ func(providers.StreamChunk)) (*providers.ChatResponse, error) {
 	return &providers.ChatResponse{}, nil
+}
+func (p *nativeImageProvider) Capabilities() providers.ProviderCapabilities {
+	return providers.ProviderCapabilities{ImageRefs: p.imageRefs}
 }
 func (p *nativeImageProvider) GenerateImage(_ context.Context, req providers.NativeImageRequest) (*providers.NativeImageResult, error) {
 	p.calledWith = &req
@@ -168,9 +173,13 @@ func TestCreateImageTool_RoutesNativePath_WithPrompt(t *testing.T) {
 	if result.MediaPrompts == nil || result.MediaPrompts[0] != wantPrompt {
 		t.Errorf("result.MediaPrompts[0] = %q, want %q", result.MediaPrompts[0], wantPrompt)
 	}
-	// Media must have one entry.
-	if len(result.Media) != 1 {
-		t.Errorf("result.Media length = %d, want 1", len(result.Media))
+	// Result.Media stays empty — delivery is now LLM-driven via send_file, not
+	// auto-attached. The path is in ForLLM so the LLM can call send_file.
+	if len(result.Media) != 0 {
+		t.Errorf("result.Media length = %d, want 0 (LLM must call send_file)", len(result.Media))
+	}
+	if !strings.Contains(result.ForLLM, "send_file") {
+		t.Errorf("ForLLM must instruct the LLM to call send_file; got: %q", result.ForLLM)
 	}
 }
 
@@ -193,7 +202,7 @@ func TestCreateImageTool_ThreadsImageModel(t *testing.T) {
 		{
 			name:            "default (empty params.image_model)",
 			chainImageModel: "",
-			wantImageModel:  "", // provider validator defaults to gpt-image-2
+			wantImageModel:  "gpt-image-2",
 		},
 		{
 			name:            "legacy gpt-image-1.5",
@@ -252,6 +261,56 @@ func TestCreateImageTool_ThreadsImageModel(t *testing.T) {
 			gotImageModel := fakeProvider.calledWith.ImageModel
 			if gotImageModel != tc.wantImageModel {
 				t.Errorf("NativeImageRequest.ImageModel = %q, want %q", gotImageModel, tc.wantImageModel)
+			}
+		})
+	}
+}
+
+func TestCreateImageTool_NormalizesNativeImageModels(t *testing.T) {
+	tests := []struct {
+		name            string
+		providerDefault string
+		chainModel      string
+		chainImageModel string
+		wantParentModel string
+		wantImageModel  string
+	}{
+		{
+			name:            "codex-only parent model falls back to provider default",
+			providerDefault: "gpt-5.5",
+			chainModel:      "gpt-5.3-codex",
+			wantParentModel: "gpt-5.5",
+			wantImageModel:  "",
+		},
+		{
+			name:            "image tool model moves to image_model",
+			providerDefault: "gpt-5.5",
+			chainModel:      "gpt-image-2",
+			wantParentModel: "",
+			wantImageModel:  "gpt-image-2",
+		},
+		{
+			name:            "explicit image_model is preserved with codex parent fallback",
+			providerDefault: "gpt-5.5",
+			chainModel:      "gpt-5.3-codex",
+			chainImageModel: "gpt-image-1.5",
+			wantParentModel: "gpt-5.5",
+			wantImageModel:  "gpt-image-1.5",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			parent, image := normalizeNativeImageModels(
+				&nativeImageProvider{name: "codex-cnb", model: tc.providerDefault},
+				tc.chainModel,
+				tc.chainImageModel,
+			)
+			if parent != tc.wantParentModel {
+				t.Errorf("parent model = %q, want %q", parent, tc.wantParentModel)
+			}
+			if image != tc.wantImageModel {
+				t.Errorf("image model = %q, want %q", image, tc.wantImageModel)
 			}
 		})
 	}

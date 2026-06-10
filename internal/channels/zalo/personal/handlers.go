@@ -3,6 +3,7 @@ package personal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,12 +18,22 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels/media"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/typing"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
 // First match wins; Zalo's quote-reply frame puts the user's new text in `title`.
 var quotedReplyTextFields = []string{"title", "text", "msg", "content", "body", "description"}
+
+// boolMetadata renders a bool into a metadata string ("true"/"false") so
+// downstream consumers can ParseBool without a missing-key special case.
+func boolMetadata(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
+}
 
 func extractTextFromRawContent(raw json.RawMessage) string {
 	if len(raw) == 0 {
@@ -52,25 +63,391 @@ func extractTextFromRawContent(raw json.RawMessage) string {
 // buildQuoteMetadata returns the two metadata keys that carry an inbound
 // TQuote downstream: reply_to_message_id (the quoted message's global ID, for
 // gateway routing) and reply_to_quote_payload (the full JSON-serialized TQuote
-// that the outbound Send() rebuilds into a Zalo /quote payload).
-//
-// Returns nil when the quote is nil OR when marshal fails — never stamps a
-// half-result. The reachable marshal-failure case is invalid JSON in
-// PropertyExt (RawMessage validates on marshal); stamping only the ID without
-// the payload would silently downgrade the outbound reply to non-quoted while
-// still claiming "I quoted something". Better to skip the stamp entirely so
-// the reply lands as a plain message.
-func buildQuoteMetadata(q *protocol.TQuote) map[string]string {
-	if q == nil {
+type quoteOwnerCtx struct {
+	senderUID   string
+	botUID      string
+	resolveName func(uid string) string
+}
+
+// quoteOwnerCtxFor builds the attribution context for a given inbound sender.
+// botUID resolves from the live session (empty during pre-auth — acceptable).
+func (c *Channel) quoteOwnerCtxFor(senderUID string, resolveName func(uid string) string) quoteOwnerCtx {
+	var botUID string
+	if sess := c.session(); sess != nil {
+		botUID = sess.UID
+	}
+	return quoteOwnerCtx{senderUID: senderUID, botUID: botUID, resolveName: resolveName}
+}
+
+// groupNameResolver returns a func that maps a UID to a display name using the
+// channel's recent group-history entries. Returns nil when no history is
+// available so the caller falls back to a generic "another participant" label.
+func (c *Channel) groupNameResolver(threadID string) func(uid string) string {
+	gh := c.GroupHistory()
+	if gh == nil {
 		return nil
 	}
-	payload, err := json.Marshal(q)
+	return func(uid string) string {
+		for _, entry := range gh.GetEntries(threadID) {
+			if entry.SenderID == uid && entry.Sender != "" {
+				return entry.Sender
+			}
+		}
+		return ""
+	}
+}
+
+// quoteContextPrefix returns a "[Replying to ...]" line attributing the quoted
+// message's author so the agent knows who originated it (bot / sender's own
+// earlier message / third party in a group). Falls through q.Msg →
+// caption-from-attach → media-type placeholder for body. When mediaAttached is
+// true, the body (caption) is rendered on a separate line as quoted-message
+// text so the LLM doesn't conflate it with the attached image's content.
+func quoteContextPrefix(raw json.RawMessage, owner quoteOwnerCtx, mediaAttached bool) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var q protocol.TQuote
+	if err := json.Unmarshal(raw, &q); err != nil {
+		preview := string(raw)
+		if len(preview) > 300 {
+			preview = preview[:300]
+		}
+		slog.Warn("zalo_personal.quote.parse_failed", "err", err, "raw_preview", preview)
+		return ""
+	}
+	body := strings.TrimSpace(q.Msg)
+	if body == "" {
+		body = extractAttachBody(q.Attach)
+	}
+	noun := mediaNoun(q.CliMsgType)
+	who := whoAuthored(q.OwnerID.String(), owner)
+	return formatReplyingTo(who, noun, body, mediaAttached)
+}
+
+// attachMediaURLFields lists the JSON keys Zalo uses to point at media. Order
+// prefers non-.jxl-bearing fields: Zalo's CDN serves hdUrl as JPEG XL (.jxl),
+// which forces a 150-400ms WASM decode in agent.SanitizeImage. The picker
+// below skips JXL when an alternative exists; the decoder still handles JXL
+// correctly when no alternative is available.
+var attachMediaURLFields = []string{"normalUrl", "oriUrl", "href", "hdUrl", "thumbUrl", "thumb"}
+
+// urlIsJXL reports whether the URL serves the JPEG XL HD variant. Used to skip
+// JXL URLs when a JPEG alternative is offered — avoids a WASM decode pass in
+// agent.SanitizeImage that the decoder would otherwise handle.
+func urlIsJXL(u string) bool {
+	if u == "" {
+		return false
+	}
+	path := u
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path = path[:i]
+	}
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".jxl") || strings.Contains(lower, "/jxl/")
+}
+
+// pickInboundImageURL returns the best image URL from a Zalo attachment raw
+// JSON, preferring non-.jxl candidates from order. Falls back to the first
+// available URL (even .jxl) when nothing else is offered, finally to fallback
+// when the raw JSON has no recognized URL field.
+func pickInboundImageURL(raw []byte, fallback string, order []string) string {
+	if len(raw) == 0 {
+		return fallback
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil {
+		return fallback
+	}
+	var urls []string
+	params := inboundParamsObject(obj["params"])
+	for _, key := range order {
+		urls = appendInboundURL(urls, obj[key])
+		urls = appendInboundURL(urls, params[key])
+	}
+	for _, u := range urls {
+		if !urlIsJXL(u) {
+			return u
+		}
+	}
+	if len(urls) > 0 {
+		slog.Warn("zalo_personal: inbound image only available as .jxl, falling through to in-process WASM decoder",
+			"fallback_url", urls[0])
+		return urls[0]
+	}
+	return fallback
+}
+
+func inboundParamsObject(raw json.RawMessage) map[string]json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) == nil {
+		return obj
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil || s == "" {
+		return nil
+	}
+	if json.Unmarshal([]byte(s), &obj) != nil {
+		return nil
+	}
+	return obj
+}
+
+func appendInboundURL(urls []string, raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return urls
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		return urls
+	}
+	if s = strings.TrimSpace(s); s == "" {
+		return urls
+	}
+	return append(urls, s)
+}
+
+// extractQuoteMedia downloads the media file referenced inside TQuote.Attach
+// when the quoted message has one (image / video / file). Returns the local
+// file path + agent-facing <media:*> tag, or empty when no media URL extractable.
+//
+// Without this, when a user quotes one of the bot's earlier images saying
+// "fix this", the agent only sees "[Replying to your image]" and has to guess
+// the reference from session memory — frequently hallucinating an old image_id
+// that no longer resolves.
+func extractQuoteMedia(rawQuote json.RawMessage) (string, string) {
+	if len(rawQuote) == 0 || string(rawQuote) == "null" {
+		return "", ""
+	}
+	var q protocol.TQuote
+	if json.Unmarshal(rawQuote, &q) != nil {
+		return "", ""
+	}
+	attach := strings.TrimSpace(q.Attach)
+	if attach == "" || attach == "null" {
+		return "", ""
+	}
+	url := pickInboundImageURL([]byte(attach), "", attachMediaURLFields)
+	if url == "" {
+		return "", ""
+	}
+	filePath, err := downloadFile(context.Background(), url)
+	if err != nil {
+		slog.Warn("zalo_personal.quote.media_download_failed", "url", url, "err", err)
+		return "", ""
+	}
+	mimeType := media.DetectMIMEType(filePath)
+	mediaKind := media.MediaKindFromMime(mimeType)
+	// Force image kind for known image-type quotes when MIME sniff fails.
+	if mediaKind != media.TypeImage && q.CliMsgType == 2 {
+		mediaKind = media.TypeImage
+	}
+	tag := media.BuildMediaTags([]media.MediaInfo{{
+		Type:        mediaKind,
+		FilePath:    filePath,
+		ContentType: mimeType,
+	}})
+	return filePath, tag
+}
+
+// whoAuthored returns a human-readable phrase for who wrote the quoted message:
+//   - "your"                              → bot's earlier message (agent is "you")
+//   - "their own"                         → current sender quoted themselves
+//   - "<name>'s"                          → third party in a group (name resolved)
+//   - "another participant's"             → third party, name unresolvable
+func whoAuthored(ownerUID string, ctx quoteOwnerCtx) string {
+	if ownerUID == "" || (ctx.botUID == "" && ctx.senderUID == "" && ctx.resolveName == nil) {
+		return ""
+	}
+	switch ownerUID {
+	case ctx.botUID:
+		return "your"
+	case ctx.senderUID:
+		return "their own"
+	}
+	if ctx.resolveName != nil {
+		if name := strings.TrimSpace(ctx.resolveName(ownerUID)); name != "" {
+			return name + "'s"
+		}
+	}
+	return "another participant's"
+}
+
+// formatReplyingTo composes the prefix line.
+//   - who:  "your" | "their own" | "<name>'s" | "another participant's" | ""
+//   - noun: bare media noun ("image", "sticker", ...) or ""
+//   - body: actual text body or caption from attach
+//   - mediaAttached: true when the quoted media file is also attached to the
+//     current turn. In that case caption is emitted on a separate "[Quoted
+//     caption: ...]" line so the LLM treats it as the sender's text rather
+//     than as a description of the image content (prevents hallucinations
+//     like "running in rain" when the image is a static portrait).
+func formatReplyingTo(who, noun, body string, mediaAttached bool) string {
+	if mediaAttached && noun != "" {
+		var head string
+		if who != "" {
+			head = fmt.Sprintf("[Replying to %s %s]\n", who, noun)
+		} else {
+			head = fmt.Sprintf("[Replying to %s %s]\n", mediaArticle(noun), noun)
+		}
+		if body != "" {
+			head += fmt.Sprintf("[Quoted caption: %q]\n", body)
+		}
+		return head
+	}
+	switch {
+	case body != "" && noun != "" && who != "":
+		return fmt.Sprintf("[Replying to %s %s: %q]\n", who, noun, body)
+	case body != "" && noun != "":
+		return fmt.Sprintf("[Replying to %s %s: %q]\n", mediaArticle(noun), noun, body)
+	case body != "" && who != "":
+		return fmt.Sprintf("[Replying to %s message: %q]\n", who, body)
+	case body != "":
+		return fmt.Sprintf("[Replying to message: %q]\n", body)
+	case noun != "" && who != "":
+		return fmt.Sprintf("[Replying to %s %s]\n", who, noun)
+	case noun != "":
+		return fmt.Sprintf("[Replying to %s %s]\n", mediaArticle(noun), noun)
+	}
+	return ""
+}
+
+// mediaNoun returns the bare noun for a quoted message's media type so the
+// caller can compose with an article or a possessive. Empty for text/unknown.
+func mediaNoun(cliMsgType int) string {
+	switch cliMsgType {
+	case 2:
+		return "image"
+	case 3:
+		return "sticker"
+	case 5:
+		return "voice message"
+	case 19:
+		return "checklist"
+	case 1:
+		return ""
+	default:
+		if cliMsgType > 0 {
+			return "media message"
+		}
+		return ""
+	}
+}
+
+func mediaArticle(noun string) string {
+	if noun == "" {
+		return ""
+	}
+	switch noun[0] {
+	case 'a', 'e', 'i', 'o', 'u':
+		return "an"
+	}
+	return "a"
+}
+
+func extractAttachBody(attach string) string {
+	attach = strings.TrimSpace(attach)
+	if attach == "" || attach == "null" {
+		return ""
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(attach), &obj); err != nil {
+		return ""
+	}
+	for _, key := range quotedReplyTextFields {
+		val, ok := obj[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if err := json.Unmarshal(val, &s); err != nil {
+			continue
+		}
+		if s = strings.TrimSpace(s); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// Returns nil when no quote, when the quote raw JSON fails to parse against
+// our TQuote shape, or when re-marshal fails. Parse failures are warn-logged
+// with the raw payload preview so the schema mismatch is visible — the rest
+// of the inbound message (text, mentions, media) still flows through.
+func buildQuoteMetadata(raw json.RawMessage) map[string]string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var q protocol.TQuote
+	if err := json.Unmarshal(raw, &q); err != nil {
+		preview := string(raw)
+		if len(preview) > 300 {
+			preview = preview[:300]
+		}
+		slog.Warn("zalo_personal.quote.parse_failed", "err", err, "raw_preview", preview)
+		return nil
+	}
+	payload, err := json.Marshal(&q)
 	if err != nil {
 		slog.Warn("zalo_personal.quote.marshal_failed", "err", err, "global_msg_id", q.GlobalMsgIDString())
 		return nil
 	}
 	return map[string]string{
 		"reply_to_message_id":    q.GlobalMsgIDString(),
+		"reply_to_quote_payload": string(payload),
+	}
+}
+
+// inboundMsgTypeToCli inverts classifyQuoteMsgType. Defensive only — MsgType
+// is the authoritative outbound discriminator; CliMsgType kept for mediaNoun.
+func inboundMsgTypeToCli(msgType string) int {
+	switch strings.ToLower(msgType) {
+	case "chat.photo", "photo", "chat.attach.photo", "chat.photo.original":
+		return 2
+	case "chat.sticker", "sticker":
+		return 3
+	case "chat.voice", "voice":
+		return 5
+	case "chat.todo", "todo":
+		return 19
+	}
+	return 1
+}
+
+// buildSelfQuoteMetadata synthesizes reply_to_quote_payload from the inbound
+// MESSAGE ITSELF (not from any quote it carries). Used when QuoteUserMessage
+// is enabled and the user sent a plain message — without this the bot's
+// outbound Send sees no quote payload and falls through to plain send, so
+// the "Quote user message" toggle silently no-ops for normal conversation.
+func buildSelfQuoteMetadata(data *protocol.TMessage, senderID string) map[string]string {
+	if data == nil || data.MsgID == "" {
+		return nil
+	}
+	msgBody := data.Content.Text()
+	attach := ""
+	if msgBody == "" && data.Content.Raw != nil {
+		attach = string(data.Content.Raw)
+	}
+	q := protocol.TQuote{
+		OwnerID:     json.Number(senderID),
+		CliMsgID:    data.CliMsgID,
+		GlobalMsgID: json.Number(data.MsgID),
+		CliMsgType:  inboundMsgTypeToCli(data.MsgType),
+		MsgType:     data.MsgType,
+		TS:          json.Number(data.TS),
+		Msg:         msgBody,
+		Attach:      attach,
+	}
+	payload, err := json.Marshal(&q)
+	if err != nil {
+		slog.Warn("zalo_personal.quote.self_marshal_failed", "err", err, "msg_id", data.MsgID)
+		return nil
+	}
+	return map[string]string{
+		"reply_to_message_id":    data.MsgID,
 		"reply_to_quote_payload": string(payload),
 	}
 }
@@ -103,7 +480,14 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		return
 	}
 
-	// Annotate with sender display name so the agent knows who is messaging.
+	quotedPath, quotedTag := extractQuoteMedia(msg.Data.Quote)
+	if prefix := quoteContextPrefix(msg.Data.Quote, c.quoteOwnerCtxFor(senderID, nil), quotedPath != ""); prefix != "" {
+		content = prefix + content
+	}
+	if quotedPath != "" {
+		content = content + "\n" + quotedTag
+		media = append(media, quotedPath)
+	}
 	senderName := msg.Data.DName
 	if senderName != "" {
 		content = fmt.Sprintf("[From: %s]\n%s", senderName, content)
@@ -124,13 +508,16 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 	}
 
 	metadata := map[string]string{
-		"message_id":   msg.Data.MsgID,
-		"cli_msg_id":   msg.Data.CliMsgID.String(),
-		"platform":     channels.TypeZaloPersonal,
-		"display_name": channels.SanitizeDisplayName(senderName),
+		"message_id":           msg.Data.MsgID,
+		"cli_msg_id":           msg.Data.CliMsgID.String(),
+		"platform":             channels.TypeZaloPersonal,
+		"display_name":         channels.SanitizeDisplayName(senderName),
+		"enable_native_styles": boolMetadata(c.enableNativeStyles),
 	}
-	if c.quoteUserMessageEnabled() {
-		maps.Copy(metadata, buildQuoteMetadata(msg.Data.Quote))
+	if c.quoteInDM() {
+		if qm := buildSelfQuoteMetadata(&msg.Data, senderID); qm != nil {
+			maps.Copy(metadata, qm)
+		}
 	}
 	c.HandleMessage(senderID, threadID, content, media, metadata, "direct")
 }
@@ -150,10 +537,17 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 	if !c.checkGroupPolicy(ctx, senderID, threadID) {
 		return
 	}
+	// Cache that this thread is a group. The pairing branch already marks it,
+	// but `open` policy doesn't — and tools (create_poll, reactions) rely on
+	// this cache to distinguish group vs DM threads.
+	c.MarkGroupApproved(threadID)
 
 	senderName := msg.Data.DName
 	if senderName == "" {
 		senderName = senderID
+	}
+	if c.memberCache != nil && msg.Data.DName != "" {
+		c.memberCache.Set(threadID, senderID, msg.Data.DName)
 	}
 
 	// Step 2: @mention gating — record non-mentioned messages in history and return.
@@ -172,6 +566,7 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 			// Collect contact even when bot is not mentioned (cache prevents DB spam).
 			if cc := c.ContactCollector(); cc != nil {
 				cc.EnsureContact(ctx, c.Type(), c.Name(), senderID, senderID, senderName, "", "group", "user", "", "")
+				ensureGroupKnown(ctx, c.session(), cc, c.groups, c.Type(), c.Name(), threadID)
 			}
 
 			slog.Debug("zalo_personal group message recorded (no mention)",
@@ -188,8 +583,15 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		"preview", channels.Truncate(content, 50),
 	)
 
-	// Step 3: flush pending history + annotate current message with sender name.
-	annotated := fmt.Sprintf("[From: %s]\n%s", senderName, content)
+	quotedPath, quotedTag := extractQuoteMedia(msg.Data.Quote)
+	if prefix := quoteContextPrefix(msg.Data.Quote, c.quoteOwnerCtxFor(senderID, c.groupNameResolver(threadID)), quotedPath != ""); prefix != "" {
+		content = prefix + content
+	}
+	if quotedPath != "" {
+		content = content + "\n" + quotedTag
+		media = append(media, quotedPath)
+	}
+	annotated := fmt.Sprintf("[From: %s (uid:%s)]\n%s", senderName, senderID, content)
 	finalContent := annotated
 	if c.HistoryLimit() > 0 {
 		finalContent = c.GroupHistory().BuildContext(threadID, annotated, c.HistoryLimit())
@@ -205,17 +607,25 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 	// Collect contact for group-mentioned messages.
 	if cc := c.ContactCollector(); cc != nil {
 		cc.EnsureContact(ctx, c.Type(), c.Name(), senderID, senderID, senderName, "", "group", "user", "", "")
+		ensureGroupKnown(ctx, c.session(), cc, c.groups, c.Type(), c.Name(), threadID)
 	}
 
 	metadata := map[string]string{
-		"message_id":   msg.Data.MsgID,
-		"cli_msg_id":   msg.Data.CliMsgID.String(),
-		"platform":     channels.TypeZaloPersonal,
-		"group_id":     threadID,
-		"display_name": channels.SanitizeDisplayName(senderName),
+		"message_id":           msg.Data.MsgID,
+		"cli_msg_id":           msg.Data.CliMsgID.String(),
+		"platform":             channels.TypeZaloPersonal,
+		"group_id":             threadID,
+		"display_name":         channels.SanitizeDisplayName(senderName),
+		"sender_uid":           senderID,
+		"enable_native_styles": boolMetadata(c.enableNativeStyles),
 	}
-	if c.quoteUserMessageEnabled() {
-		maps.Copy(metadata, buildQuoteMetadata(msg.Data.Quote))
+	if c.quoteInGroup() {
+		if qm := buildSelfQuoteMetadata(&msg.Data.TMessage, senderID); qm != nil {
+			maps.Copy(metadata, qm)
+		}
+	}
+	if len(msg.Data.Mentions) > 0 {
+		stampMentionsMetadata(metadata, msg.Data.Mentions, c.groupNameResolver(threadID))
 	}
 	c.HandleMessage(senderID, threadID, finalContent, allMedia, metadata, "group")
 
@@ -234,7 +644,10 @@ func (c *Channel) startTyping(threadID string, threadType protocol.ThreadType) {
 		return
 	}
 	ctrl := typing.New(typing.Options{
-		MaxDuration:       60 * time.Second,
+		// 5-min safety net — covers heavy pipelines (web search, tool chains)
+		// while staying below Zalo's anti-abuse threshold on continuous typing
+		// pings. Normal cleanup fires via Send() → ctrl.Stop().
+		MaxDuration:       5 * time.Minute,
 		KeepaliveInterval: 4 * time.Second,
 		StartFn: func() error {
 			return protocol.SendTypingEvent(context.Background(), sess, threadID, threadType)
@@ -257,8 +670,13 @@ func extractContentAndMedia(content protocol.Content) (string, []string) {
 	if text := content.Text(); text != "" {
 		return text, nil
 	}
-	if att := content.ParseAttachment(); att != nil && att.BestMediaURL() != "" {
-		return extractAttachment(content, att)
+	if att := content.ParseAttachment(); att != nil {
+		if better := pickInboundImageURL(content.Raw, att.BestMediaURL(), attachMediaURLFields); better != "" {
+			att.Href = better
+		}
+		if att.BestMediaURL() != "" {
+			return extractAttachment(content, att)
+		}
 	}
 	if text := extractTextFromRawContent(content.Raw); text != "" {
 		return text, nil
@@ -275,10 +693,9 @@ func extractAttachment(content protocol.Content, att *protocol.Attachment) (stri
 	filePath, err := downloadFile(context.Background(), url)
 	if err != nil {
 		slog.Warn("zalo_personal: failed to download attachment", "url", url, "type", att.Type, "error", err)
-		if text := content.AttachmentText(); text != "" {
-			return text, nil
-		}
-		return "", nil
+		// Surface the real reason so the agent can tell the user (e.g. "too large")
+		// instead of silently rendering a generic placeholder and guessing.
+		return attachmentUnavailableText(att, err), nil
 	}
 
 	mimeType := media.DetectMIMEType(filePath)
@@ -303,28 +720,79 @@ func extractAttachment(content protocol.Content, att *protocol.Attachment) (stri
 	return tag, []string{filePath}
 }
 
-const maxMediaBytes = 20 * 1024 * 1024 // 20MB (matches Telegram default)
+// attachmentUnavailableText tells the agent a file/image arrived but could not be
+// loaded, and WHY — so it relays the real reason instead of inventing one.
+func attachmentUnavailableText(att *protocol.Attachment, err error) string {
+	kind := "a file"
+	if att.IsImage() {
+		kind = "an image"
+	}
+	if name := strings.TrimSpace(att.Title); name != "" {
+		kind = fmt.Sprintf("%s %q", kind, name)
+	}
+	if errors.Is(err, errFileTooLarge) {
+		return fmt.Sprintf("[User sent %s but it could not be loaded: it exceeds the %d MB size limit. "+
+			"Tell the user the file is too large to process here and ask them to share it via a download link "+
+			"or send screenshots of the content.]", kind, maxMediaBytes/(1024*1024))
+	}
+	return fmt.Sprintf("[User sent %s but it could not be downloaded (temporary error). "+
+		"Ask the user to resend it or share it via a download link.]", kind)
+}
 
-// downloadFile downloads a URL to a temp file and returns the local path.
-// Validates against SSRF and enforces timeout and size limits.
+const maxMediaBytes = 100 * 1024 * 1024   // 100MB inbound media cap
+const downloadTimeout = 120 * time.Second // generous for large files on slow CDN shards
+
+// errFileTooLarge marks a download that exceeded maxMediaBytes (vs a transient
+// network/HTTP failure) so callers can surface the right reason to the agent.
+var errFileTooLarge = errors.New("file too large")
+
+// downloadRetryConfig: 3 attempts, 300ms→600ms→1.2s exponential backoff with
+// ±10% jitter, capped at 5s. Covers Zalo CDN's DNS cold-miss SERVFAIL pattern
+// (CoreDNS warms up on first lookup of a new shard hostname).
+var downloadRetryConfig = providers.RetryConfig{
+	Attempts: 3,
+	MinDelay: 300 * time.Millisecond,
+	MaxDelay: 5 * time.Second,
+	Jitter:   0.1,
+}
+
+// downloadFile downloads a URL to a temp file with retry on transient errors
+// (DNS cold-miss SERVFAIL, network glitches, 5xx). SSRF + size + timeout limits
+// still apply on every attempt. Uses the shared providers.RetryDo helper for
+// consistent retry semantics across the codebase.
 func downloadFile(ctx context.Context, fileURL string) (string, error) {
 	if err := tools.CheckSSRF(fileURL); err != nil {
 		return "", fmt.Errorf("ssrf check: %w", err)
 	}
+	return providers.RetryDo(ctx, downloadRetryConfig, func() (string, error) {
+		return doDownload(ctx, fileURL)
+	})
+}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+// doDownload performs a single HTTP GET → temp file. Returns the local path.
+// Status-code failures are wrapped as *providers.HTTPError so RetryDo's
+// classifier handles 5xx/429 + Retry-After header uniformly.
+func doDownload(ctx context.Context, fileURL string) (string, error) {
+	client := &http.Client{Timeout: downloadTimeout}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("download: %w", err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		// Network / DNS errors flow through unchanged — RetryDo recognizes
+		// net.Error via IsRetryableError.
 		return "", fmt.Errorf("download: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download status %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", &providers.HTTPError{
+			Status:     resp.StatusCode,
+			Body:       string(body),
+			RetryAfter: providers.ParseRetryAfter(resp.Header.Get("Retry-After")),
+		}
 	}
 
 	// Strip query params before extracting extension.
@@ -350,7 +818,7 @@ func downloadFile(ctx context.Context, fileURL string) (string, error) {
 	}
 	if written > maxMediaBytes {
 		os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("file too large: %d bytes (max %d)", written, maxMediaBytes)
+		return "", fmt.Errorf("%w: %d bytes (max %d)", errFileTooLarge, written, maxMediaBytes)
 	}
 
 	return tmpFile.Name(), nil

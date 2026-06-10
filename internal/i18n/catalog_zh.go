@@ -44,8 +44,10 @@ func init() {
 		MsgInstanceNotFound:   "未找到实例",
 
 		// Cron
-		MsgJobNotFound:     "未找到任务",
-		MsgInvalidCronExpr: "无效的 cron 表达式：%s",
+		MsgJobNotFound:                "未找到任务",
+		MsgInvalidCronExpr:            "无效的 cron 表达式：%s",
+		MsgCronDeliverChannelRequired: "deliver=true 的定时任务需要 deliverChannel（频道实例名称，如 'zalo-annhien'）",
+		MsgCronDeliverToRequired:      "deliver=true 的定时任务需要 deliverTo（聊天 ID）",
 
 		// Config
 		MsgConfigHashMismatch: "配置已更改（hash 不匹配）",
@@ -113,6 +115,8 @@ func init() {
 		// Skills
 		MsgSkillsUpdateNotSupported: "基于文件的Skill不支持 skills.update",
 		MsgCannotResolveSkillID:     "无法解析基于文件的Skill ID",
+		MsgSkillManagedOverwrite:    "此Skill由 gcplane 管理。请通过 gcplane apply 更新，或使用 force_imperative=true 重新上传（将记录审计日志）。",
+		MsgSkillInvalidSource:       "无效的 source 值 %q；允许的值：unknown、cli、gcplane",
 		MsgInvalidVisibility:        "无效的 visibility %q：必须为 private 或 public",
 
 		// Logs
@@ -209,6 +213,17 @@ func init() {
 		MsgTtsParamOutOfRange:     "TTS 参数 %q 的值 %v 超出范围 [%v, %v]",
 		MsgTtsParamUnknownKey:     "TTS 参数 %q 不受此提供商支持",
 		MsgTtsMiniMaxVoicesFailed: "获取 MiniMax 声音列表失败：%s",
+
+		// VieNeu
+		MsgTtsVieneuSynthesisFailed:   "VieNeu 语音合成失败：%s",
+		MsgTtsVieneuVoicesFailed:      "获取 VieNeu 声音列表失败：%s",
+		MsgTtsVieneuRefAudioInvalid:   "参考音频无效：%s",
+		MsgTtsVieneuDaemonUnreachable: "VieNeu 守护进程不可达；请使用启用 ENABLE_FULL_SKILLS 的 goclaw 镜像",
+		MsgVieneuRefAudioTooShort:     "参考音频过短：%s",
+		MsgVieneuRefAudioTooLong:      "参考音频过长：%s",
+		MsgVieneuRefTextRequired:      "声音克隆需要 ref_text",
+		MsgVieneuMaxClonedVoices:      "已达每租户克隆声音上限（%d）",
+		MsgVieneuClonedVoiceNotFound:  "未找到克隆声音：%s",
 
 		// STT
 		MsgSTTAllProvidersFailed:     "所有 STT 提供商均失败",
@@ -314,6 +329,46 @@ func init() {
 		MsgGrantEnvValueInvalid: "无效的环境变量值：%s",
 		MsgGrantEnvTooManyKeys:  "环境变量键过多：最多 50 个",
 		MsgGrantEnvRevealLimit:  "env 查看请求超出速率限制，请稍后再试",
+
+		// Secure CLI execution
+		MsgSecureCliBinaryNotFound: "二进制 %q 未注册为安全执行项",
+		MsgSecureCliNoGrant:        "代理没有针对二进制 %q 的授权",
+		MsgSecureCliDeniedByPolicy: "调用被 deny_args 策略拒绝：%s",
+
+		// OAuth integrations
+		MsgOAuthStateMismatch:       "OAuth state 令牌不匹配或已过期 — 请重试",
+		MsgOAuthExchangeFailed:      "OAuth 授权码兑换失败：%s",
+		MsgOAuthBinaryNotFound:      "二进制 %q 在此租户尚未注册",
+		MsgOAuthIntegrationNotFound: "找不到 %q 的集成",
+		MsgOAuthRevoked:             "Google 凭据已被撤销 — 请通过 设置 → 集成 重新连接",
+		MsgOAuthNotConfigured:       "服务器未配置 Google OAuth",
+
+		// Standby mode
+		StandbyToolDescription:      "在当前会话中暂停回复一段时间。代理仍会观察并记录消息，但在暂停结束前不会回复。",
+		StandbyToolParamDuration:    "暂停时长（秒，60-86400）。",
+		StandbyToolParamReason:      "可选原因，记录到暂停日志。",
+		StandbyErrorInvalidDuration: "duration_seconds 必须在 60 到 86400 之间",
+		StandbyErrorNoChannelCtx:    "enter_standby 需要 channel 上下文，无法从当前调用方使用",
+		StandbyEntered:              "已进入待命模式 %s（原因：%s）",
+		StandbyRPCInvalidSchedule:   "调度不合法：%s",
+		StandbyRPCNoPermission:      "需要租户管理员权限才能编辑频道调度",
+
+		TeamCaptureRPCNoPermission:    "需要租户管理员权限才能切换团队回复采集",
+		TeamCaptureRPCInvalidConfig:   "采集配置无效：%s",
+		TeamCaptureJudgeAgentNotFound: "租户中找不到 judge agent %q — 请先创建该 agent 或选择已有 agent_key",
+		TeamCaptureJudgeKeyRequired:   "启用 judge_evaluation 时必须提供 judge_agent_key",
+		TeamCaptureScheduleInvalid:    "无效的 judge 计划 %q — 请使用 5 字段 cron 表达式",
+		TeamEvalNotFound:              "未找到团队回复评估",
+		TeamEvalJudgeError:            "评估失败：%s",
+
+		TraceRetryPayloadOversize: "负载过大，无法重试（>2 MB）。",
+		TraceRetryLocked:          "重试正在进行中。",
+		TraceRetryAgentGone:       "此追踪的智能体已被删除。",
+		TraceRetryProviderGone:    "此追踪的提供方已被移除。",
+		TraceRetryPayloadMissing:  "重放数据已不可用。",
+		TraceRetryConfirmRequired: "此次运行已发送消息——请确认后再重试。",
+		TraceRetryStarted:         "重试已开始。",
+		TraceRetryNotFailed:       "只能重试已结束的追踪（运行仍在进行中）。",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 已按请求转发至 %s:%q",

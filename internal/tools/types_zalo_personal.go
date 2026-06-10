@@ -15,7 +15,8 @@ type ZaloPersonalAction interface {
 	VotePoll(ctx context.Context, pollID int64, optionIDs []int64) (ZaloPollState, error)
 	LockPoll(ctx context.Context, pollID int64) error
 	AddPollOptions(ctx context.Context, pollID int64, newOptions []string, votedOptionIDs []int64) (ZaloPollState, error)
-	React(ctx context.Context, chatID, msgID, cliMsgID, reactionInput, threadTypeHint string) error
+	CreateReminder(ctx context.Context, threadID string, isGroup bool, settings ZaloReminderSettings) (reminderID string, err error)
+	RemoveReminder(ctx context.Context, reminderID, groupID string) error
 	IsRunning() bool
 	IsGroup(chatID string) bool
 }
@@ -33,6 +34,16 @@ type ZaloPollState struct {
 	Question string                `json:"question,omitempty"`
 	Options  []ZaloPollStateOption `json:"options"`
 	Locked   bool                  `json:"locked,omitempty"`
+}
+
+// ZaloReminderSettings is the channel-neutral DTO. Repeat is a human-friendly
+// string (none|daily|weekly|monthly) — channel layer maps to protocol enum.
+type ZaloReminderSettings struct {
+	Title     string
+	StartTime int64 // Unix ms; 0 = now
+	Repeat    string
+	PinToTop  bool   // group only — DM ignores
+	Emoji     string // "" = default ⏰
 }
 
 type ZaloPollStateOption struct {

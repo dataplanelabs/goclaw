@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -147,7 +148,7 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 	// Seeding must run before buildMessages→resolveContextFiles reads context files.
 	// Team sessions skip seeding: members process tasks from leader, not end-user onboarding.
 	isTeamSession := bootstrap.IsTeamSession(req.SessionKey)
-	channelMeta := l.buildChannelMeta(req)
+	channelMeta := l.buildChannelMeta(ctx, req)
 	setup := l.getOrCreateUserSetup(ctx, req.UserID, req.Channel, isTeamSession, channelMeta)
 
 	// Workspace resolution (layered pipeline).
@@ -328,6 +329,7 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 	// Inject delivered media tracker so write_file and message tool can coordinate:
 	// write_file(deliver=true) marks paths, message self-send guard checks before allowing.
 	ctx = tools.WithDeliveredMedia(ctx, tools.NewDeliveredMedia())
+	ctx = tools.WithPublishedMedia(ctx, tools.NewPublishedMedia())
 
 	// Security: truncate oversized user messages gracefully (feed truncation notice into LLM)
 	maxChars := l.maxMessageChars
@@ -388,6 +390,8 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 		LeaderAgentID:       tools.LeaderAgentIDFromCtx(ctx),
 		AgentToolKey:        l.id,
 		TenantAllowedPaths:  l.tenantAllowedPaths,
+		UserTimezone:        userTimezone(channelMeta, l.defaultTimezone),
+		TurnStartedAt:       time.Now(),
 	}
 	ctx = store.WithRunContext(ctx, rc)
 

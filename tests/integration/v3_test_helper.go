@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/security"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/store/pg"
@@ -169,6 +171,21 @@ func seedTenantAgent(t *testing.T, db *sql.DB) (tenantID, agentID uuid.UUID) {
 // tenantCtx returns a context with tenant ID set for store scoping.
 func tenantCtx(tenantID uuid.UUID) context.Context {
 	return store.WithTenantID(context.Background(), tenantID)
+}
+
+// writeTenantFile writes a vault fixture at the tenant-resolved workspace path.
+// Mirrors production: a non-master tenant's files live under
+// <ws>/tenants/<slug-or-uuid>/, which is where vault_read.resolvePath looks.
+// tenantCtx sets no slug, so TenantWorkspace's uuid fallback matches the read side.
+func writeTenantFile(t *testing.T, ws string, tenantID uuid.UUID, relPath string, body []byte) {
+	t.Helper()
+	full := filepath.Join(config.TenantWorkspace(ws, tenantID, ""), relPath)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatalf("mkdir tenant ws: %v", err)
+	}
+	if err := os.WriteFile(full, body, 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
 }
 
 // userCtx returns a context with both tenant ID and user ID set.

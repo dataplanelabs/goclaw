@@ -50,6 +50,19 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 				continue
 			}
 
+			if msg.TenantID != uuid.Nil {
+				if tc, ok := channel.(interface{ TenantID() uuid.UUID }); ok {
+					if chTenant := tc.TenantID(); chTenant != uuid.Nil && chTenant != msg.TenantID {
+						slog.Warn("security.dispatch.tenant_mismatch",
+							"channel", msg.Channel,
+							"channel_tenant_id", chTenant.String(),
+							"message_tenant_id", msg.TenantID.String(),
+							"chat_id", msg.ChatID,
+						)
+					}
+				}
+			}
+
 			// Filter out temp media files that no longer exist (already sent by another dispatch).
 			if len(msg.Media) > 0 {
 				tmpDir := os.TempDir()
@@ -84,7 +97,18 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 				})
 			}
 
-			if err := channel.Send(sendCtx, msg); err != nil {
+			sendErr := channel.Send(sendCtx, msg)
+			if sendErr == nil && msg.TraceID != uuid.Nil {
+				m.mu.RLock()
+				ts := m.tracingStore
+				m.mu.RUnlock()
+				if ts != nil {
+					if err := ts.SetOutboundEmitted(sendCtx, msg.TraceID); err != nil {
+						slog.Warn("trace: SetOutboundEmitted failed", "err", err, "trace_id", msg.TraceID)
+					}
+				}
+			}
+			if err := sendErr; err != nil {
 				slog.Error("error sending message to channel",
 					"channel", msg.Channel,
 					"chat_id", msg.ChatID,

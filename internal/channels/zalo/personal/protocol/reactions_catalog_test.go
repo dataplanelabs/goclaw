@@ -30,7 +30,6 @@ func TestResolveReactionCode_EnglishName(t *testing.T) {
 		{"angry", ReactionAngry},
 		{"wow", ReactionWow},
 		{"cry", ReactionCry},
-		{"worry", ReactionWorry},
 		{"remove", ReactionNone},
 		{"none", ReactionNone},
 		{"unreact", ReactionNone},
@@ -92,7 +91,7 @@ func TestLookupReactionMeta_UnknownCode(t *testing.T) {
 }
 
 func TestCatalogCount(t *testing.T) {
-	const want = 7
+	const want = 6
 	if got := len(reactionMetaTable); got != want {
 		t.Errorf("reactionMetaTable has %d entries, want %d", got, want)
 	}

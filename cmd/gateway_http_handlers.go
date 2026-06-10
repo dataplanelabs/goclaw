@@ -43,6 +43,9 @@ func wireHTTP(stores *store.Stores, defaultWorkspace, dataDir, bundledSkillsDir 
 
 	if stores != nil && stores.Tracing != nil {
 		tracesH = httpapi.NewTracesHandler(stores.Tracing)
+		if stores.ChannelInstances != nil && stores.Contacts != nil {
+			tracesH.SetEnrichmentDeps(stores.ChannelInstances, stores.Contacts)
+		}
 	}
 
 	if stores != nil && stores.MCP != nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/hooks"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
 // FinalizeStage runs once after the iteration loop exits. Sanitizes content,
@@ -28,6 +29,17 @@ func (s *FinalizeStage) Name() string { return "finalize" }
 
 // Execute performs all post-loop cleanup. Errors are logged, not returned.
 func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
+	if state.Observe.FinalContent == "" && state.Think.LastResponse != nil &&
+		state.Think.LastResponse.Content != "" && len(state.Think.LastResponse.ToolCalls) == 0 {
+		state.Observe.FinalContent = state.Think.LastResponse.Content
+		slog.Warn("finalize: recovered final content from Think.LastResponse",
+			"session", state.Input.SessionKey,
+			"iteration", state.Iteration,
+			"exit_code", state.ExitCode,
+			"content_len", len(state.Think.LastResponse.Content),
+		)
+	}
+
 	// 1. Sanitize final content
 	if state.Observe.FinalContent != "" && s.deps.SanitizeContent != nil {
 		state.Observe.FinalContent = s.deps.SanitizeContent(state.Observe.FinalContent)
@@ -42,9 +54,28 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 	// Must run BEFORE session flush so the agent message is persisted even if suppressed.
 	isSilent := s.deps.IsSilentReply != nil && s.deps.IsSilentReply(state.Observe.FinalContent)
 
-	// 2b. Fallback for empty content (matching v2: channels need non-empty content to deliver).
+	// 2a. Standby mode: same suppression contract as NO_REPLY. Memory writes survive.
+	if state.StandbyMode {
+		state.Observe.FinalContent = ""
+		isSilent = true
+	}
+
 	if state.Observe.FinalContent == "" && !isSilent {
-		state.Observe.FinalContent = "..."
+		thinkingLen := 0
+		var toolCallsLen int
+		if state.Think.LastResponse != nil {
+			thinkingLen = len(state.Think.LastResponse.Thinking)
+			toolCallsLen = len(state.Think.LastResponse.ToolCalls)
+		}
+		slog.Warn("finalize: empty final content — suppressing delivery",
+			"session", state.Input.SessionKey,
+			"iteration", state.Iteration,
+			"exit_code", state.ExitCode,
+			"thinking_len", thinkingLen,
+			"think_tool_calls", toolCallsLen,
+			"total_tool_calls", state.Tool.TotalToolCalls,
+		)
+		isSilent = true
 	}
 
 	// 2c. Append content suffix (e.g. image markdown for WS) with dedup.
@@ -59,7 +90,7 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 	}
 
 	// 3. Deduplicate + populate media sizes
-	s.processMedia(state)
+	s.processMedia(ctx, state)
 
 	// 3b. Persist assistant-generated images (Codex image_generation_call) to disk
 	// BEFORE building the assistant message so MediaRefs are included in the session store.
@@ -172,11 +203,11 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 	return nil
 }
 
-// processMedia populates file sizes and deduplicates media results.
-func (s *FinalizeStage) processMedia(state *RunState) {
+// processMedia populates file sizes, deduplicates media results, and drops
+// any path a tool already published directly to msgBus during this run.
+func (s *FinalizeStage) processMedia(ctx context.Context, state *RunState) {
 	media := state.Tool.MediaResults
 
-	// Populate sizes for local files
 	for i := range media {
 		if media[i].Size == 0 && media[i].Path != "" {
 			if fi, err := os.Stat(media[i].Path); err == nil {
@@ -185,14 +216,22 @@ func (s *FinalizeStage) processMedia(state *RunState) {
 		}
 	}
 
-	// Deduplicate by path
+	pm := tools.PublishedMediaFromCtx(ctx)
 	seen := make(map[string]bool, len(media))
 	deduped := make([]MediaResult, 0, len(media))
 	for _, m := range media {
-		if !seen[m.Path] {
-			seen[m.Path] = true
-			deduped = append(deduped, m)
+		if seen[m.Path] {
+			continue
 		}
+		if tools.IsScratchDeliveryPath(m.Path) {
+			slog.Warn("finalize: dropped temp/staging/scratch media", "path", m.Path)
+			continue
+		}
+		if pm != nil && pm.IsPublished(m.Path) {
+			continue
+		}
+		seen[m.Path] = true
+		deduped = append(deduped, m)
 	}
 	state.Tool.MediaResults = deduped
 }

@@ -41,6 +41,8 @@ func NewSQLiteStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Agents:                NewSQLiteAgentStore(db),
 		Providers:             NewSQLiteProviderStore(db, cfg.EncryptionKey),
 		Tracing:               NewSQLiteTracingStore(db),
+		ReplayPayloads:        NewSQLiteReplayPayloadStore(db),
+		RetryLocks:            NewSQLiteRetryLockStore(db),
 		ConfigSecrets:         NewSQLiteConfigSecretsStore(db, cfg.EncryptionKey),
 		BuiltinTools:          NewSQLiteBuiltinToolStore(db),
 		Heartbeats:            NewSQLiteHeartbeatStore(db),
@@ -51,6 +53,7 @@ func NewSQLiteStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Snapshots:             NewSQLiteSnapshotStore(db),
 		Cron:                  NewSQLiteCronStore(db),
 		ChannelInstances:      NewSQLiteChannelInstanceStore(db, cfg.EncryptionKey),
+		ChannelSchedules:      NewSQLiteChannelScheduleStore(db),
 		Pairing:               NewSQLitePairingStore(db),
 		PendingMessages:       NewSQLitePendingMessageStore(db),
 		Contacts:              NewSQLiteContactStore(db),
@@ -68,6 +71,8 @@ func NewSQLiteStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Episodic:             NewSQLiteEpisodicStore(db),
 		EvolutionMetrics:     NewSQLiteEvolutionMetricsStore(db),
 		EvolutionSuggestions: NewSQLiteEvolutionSuggestionStore(db),
+		TeamReplyEvals:       NewSQLiteTeamReplyEvalStore(db),
+		VieneuClonedVoices:   NewSQLiteVieneuClonedVoicesStore(db),
 		KnowledgeGraph:       NewSQLiteKnowledgeGraphStore(db),
 		Vault:                NewSQLiteVaultStore(db),
 		Hooks:                NewSQLiteHookStore(db),
@@ -80,5 +85,6 @@ func NewSQLiteStores(cfg store.StoreConfig) (*store.Stores, error) {
 	}
 	// Wire permStore into WorkstationStore so Create seeds allowlist atomically (H5 fix).
 	sqliteStores.Workstations.(*SQLiteWorkstationStore).SetPermStore(sqliteStores.WorkstationPermissions)
+	sqliteStores.TeamReplyAtomicWriter = NewSQLiteTeamReplyAtomicWriter(db, sqliteStores.Sessions.(*SQLiteSessionStore))
 	return sqliteStores, nil
 }

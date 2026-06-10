@@ -213,7 +213,10 @@ export const configSchema: Record<string, FieldDef[]> = {
     { key: "group_policy", label: "Group Policy", type: "select", options: groupPolicyOptions, defaultValue: "allowlist" },
     { key: "require_mention", label: "Require @mention in groups", type: "boolean", defaultValue: true },
     { key: "allow_from", label: "Allowed Users", type: "tags", help: "Zalo user IDs or group IDs" },
-    { key: "quote_user_message", label: "Quote user message", type: "boolean", defaultValue: false, help: "Render bot replies as native Zalo quote bubbles when the user replied to a message. Off by default." },
+    { key: "quote_user_message_in_group", label: "Quote user message in groups", type: "boolean", defaultValue: true, help: "Reply by quoting the user's last group message. Disambiguates target in busy chats." },
+    { key: "quote_user_message_in_dm", label: "Quote user message in DMs", type: "boolean", defaultValue: false, help: "Reply by quoting the user's last DM. Usually unnecessary in 1-on-1 chats." },
+    { key: "enable_native_styles", label: "Native text styles", type: "boolean", defaultValue: false, help: "Render LLM markdown (bold/italic/strike/underline/lists) as native Zalo styled spans via textProperties. Default OFF — opt in if the LLM you use emits markdown reliably. When OFF, markdown is stripped (legacy v3.21.10 behavior)." },
+    { key: "reaction_level", label: "Reaction Level", type: "select", options: [{ value: "off", label: "Off" }, { value: "minimal", label: "Minimal (terminal only)" }, { value: "full", label: "Full (+ thinking ack)" }], defaultValue: "off", help: "Auto-react on the user's message to signal agent state (done → Heart, error → Cry). Deterministic — no LLM tokens per reaction. Minimal fires only on terminal states; Full adds a Like on the agent run start." },
     { key: "block_reply", label: "Block Reply", type: "select", options: blockReplyOptions, defaultValue: "inherit", help: "Deliver intermediate text during tool iterations" },
   ],
   whatsapp: [

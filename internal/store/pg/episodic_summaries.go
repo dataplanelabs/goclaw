@@ -122,6 +122,25 @@ func (s *PGEpisodicStore) List(ctx context.Context, agentID, userID string, limi
 	return results, nil
 }
 
+func (s *PGEpisodicStore) GetBySourceID(ctx context.Context, agentID, userID, sourceID string) (*store.EpisodicSummary, error) {
+	tenantID := store.TenantIDFromContext(ctx)
+	q := `SELECT id, tenant_id, agent_id, user_id, session_key, summary, key_topics,
+		       turn_count, token_count, l0_abstract, source_id, source_type,
+		       created_at, expires_at, recall_count, recall_score, last_recalled_at
+		FROM episodic_summaries
+		WHERE agent_id = $1 AND user_id = $2 AND source_id = $3 AND tenant_id = $4
+		LIMIT 1`
+	var rows []episodicSummaryRow
+	if err := pkgSqlxDB.SelectContext(ctx, &rows, q, agentID, userID, sourceID, tenantID); err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	ep := rows[0].toEpisodicSummary()
+	return &ep, nil
+}
+
 func (s *PGEpisodicStore) ListBySourceType(ctx context.Context, agentID, userID, sourceType string, since time.Time, limit int) ([]store.EpisodicSummary, error) {
 	if limit <= 0 {
 		limit = 20
@@ -132,10 +151,14 @@ func (s *PGEpisodicStore) ListBySourceType(ctx context.Context, agentID, userID,
 		       created_at, expires_at,
 		       recall_count, recall_score, last_recalled_at
 		FROM episodic_summaries
-		WHERE agent_id = $1 AND user_id = $2 AND source_type = $3 AND tenant_id = $4`
-	args := []any{agentID, userID, sourceType, tenantID}
+		WHERE agent_id = $1 AND source_type = $2 AND tenant_id = $3`
+	args := []any{agentID, sourceType, tenantID}
+	if userID != "" {
+		q += fmt.Sprintf(` AND user_id = $%d`, len(args)+1)
+		args = append(args, userID)
+	}
 	if !since.IsZero() {
-		q += ` AND created_at >= $5`
+		q += fmt.Sprintf(` AND created_at >= $%d`, len(args)+1)
 		args = append(args, since)
 	}
 	q += ` ORDER BY created_at DESC LIMIT ` + fmt.Sprintf("%d", limit)

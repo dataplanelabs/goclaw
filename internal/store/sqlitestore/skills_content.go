@@ -84,7 +84,7 @@ func (s *SQLiteSkillStore) BuildSummary(ctx context.Context, allowList []string)
 }
 
 func (s *SQLiteSkillStore) GetSkill(ctx context.Context, name string) (*store.SkillInfo, bool) {
-	baseSelect := `SELECT id, name, slug, description, visibility, owner_id, tags, version, is_system, status, enabled, deps, frontmatter, file_path
+	baseSelect := `SELECT id, name, slug, description, visibility, owner_id, source, tags, version, is_system, status, enabled, deps, frontmatter, file_path
 		FROM skills WHERE `
 	scope := ""
 	args := []any{}
@@ -99,19 +99,20 @@ func (s *SQLiteSkillStore) GetSkill(ctx context.Context, name string) (*store.Sk
 
 	scan := func(q string, qArgs ...any) (*store.SkillInfo, bool) {
 		var id uuid.UUID
-		var skillName, slug, visibility, ownerID, status string
+		var skillName, slug, visibility, ownerID, source, status string
 		var desc *string
 		var tagsJSON []byte
 		var version int
 		var isSystem, enabled bool
 		var depsRaw, fmRaw []byte
 		var filePath *string
-		if err := s.db.QueryRowContext(ctx, q, qArgs...).Scan(&id, &skillName, &slug, &desc, &visibility, &ownerID, &tagsJSON, &version, &isSystem, &status, &enabled, &depsRaw, &fmRaw, &filePath); err != nil {
+		if err := s.db.QueryRowContext(ctx, q, qArgs...).Scan(&id, &skillName, &slug, &desc, &visibility, &ownerID, &source, &tagsJSON, &version, &isSystem, &status, &enabled, &depsRaw, &fmRaw, &filePath); err != nil {
 			return nil, false
 		}
 		info := buildSkillInfo(id.String(), skillName, slug, desc, version, s.baseDir, filePath)
 		info.Visibility = visibility
 		info.OwnerID = ownerID
+		info.Source = source
 		scanJSONStringArray(tagsJSON, &info.Tags)
 		info.IsSystem = isSystem
 		info.Status = status
@@ -121,6 +122,7 @@ func (s *SQLiteSkillStore) GetSkill(ctx context.Context, name string) (*store.Sk
 		info.MissingDeps = parseDepsColumn(depsRaw)
 		enriched := []store.SkillInfo{info}
 		s.attachSkillAgentMetadata(ctx, enriched)
+		store.ApplySkillManagedBy(enriched)
 		return &enriched[0], true
 	}
 
@@ -161,13 +163,13 @@ func (s *SQLiteSkillStore) FilterSkills(ctx context.Context, allowList []string)
 
 // GetSkillByID returns a SkillInfo for any skill by UUID regardless of status.
 func (s *SQLiteSkillStore) GetSkillByID(ctx context.Context, id uuid.UUID) (store.SkillInfo, bool) {
-	var name, slug, visibility, ownerID, status string
+	var name, slug, visibility, ownerID, source, status string
 	var desc *string
 	var tagsJSON, depsRaw []byte
 	var version int
 	var isSystem, enabled bool
 	var filePath *string
-	q := `SELECT name, slug, description, visibility, owner_id, tags, version, is_system, status, enabled, deps, file_path
+	q := `SELECT name, slug, description, visibility, owner_id, source, tags, version, is_system, status, enabled, deps, file_path
 		 FROM skills WHERE id = ?`
 	args := []any{id}
 	if !store.IsCrossTenant(ctx) {
@@ -178,18 +180,20 @@ func (s *SQLiteSkillStore) GetSkillByID(ctx context.Context, id uuid.UUID) (stor
 		q += " AND (is_system = 1 OR tenant_id = ?)"
 		args = append(args, tid)
 	}
-	if err := s.db.QueryRowContext(ctx, q, args...).Scan(&name, &slug, &desc, &visibility, &ownerID, &tagsJSON,
+	if err := s.db.QueryRowContext(ctx, q, args...).Scan(&name, &slug, &desc, &visibility, &ownerID, &source, &tagsJSON,
 		&version, &isSystem, &status, &enabled, &depsRaw, &filePath); err != nil {
 		return store.SkillInfo{}, false
 	}
 	info := buildSkillInfo(id.String(), name, slug, desc, version, s.baseDir, filePath)
 	info.Visibility = visibility
 	info.OwnerID = ownerID
+	info.Source = source
 	scanJSONStringArray(tagsJSON, &info.Tags)
 	info.IsSystem = isSystem
 	info.Status = status
 	info.Enabled = enabled
 	info.MissingDeps = parseDepsColumn(depsRaw)
+	info.ManagedBy = store.DeriveSkillManagedBy(info)
 	return info, true
 }
 
@@ -235,17 +239,25 @@ func (s *SQLiteSkillStore) UpsertSystemSkill(ctx context.Context, p store.SkillC
 	var existingID uuid.UUID
 	var existingHash *string
 	var existingFilePath string
+	var existingSource string
 	err := s.db.QueryRowContext(ctx,
-		"SELECT id, file_hash, file_path FROM skills WHERE slug = ?", p.Slug,
-	).Scan(&existingID, &existingHash, &existingFilePath)
+		"SELECT id, file_hash, file_path, source FROM skills WHERE slug = ?", p.Slug,
+	).Scan(&existingID, &existingHash, &existingFilePath, &existingSource)
 
 	if err == nil {
 		if existingHash != nil && p.FileHash != nil && *existingHash == *p.FileHash {
+			if existingSource != "bundled" {
+				_, _ = s.db.ExecContext(ctx,
+					`UPDATE skills SET source = 'bundled', updated_at = ? WHERE id = ?`,
+					time.Now().UTC(), existingID,
+				)
+				s.BumpVersion()
+			}
 			return existingID, false, existingFilePath, nil
 		}
 		if existingHash == nil && p.FileHash != nil {
 			_, _ = s.db.ExecContext(ctx,
-				`UPDATE skills SET file_hash = ?, updated_at = ? WHERE id = ?`,
+				`UPDATE skills SET file_hash = ?, source = 'bundled', updated_at = ? WHERE id = ?`,
 				p.FileHash, time.Now().UTC(), existingID,
 			)
 			return existingID, false, existingFilePath, nil
@@ -254,7 +266,7 @@ func (s *SQLiteSkillStore) UpsertSystemSkill(ctx context.Context, p store.SkillC
 		_, err = s.db.ExecContext(ctx,
 			`UPDATE skills SET name = ?, description = ?, version = ?, frontmatter = ?,
 			 file_path = ?, file_size = ?, file_hash = ?, is_system = 1,
-			 visibility = 'public', status = ?, updated_at = ?
+			 source = 'bundled', visibility = 'public', status = ?, updated_at = ?
 			 WHERE id = ?`,
 			p.Name, p.Description, p.Version, fmJSON,
 			p.FilePath, p.FileSize, p.FileHash, p.Status, time.Now().UTC(), existingID,
@@ -271,8 +283,8 @@ func (s *SQLiteSkillStore) UpsertSystemSkill(ctx context.Context, p store.SkillC
 	now := time.Now().UTC()
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO skills (id, name, slug, description, owner_id, visibility, version, status,
-		 is_system, frontmatter, file_path, file_size, file_hash, tenant_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, 'system', 'public', ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
+		 is_system, frontmatter, file_path, file_size, file_hash, source, tenant_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, 'system', 'public', ?, ?, 1, ?, ?, ?, ?, 'bundled', ?, ?, ?)`,
 		id, p.Name, p.Slug, p.Description, p.Version, p.Status,
 		fmJSON, p.FilePath, p.FileSize, p.FileHash, store.MasterTenantID, now, now,
 	)

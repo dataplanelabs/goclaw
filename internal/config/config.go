@@ -57,7 +57,29 @@ type Config struct {
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	Hooks     HooksConfig     `json:"hooks"`
 	Packages  PackagesConfig  `json:"packages"` // runtime package mgmt (GitHub updater)
+	OAuth     OAuthConfig     `json:"oauth,omitempty"` // 3rd-party OAuth (Google, etc.) — secrets from env only
 	mu        sync.RWMutex
+}
+
+// OAuthConfig holds 3rd-party OAuth integration config. ClientID + ClientSecret
+// + RedirectURL are read from env vars (NEVER persisted in config.json); the
+// struct exists so handlers + the refresh worker can read settings cleanly.
+type OAuthConfig struct {
+	Google OAuthGoogleConfig `json:"google,omitempty"`
+}
+
+// OAuthGoogleConfig — read from GOCLAW_GOOGLE_{CLIENT_ID,CLIENT_SECRET,REDIRECT_URL}.
+// When ClientID or ClientSecret is empty, the Google integration endpoints return
+// MsgOAuthNotConfigured so operators can deploy without OAuth wired.
+type OAuthGoogleConfig struct {
+	ClientID     string `json:"-"`
+	ClientSecret string `json:"-"`
+	RedirectURL  string `json:"-"`
+}
+
+// IsConfigured returns true when both client_id and client_secret are present.
+func (c OAuthGoogleConfig) IsConfigured() bool {
+	return c.ClientID != "" && c.ClientSecret != ""
 }
 
 // PackagesConfig tunes the runtime package update flow (Phase 1: GitHub

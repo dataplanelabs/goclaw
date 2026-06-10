@@ -21,8 +21,9 @@ type Registry struct {
 	aliases     map[string]string       // alias name → canonical tool name
 	disabled    map[string]bool         // tools disabled via admin UI (kept in registry, excluded from List)
 	mu          sync.RWMutex
-	rateLimiter *ToolRateLimiter // nil = no rate limiting
-	scrubbing   bool             // scrub credentials from output (default true)
+	rateLimiter  *ToolRateLimiter  // nil = no rate limiting
+	dailyLimiter *DailyToolLimiter // per-tool daily caps (configured via tool settings)
+	scrubbing    bool              // scrub credentials from output (default true)
 
 	// Per-registry tool groups (eliminates global map race condition).
 	// MCP tools register their groups here so each Loop has isolated namespace.
@@ -39,9 +40,10 @@ func NewRegistry() *Registry {
 		tools:      make(map[string]Tool),
 		metadata:   make(map[string]ToolMetadata),
 		aliases:    make(map[string]string),
-		disabled:   make(map[string]bool),
-		toolGroups: make(map[string][]string),
-		scrubbing:  true, // enabled by default
+		disabled:     make(map[string]bool),
+		toolGroups:   make(map[string][]string),
+		dailyLimiter: NewDailyToolLimiter(),
+		scrubbing:    true, // enabled by default
 	}
 	// Seed built-in tool groups (deep copy from package-level constant data)
 	for name, members := range builtinToolGroups {
@@ -207,6 +209,21 @@ func (r *Registry) ExecuteWithContext(ctx context.Context, name string, args map
 		}
 	}
 
+	// Per-tool daily cap (configured via the tool's builtin settings:
+	// daily_limit + daily_limit_scope). Counts only successful executions.
+	var dailyKey string
+	if r.dailyLimiter != nil {
+		if limit, scope := dailyLimitFor(ctx, name); limit > 0 {
+			dailyKey = dailyScopeKey(ctx, name, scope, channel, chatID)
+			if r.dailyLimiter.Count(dailyKey) >= limit {
+				slog.Warn("security.tool_daily_limit", "tool", name, "scope", scope, "limit", limit, "channel", channel)
+				return ErrorResult(fmt.Sprintf(
+					"Daily limit reached: %q is capped at %d per day (scope: %s). Tell the user the limit is reached and to try again tomorrow.",
+					name, limit, scope))
+			}
+		}
+	}
+
 	// Detect empty tool call arguments — typically caused by providers truncating
 	// or dropping arguments when output is too large (e.g. DashScope with long content).
 	// Give the model an actionable hint instead of a confusing "X is required" error.
@@ -225,6 +242,11 @@ func (r *Registry) ExecuteWithContext(ctx context.Context, name string, args map
 	start := time.Now()
 	result := safeExecute(tool, ctx, args)
 	duration := time.Since(start)
+
+	// Count successful executions toward the daily cap (failed gens don't consume quota).
+	if dailyKey != "" && result != nil && !result.IsError {
+		r.dailyLimiter.Incr(dailyKey)
+	}
 
 	// Scrub credentials from tool output before returning to LLM
 	if r.scrubbing {
@@ -356,9 +378,10 @@ func (r *Registry) Clone() *Registry {
 		metadata:    make(map[string]ToolMetadata, len(r.metadata)),
 		aliases:     make(map[string]string, len(r.aliases)),
 		disabled:    make(map[string]bool, len(r.disabled)),
-		toolGroups:  make(map[string][]string, len(r.toolGroups)),
-		rateLimiter: r.rateLimiter,
-		scrubbing:   r.scrubbing,
+		toolGroups:   make(map[string][]string, len(r.toolGroups)),
+		rateLimiter:  r.rateLimiter,
+		dailyLimiter: r.dailyLimiter, // shared (thread-safe, process-wide counters)
+		scrubbing:    r.scrubbing,
 	}
 	maps.Copy(clone.tools, r.tools)
 	maps.Copy(clone.metadata, r.metadata)

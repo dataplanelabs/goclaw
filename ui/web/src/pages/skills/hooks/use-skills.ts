@@ -212,6 +212,15 @@ export function useSkills() {
     [http],
   );
 
+  const getSkillFileBlob = useCallback(
+    async (id: string, path: string, version?: number) => {
+      const params: Record<string, string> = { raw: "true" };
+      if (version != null) params.version = String(version);
+      return http.fetchBlob(`/v1/skills/${id}/files/${encodeURIComponent(path)}`, params);
+    },
+    [http],
+  );
+
   const rescanDeps = useCallback(
     async () => {
       try {
@@ -303,7 +312,7 @@ export function useSkills() {
     uploadSkill, updateSkill, deleteSkill,
     listAgentGrants, grantSkillToAgent, grantSkillToAgents, revokeSkillFromAgent,
     deleteSkills, toggleSkills,
-    getSkillVersions, getSkillFiles, getSkillFileContent, rescanDeps, installDeps, installSingleDep, toggleSkill,
+    getSkillVersions, getSkillFiles, getSkillFileContent, getSkillFileBlob, rescanDeps, installDeps, installSingleDep, toggleSkill,
     setTenantConfig, deleteTenantConfig,
   };
 }

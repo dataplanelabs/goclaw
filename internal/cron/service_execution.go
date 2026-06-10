@@ -216,7 +216,9 @@ func (cs *Service) checkJobs() {
 	// agent loop stuck), the entire cron scheduler would stop checking for new
 	// due jobs. Now each job runs independently with panic recovery.
 	for _, dj := range dueJobs {
+		cs.jobWG.Add(1)
 		go func(id string, scheduledAtMS int64) {
+			defer cs.jobWG.Done()
 			defer safego.Recover(nil, "job_id", id)
 			cs.executeJobByID(id, scheduledAtMS)
 		}(dj.id, dj.scheduledAtMS)

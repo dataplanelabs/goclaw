@@ -44,8 +44,10 @@ func init() {
 		MsgInstanceNotFound:   "không tìm thấy phiên bản",
 
 		// Cron
-		MsgJobNotFound:     "không tìm thấy tác vụ",
-		MsgInvalidCronExpr: "biểu thức cron không hợp lệ: %s",
+		MsgJobNotFound:                "không tìm thấy tác vụ",
+		MsgInvalidCronExpr:            "biểu thức cron không hợp lệ: %s",
+		MsgCronDeliverChannelRequired: "cron job có deliver=true cần deliverChannel (tên kênh-instance, ví dụ 'zalo-annhien')",
+		MsgCronDeliverToRequired:      "cron job có deliver=true cần deliverTo (chat ID)",
 
 		// Config
 		MsgConfigHashMismatch: "cấu hình đã thay đổi (hash không khớp)",
@@ -113,6 +115,8 @@ func init() {
 		// Skills
 		MsgSkillsUpdateNotSupported: "skills.update không được hỗ trợ với skill dựa trên tệp",
 		MsgCannotResolveSkillID:     "không thể xác định ID skill dựa trên tệp",
+		MsgSkillManagedOverwrite:    "Skill này do gcplane quản lý. Cập nhật qua gcplane apply, hoặc tải lên lại với force_imperative=true (sẽ ghi audit log).",
+		MsgSkillInvalidSource:       "giá trị source không hợp lệ %q; chỉ chấp nhận: unknown, cli, gcplane",
 		MsgInvalidVisibility:        "visibility không hợp lệ %q: phải là private hoặc public",
 
 		// Logs
@@ -209,6 +213,17 @@ func init() {
 		MsgTtsParamOutOfRange:     "tham số TTS %q có giá trị %v nằm ngoài phạm vi [%v, %v]",
 		MsgTtsParamUnknownKey:     "tham số TTS %q không được nhà cung cấp này hỗ trợ",
 		MsgTtsMiniMaxVoicesFailed: "không tải được danh sách giọng đọc MiniMax: %s",
+
+		// VieNeu
+		MsgTtsVieneuSynthesisFailed:   "tổng hợp giọng nói VieNeu thất bại: %s",
+		MsgTtsVieneuVoicesFailed:      "không tải được danh sách giọng đọc VieNeu: %s",
+		MsgTtsVieneuRefAudioInvalid:   "âm thanh tham chiếu không hợp lệ: %s",
+		MsgTtsVieneuDaemonUnreachable: "không kết nối được tới VieNeu; vui lòng dùng image goclaw với ENABLE_FULL_SKILLS",
+		MsgVieneuRefAudioTooShort:     "âm thanh tham chiếu quá ngắn: %s",
+		MsgVieneuRefAudioTooLong:      "âm thanh tham chiếu quá dài: %s",
+		MsgVieneuRefTextRequired:      "cần có ref_text khi nhân bản giọng",
+		MsgVieneuMaxClonedVoices:      "đã đạt giới hạn giọng nhân bản cho mỗi tenant (%d)",
+		MsgVieneuClonedVoiceNotFound:  "không tìm thấy giọng nhân bản: %s",
 
 		// STT
 		MsgSTTAllProvidersFailed:     "Tất cả nhà cung cấp STT đều thất bại",
@@ -314,6 +329,46 @@ func init() {
 		MsgGrantEnvValueInvalid: "giá trị env không hợp lệ: %s",
 		MsgGrantEnvTooManyKeys:  "quá nhiều khóa env: tối đa 50",
 		MsgGrantEnvRevealLimit:  "đã vượt giới hạn yêu cầu xem env — vui lòng thử lại sau",
+
+		// Secure CLI execution
+		MsgSecureCliBinaryNotFound: "binary %q chưa được đăng ký cho secure exec",
+		MsgSecureCliNoGrant:        "agent chưa được cấp quyền cho binary %q",
+		MsgSecureCliDeniedByPolicy: "lời gọi bị từ chối bởi chính sách deny_args: %s",
+
+		// OAuth integrations
+		MsgOAuthStateMismatch:       "token trạng thái OAuth không khớp hoặc đã hết hạn — vui lòng thử lại",
+		MsgOAuthExchangeFailed:      "trao đổi mã OAuth thất bại: %s",
+		MsgOAuthBinaryNotFound:      "binary %q chưa được đăng ký cho tenant này",
+		MsgOAuthIntegrationNotFound: "không tìm thấy tích hợp nào cho %q",
+		MsgOAuthRevoked:             "thông tin đăng nhập Google đã bị thu hồi — vui lòng kết nối lại qua Settings → Integrations",
+		MsgOAuthNotConfigured:       "Google OAuth chưa được cấu hình trên máy chủ này",
+
+		// Standby mode
+		StandbyToolDescription:      "Tạm dừng trả lời trong cuộc trò chuyện hiện tại. Trợ lý vẫn quan sát và ghi nhớ tin nhắn nhưng sẽ không trả lời cho đến khi hết thời gian tạm dừng.",
+		StandbyToolParamDuration:    "Thời gian tạm dừng tính bằng giây (60-86400).",
+		StandbyToolParamReason:      "Lý do (tùy chọn) được ghi lại cùng lần tạm dừng.",
+		StandbyErrorInvalidDuration: "duration_seconds phải nằm trong khoảng 60 đến 86400",
+		StandbyErrorNoChannelCtx:    "enter_standby cần ngữ cảnh channel và không gọi được từ caller này",
+		StandbyEntered:              "Đã vào chế độ chờ trong %s (lý do: %s)",
+		StandbyRPCInvalidSchedule:   "lịch không hợp lệ: %s",
+		StandbyRPCNoPermission:      "cần quyền admin của tenant để sửa lịch channel",
+
+		TeamCaptureRPCNoPermission:    "cần quyền admin để bật/tắt thu thập trả lời của team",
+		TeamCaptureRPCInvalidConfig:   "cấu hình capture không hợp lệ: %s",
+		TeamCaptureJudgeAgentNotFound: "không tìm thấy judge agent %q trong tenant — hãy tạo agent này hoặc chọn agent_key khác",
+		TeamCaptureJudgeKeyRequired:   "phải có judge_agent_key khi bật judge_evaluation",
+		TeamCaptureScheduleInvalid:    "lịch judge không hợp lệ %q — dùng biểu thức cron 5 trường",
+		TeamEvalNotFound:              "không tìm thấy đánh giá trả lời của team",
+		TeamEvalJudgeError:            "đánh giá thất bại: %s",
+
+		TraceRetryPayloadOversize: "Tải dữ liệu quá lớn để chạy lại (>2 MB).",
+		TraceRetryLocked:          "Đang chạy lại — vui lòng chờ.",
+		TraceRetryAgentGone:       "Agent của trace này đã bị xóa.",
+		TraceRetryProviderGone:    "Provider của trace này đã bị xóa.",
+		TraceRetryPayloadMissing:  "Dữ liệu replay không còn khả dụng.",
+		TraceRetryConfirmRequired: "Lần chạy này đã gửi tin nhắn — xác nhận để chạy lại.",
+		TraceRetryStarted:         "Đã bắt đầu chạy lại.",
+		TraceRetryNotFailed:       "Chỉ có thể chạy lại trace đã kết thúc (run vẫn đang chạy).",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Đã forward sang %s theo yêu cầu: %q",

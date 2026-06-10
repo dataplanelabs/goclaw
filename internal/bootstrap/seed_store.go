@@ -17,21 +17,24 @@ import (
 type ChannelMeta struct {
 	ChannelType     string
 	DisplayName     string
-	DefaultTimezone string
+	ChannelTimezone string // from channel_instances.config.timezone, optional
+	DefaultTimezone string // workspace fallback
 }
 
 // shouldSkipBootstrap returns true when channel provides enough user info
-// to pre-fill USER.md, making the interactive bootstrap unnecessary.
-// Currently only Pancake channel qualifies (provides Facebook profile name).
+// to pre-fill USER.md, making the interactive bootstrap unnecessary. Any
+// channel that stamps a real-looking display name qualifies — the LLM can
+// still refine USER.md later via write_file.
 func shouldSkipBootstrap(meta *ChannelMeta) bool {
-	return meta != nil &&
-		meta.ChannelType == "pancake" &&
-		meta.DisplayName != ""
+	return meta != nil && meta.DisplayName != ""
 }
 
 // buildPrefilledUser generates USER.md content pre-filled with channel-provided contact info.
 func buildPrefilledUser(meta *ChannelMeta) string {
-	tz := meta.DefaultTimezone
+	tz := meta.ChannelTimezone
+	if tz == "" {
+		tz = meta.DefaultTimezone
+	}
 	if tz == "" {
 		tz = "(unknown)"
 	}
@@ -197,8 +200,8 @@ func SeedUserFiles(ctx context.Context, agentStore store.AgentStore, agentID uui
 	}
 
 	// Channel-provided contact info: skip bootstrap, pre-fill USER.md directly.
-	// Currently only Pancake channel (Facebook Messenger) provides enough user info
-	// (display_name from Facebook profile) to skip the interactive onboarding flow.
+	// Any channel that stamped a display name qualifies (telegram first_name,
+	// whatsapp push_name, feishu sender_name, zalo_personal display_name, etc.).
 	if shouldSkipBootstrap(channelMeta) {
 		userContent := buildPrefilledUser(channelMeta)
 		if err := retryOnBusy(func() error {

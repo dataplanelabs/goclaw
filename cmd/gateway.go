@@ -18,6 +18,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/cache"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/discord"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/facebook"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/feishu"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/pancake"
@@ -151,6 +152,10 @@ func runGateway() {
 	}
 
 	pgStores, traceCollector, snapshotWorker := setupStoresAndTracing(cfg, dataDir, msgBus)
+
+	if ttsTool != nil && pgStores.SystemConfigs != nil {
+		ttsTool.SetSystemConfigStore(pgStores.SystemConfigs)
+	}
 
 	// Recover from crashes: flip ghost 'summoning' rows to 'summon_failed'.
 	// Summon goroutines don't survive process restart; stale DB rows would trap the UI.
@@ -293,6 +298,36 @@ func runGateway() {
 	}
 	slog.Info("agents will be resolved lazily from database")
 
+	// Phase 5: wire JudgeWorker once agentRouter exists.
+	if pgStores.TeamReplyEvals != nil && pgStores.Tenants != nil && pgStores.Agents != nil {
+		resolver := consolidation.NewTenantJudgeResolver(pgStores.Tenants, pgStores.Agents, pgStores.ChannelInstances)
+		cleanupJudge := consolidation.RegisterJudgeWorker(consolidation.JudgeRegistrationDeps{
+			Evals:    pgStores.TeamReplyEvals,
+			Router:   agentRouter,
+			Resolver: resolver,
+			EventBus: domainBus,
+			Timeout:  60 * time.Second,
+		})
+		defer cleanupJudge()
+		slog.Info("judge worker registered for team-reply evaluations")
+
+		judgeWorker := consolidation.NewJudgeWorker(consolidation.JudgeDeps{
+			Evals:    pgStores.TeamReplyEvals,
+			Router:   agentRouter,
+			Resolver: resolver,
+			Bus:      domainBus,
+			Timeout:  60 * time.Second,
+		})
+		judgeScheduler := consolidation.NewJudgeScheduler(consolidation.JudgeSchedulerDeps{
+			Evals:     pgStores.TeamReplyEvals,
+			Instances: pgStores.ChannelInstances,
+			Bus:       domainBus,
+			Worker:    judgeWorker,
+		})
+		judgeScheduler.Start(context.Background())
+		defer judgeScheduler.Stop()
+	}
+
 	// Create gateway server and wire enforcement
 	server := gateway.NewServer(cfg, msgBus, agentRouter, pgStores.Sessions, toolsReg)
 	server.SetVersion(Version)
@@ -315,7 +350,18 @@ func runGateway() {
 	var mcpPool *mcpbridge.Pool
 	var mediaStore *media.Store
 	var postTurn tools.PostTurnProcessor
-	contextFileInterceptor, mcpPool, mediaStore, postTurn = wireExtras(pgStores, agentRouter, providerRegistry, modelReg, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, redisClient, domainBus)
+	var standbyRegistry *schedule.ScheduleRegistry
+	contextFileInterceptor, mcpPool, mediaStore, postTurn, standbyRegistry = wireExtras(pgStores, agentRouter, providerRegistry, modelReg, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, redisClient, domainBus)
+
+	// Wire push-reload into the enter_standby tool — registry is built in wireExtras,
+	// tool was registered in setupToolRegistry; close the loop here.
+	if standbyRegistry != nil {
+		if t, ok := toolsReg.Get("enter_standby"); ok {
+			if est, ok := t.(*tools.EnterStandbyTool); ok {
+				est.SetReload(standbyRegistry.Reload)
+			}
+		}
+	}
 	if mcpPool != nil {
 		defer mcpPool.Stop()
 	}
@@ -348,6 +394,8 @@ func runGateway() {
 	exportTokenStore := httpapi.InitExportTokenStore()
 	defer exportTokenStore.Stop()
 	agentsH, skillsH, tracesH, mcpH, channelInstancesH, providersH, builtinToolsH, pendingMessagesH, teamEventsH, secureCLIH, secureCLIGrantH, mcpUserCredsH := wireHTTP(pgStores, cfg.Agents.Defaults.Workspace, dataDir, bundledSkillsDir, msgBus, toolsReg, providerRegistry, modelReg, permPE.IsOwner, gatewayAddr, mcpToolLister)
+
+	wireTraceRetry(tracesH, pgStores, agentRouter, msgBus)
 
 	// Wire dependencies for system prompt preview parity.
 	if agentsH != nil {
@@ -454,6 +502,7 @@ func runGateway() {
 
 	// Channel manager
 	channelMgr := channels.NewManager(msgBus)
+	channelMgr.SetTracingStore(pgStores.Tracing)
 	deps.channelMgr = channelMgr
 
 	// Wire channel member resolver into permission grant paths (WS + HTTP) so
@@ -497,7 +546,8 @@ func runGateway() {
 		"zalo_personal_vote_poll",
 		"zalo_personal_lock_poll",
 		"zalo_personal_add_poll_options",
-		"zalo_personal_react",
+		"zalo_personal_create_reminder",
+		"zalo_personal_remove_reminder",
 	} {
 		if t, ok := toolsReg.Get(name); ok {
 			if za, ok := t.(tools.ZaloPersonalActionAware); ok {
@@ -512,11 +562,20 @@ func runGateway() {
 		instanceLoader = channels.NewInstanceLoader(pgStores.ChannelInstances, pgStores.Agents, channelMgr, msgBus, pgStores.Pairing)
 		instanceLoader.SetProviderRegistry(providerRegistry)
 		instanceLoader.SetPendingCompactionConfig(cfg.Channels.PendingCompaction)
+		instanceLoader.SetDefaultTimezone(cfg.Cron.DefaultTimezone)
 		instanceLoader.RegisterFactory(channels.TypeTelegram, telegram.FactoryWithStoresAndAudio(pgStores.Agents, pgStores.ConfigPermissions, pgStores.Teams, pgStores.SubagentTasks, pgStores.PendingMessages, audioMgr))
 		instanceLoader.RegisterFactory(channels.TypeDiscord, discord.FactoryWithStoresAndAudio(pgStores.Agents, pgStores.ConfigPermissions, pgStores.PendingMessages, audioMgr))
 		instanceLoader.RegisterFactory(channels.TypeFeishu, feishu.FactoryWithPendingStoreAndAudio(pgStores.PendingMessages, audioMgr))
 		instanceLoader.RegisterFactory(channels.TypeZaloBot, zalobot.Factory)
-		instanceLoader.RegisterFactory(channels.TypeZaloOA, zalooa.Factory(pgStores.ChannelInstances))
+		var oaJudgeResolver zalooa.JudgeAgentResolver
+		if pgStores.Tenants != nil && pgStores.Agents != nil {
+			oaJudgeResolver = zalooa.JudgeAgentResolver(consolidation.NewTenantJudgeResolver(pgStores.Tenants, pgStores.Agents, pgStores.ChannelInstances))
+		}
+		var oaContacts *store.ContactCollector
+		if pgStores.Contacts != nil {
+			oaContacts = store.NewContactCollector(pgStores.Contacts, cache.NewInMemoryCache[bool]())
+		}
+		instanceLoader.RegisterFactory(channels.TypeZaloOA, zalooa.FactoryWithDeps(pgStores.ChannelInstances, domainBus, pgStores.Sessions, pgStores.TeamReplyEvals, pgStores.TeamReplyAtomicWriter, oaContacts, oaJudgeResolver))
 		instanceLoader.RegisterFactory(channels.TypeZaloPersonal, zalopersonal.FactoryWithPendingStore(pgStores.PendingMessages, pgStores.Episodic))
 		instanceLoader.RegisterFactory(channels.TypeWhatsApp, whatsapp.FactoryWithDBAudio(pgStores.DB, pgStores.PendingMessages, "pgx", audioMgr, pgStores.BuiltinTools))
 		instanceLoader.RegisterFactory(channels.TypeSlack, slackchannel.FactoryWithPendingStore(pgStores.PendingMessages))
@@ -531,7 +590,7 @@ func runGateway() {
 	registerConfigChannels(cfg, channelMgr, msgBus, pgStores, instanceLoader, audioMgr)
 
 	// Register channels/instances/links/teams RPC methods
-	wireChannelRPCMethods(server, pgStores, channelMgr, agentRouter, msgBus, workspace)
+	wireChannelRPCMethods(server, pgStores, channelMgr, agentRouter, msgBus, workspace, standbyRegistry, domainBus)
 
 	// Wire channel event subscribers (cache invalidation, pairing, cascade disable)
 	wireChannelEventSubscribers(msgBus, server, pgStores, channelMgr, instanceLoader, pairingMethods, cfg)

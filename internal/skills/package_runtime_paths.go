@@ -73,6 +73,16 @@ func npmGlobalNodePath() string {
 	return filepath.Join(npmGlobalPrefix(), "lib", "node_modules")
 }
 
+func systemNpmGlobalNodePaths() []string {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return []string{
+		"/usr/local/lib/node_modules",
+		"/usr/lib/node_modules",
+	}
+}
+
 func ensureNpmGlobalEnv() {
 	prependProcessPath(npmGlobalBinDir())
 }
@@ -97,6 +107,9 @@ func npmCommandEnv() []string {
 
 	pathValue := prependPathValue(os.Getenv("PATH"), binDir)
 	nodePathValue := prependPathValue(os.Getenv("NODE_PATH"), nodePath)
+	for _, path := range systemNpmGlobalNodePaths() {
+		nodePathValue = appendPathValue(nodePathValue, path)
+	}
 	env = append(env,
 		"NPM_CONFIG_PREFIX="+prefix,
 		"PATH="+pathValue,
@@ -126,6 +139,22 @@ func prependPathValue(current, dir string) string {
 		return dir
 	}
 	return dir + string(os.PathListSeparator) + current
+}
+
+func appendPathValue(current, dir string) string {
+	if strings.TrimSpace(dir) == "" {
+		return current
+	}
+	parts := filepath.SplitList(current)
+	for _, p := range parts {
+		if p == dir {
+			return current
+		}
+	}
+	if current == "" {
+		return dir
+	}
+	return current + string(os.PathListSeparator) + dir
 }
 
 func uniqueNonEmptyPaths(paths ...string) []string {

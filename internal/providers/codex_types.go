@@ -56,6 +56,8 @@ type codexTokensDetails struct {
 
 type codexSSEEvent struct {
 	Type               string            `json:"type"`
+	Code               string            `json:"code,omitempty"`    // top-level "error" event
+	Message            string            `json:"message,omitempty"` // top-level "error" event
 	Delta              string            `json:"delta,omitempty"`
 	Text               string            `json:"text,omitempty"`
 	ItemID             string            `json:"item_id,omitempty"`

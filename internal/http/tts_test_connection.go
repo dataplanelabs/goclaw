@@ -17,6 +17,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/audio/gemini"
 	"github.com/nextlevelbuilder/goclaw/internal/audio/minimax"
 	"github.com/nextlevelbuilder/goclaw/internal/audio/openai"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
@@ -50,6 +51,7 @@ var supportedTestProviders = map[string]bool{
 	"edge":       true,
 	"minimax":    true,
 	"gemini":     true,
+	"vieneu":     true,
 }
 
 // providersRequiringAPIKey lists providers that need an API key.
@@ -236,6 +238,12 @@ func createEphemeralTTSProvider(req testConnectionRequest) (audio.TTSProvider, e
 			APIKey:    req.APIKey,
 			APIBase:   req.APIBase,
 			Voice:     req.VoiceID,
+			Model:     req.ModelID,
+			TimeoutMs: req.TimeoutMs,
+		}), nil
+	case "vieneu":
+		return vieneu.NewProvider(vieneu.Config{
+			VoiceID:   req.VoiceID,
 			Model:     req.ModelID,
 			TimeoutMs: req.TimeoutMs,
 		}), nil

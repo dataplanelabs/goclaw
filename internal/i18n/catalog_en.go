@@ -44,8 +44,10 @@ func init() {
 		MsgInstanceNotFound:   "instance not found",
 
 		// Cron
-		MsgJobNotFound:     "job not found",
-		MsgInvalidCronExpr: "invalid cron expression: %s",
+		MsgJobNotFound:                "job not found",
+		MsgInvalidCronExpr:            "invalid cron expression: %s",
+		MsgCronDeliverChannelRequired: "cron job with deliver=true requires deliverChannel (channel-instance name like 'zalo-annhien')",
+		MsgCronDeliverToRequired:      "cron job with deliver=true requires deliverTo (chat ID)",
 
 		// Config
 		MsgConfigHashMismatch: "config has changed (hash mismatch)",
@@ -113,6 +115,8 @@ func init() {
 		// Skills
 		MsgSkillsUpdateNotSupported: "skills.update not supported for file-based skills",
 		MsgCannotResolveSkillID:     "cannot resolve skill ID for file-based skill",
+		MsgSkillManagedOverwrite:    "This skill is gcplane-managed. Update via gcplane apply, or re-upload with force_imperative=true (audit-logged).",
+		MsgSkillInvalidSource:       "invalid source value %q; allowed: unknown, cli, gcplane",
 		MsgInvalidVisibility:        "invalid visibility %q: must be one of private, public",
 
 		// Logs
@@ -209,6 +213,17 @@ func init() {
 		MsgTtsParamOutOfRange:     "TTS param %q value %v is out of range [%v, %v]",
 		MsgTtsParamUnknownKey:     "TTS param %q is not supported by this provider",
 		MsgTtsMiniMaxVoicesFailed: "failed to fetch MiniMax voices: %s",
+
+		// VieNeu
+		MsgTtsVieneuSynthesisFailed:   "VieNeu synthesis failed: %s",
+		MsgTtsVieneuVoicesFailed:      "failed to fetch VieNeu voices: %s",
+		MsgTtsVieneuRefAudioInvalid:   "reference audio invalid: %s",
+		MsgTtsVieneuDaemonUnreachable: "VieNeu daemon unreachable; ensure goclaw is built with ENABLE_FULL_SKILLS",
+		MsgVieneuRefAudioTooShort:     "reference audio too short: %s",
+		MsgVieneuRefAudioTooLong:      "reference audio too long: %s",
+		MsgVieneuRefTextRequired:      "ref_text required for voice cloning",
+		MsgVieneuMaxClonedVoices:      "max cloned voices per tenant reached (%d)",
+		MsgVieneuClonedVoiceNotFound:  "cloned voice not found: %s",
 
 		// STT
 		MsgSTTAllProvidersFailed:     "All STT providers failed",
@@ -314,6 +329,46 @@ func init() {
 		MsgGrantEnvValueInvalid: "invalid env value: %s",
 		MsgGrantEnvTooManyKeys:  "too many env keys: max 50",
 		MsgGrantEnvRevealLimit:  "rate limit exceeded for env reveal — try again later",
+
+		// Secure CLI execution
+		MsgSecureCliBinaryNotFound: "binary %q is not registered for secure exec",
+		MsgSecureCliNoGrant:        "agent has no grant for binary %q",
+		MsgSecureCliDeniedByPolicy: "call denied by deny_args policy: %s",
+
+		// OAuth integrations
+		MsgOAuthStateMismatch:       "OAuth state token mismatch or expired — please try again",
+		MsgOAuthExchangeFailed:      "OAuth code exchange failed: %s",
+		MsgOAuthBinaryNotFound:      "secure CLI binary %q is not registered for this tenant",
+		MsgOAuthIntegrationNotFound: "no integration found for %q",
+		MsgOAuthRevoked:             "Google credentials revoked — please reconnect via Settings → Integrations",
+		MsgOAuthNotConfigured:       "Google OAuth is not configured on this server",
+
+		// Standby mode
+		StandbyToolDescription:      "Pause replies in the current thread for a duration. The agent will still observe and remember messages but will not reply until the pause expires.",
+		StandbyToolParamDuration:    "Pause duration in seconds (60-86400).",
+		StandbyToolParamReason:      "Optional reason recorded with the pause.",
+		StandbyErrorInvalidDuration: "duration_seconds must be between 60 and 86400",
+		StandbyErrorNoChannelCtx:    "enter_standby requires channel context and cannot be called from this caller type",
+		StandbyEntered:              "Entered standby mode for %s (reason: %s)",
+		StandbyRPCInvalidSchedule:   "invalid schedule: %s",
+		StandbyRPCNoPermission:      "tenant admin required to edit channel schedules",
+
+		TeamCaptureRPCNoPermission:    "tenant admin required to toggle team-reply capture",
+		TeamCaptureRPCInvalidConfig:   "invalid capture config: %s",
+		TeamCaptureJudgeAgentNotFound: "judge agent %q not found in this tenant — create it first or pick an existing agent_key",
+		TeamCaptureJudgeKeyRequired:   "judge_agent_key is required when judge_evaluation is enabled",
+		TeamCaptureScheduleInvalid:    "invalid judge schedule %q — use a 5-field cron expression",
+		TeamEvalNotFound:              "team reply evaluation not found",
+		TeamEvalJudgeError:            "judge evaluation failed: %s",
+
+		TraceRetryPayloadOversize: "Payload too large to replay (>2 MB).",
+		TraceRetryLocked:          "Retry already in progress.",
+		TraceRetryAgentGone:       "The agent for this trace was deleted.",
+		TraceRetryProviderGone:    "The provider for this trace was removed.",
+		TraceRetryPayloadMissing:  "Replay data no longer available.",
+		TraceRetryConfirmRequired: "This run already sent a message — confirm to retry.",
+		TraceRetryStarted:         "Retry started.",
+		TraceRetryNotFailed:       "Only finished traces can be retried (run is still in progress).",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",

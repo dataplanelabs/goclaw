@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"time"
 )
 
 // ctxKeyChannel is the context key for the current channel name (e.g. "telegram").
@@ -304,34 +305,74 @@ func (m *Manager) SynthesizeWithFallback(ctx context.Context, text string, opts 
 // genericAgentParams must use the generic allow-list keys (speed, emotion, style).
 // Passing nil is safe and produces the same behaviour as SynthesizeWithFallback.
 func (m *Manager) SynthesizeWithFallbackAdapted(ctx context.Context, text string, opts TTSOptions, genericAgentParams map[string]any) (*SynthResult, error) {
-	var providerErrs []error
-	if p, ok := m.ttsProviders[m.primary]; ok {
-		attemptOpts := m.withAdaptedParams(opts, m.primary, genericAgentParams)
-		if result, err := p.Synthesize(ctx, text, attemptOpts); err == nil {
-			return result, nil
-		} else {
-			slog.Warn("tts primary provider failed, trying fallback", "provider", m.primary, "error", err)
-			providerErrs = append(providerErrs, fmt.Errorf("%s: %w", m.primary, err))
-		}
-	}
-	for name, p := range m.ttsProviders {
-		if name == m.primary {
-			continue
-		}
-		attemptOpts := m.withAdaptedParams(opts, name, genericAgentParams)
-		result, err := p.Synthesize(ctx, text, attemptOpts)
-		if err == nil {
-			slog.Info("tts fallback succeeded", "provider", name)
-			return result, nil
-		}
-		slog.Warn("tts fallback provider failed", "provider", name, "error", err)
-		providerErrs = append(providerErrs, fmt.Errorf("%s: %w", name, err))
-	}
-	if len(providerErrs) == 0 {
+	chain := m.orderedTTSChain()
+	if len(chain) == 0 {
 		return nil, fmt.Errorf("no tts providers registered")
+	}
+
+	var providerErrs []error
+	for i, name := range chain {
+		attemptOpts := opts
+		if name != m.primary {
+			// Fallback providers ignore the primary's voice/model selection.
+			attemptOpts.Voice = ""
+			attemptOpts.Model = ""
+		}
+		attemptOpts = m.withAdaptedParams(attemptOpts, name, genericAgentParams)
+
+		// Bound each attempt to its own slice of the remaining deadline so a slow
+		// primary can't burn the whole budget and hand the fallback an already
+		// expired context (which then fails instantly without ever running).
+		attemptCtx, cancel := perAttemptContext(ctx, len(chain)-i)
+		result, err := m.ttsProviders[name].Synthesize(attemptCtx, text, attemptOpts)
+		if cancel != nil {
+			cancel()
+		}
+		if err == nil {
+			if i > 0 {
+				slog.Info("tts fallback succeeded", "provider", name)
+			}
+			return result, nil
+		}
+		if i == 0 {
+			slog.Warn("tts primary provider failed, trying fallback", "provider", name, "error", err)
+		} else {
+			slog.Warn("tts fallback provider failed", "provider", name, "error", err)
+		}
+		providerErrs = append(providerErrs, fmt.Errorf("%s: %w", name, err))
 	}
 	// errors.Join preserves all sentinel errors so errors.Is(err, sentinel) works downstream.
 	return nil, errors.Join(providerErrs...)
+}
+
+// orderedTTSChain returns the provider names to try, primary first then the
+// rest, so fallback order is deterministic (map iteration is not).
+func (m *Manager) orderedTTSChain() []string {
+	chain := make([]string, 0, len(m.ttsProviders))
+	if _, ok := m.ttsProviders[m.primary]; ok {
+		chain = append(chain, m.primary)
+	}
+	for name := range m.ttsProviders {
+		if name != m.primary {
+			chain = append(chain, name)
+		}
+	}
+	return chain
+}
+
+// perAttemptContext gives one provider attempt an even slice of the remaining
+// deadline (remaining / providersLeft). The last provider keeps the full
+// remainder, and a deadline-less ctx is returned unchanged.
+func perAttemptContext(ctx context.Context, providersLeft int) (context.Context, context.CancelFunc) {
+	dl, ok := ctx.Deadline()
+	if !ok || providersLeft <= 1 {
+		return ctx, nil
+	}
+	remaining := time.Until(dl)
+	if remaining <= 0 {
+		return ctx, nil
+	}
+	return context.WithTimeout(ctx, remaining/time.Duration(providersLeft))
 }
 
 // withAdaptedParams returns a copy of opts with genericAgentParams adapted

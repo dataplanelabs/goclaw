@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"log/slog"
 	"net/http"
 	"os"
@@ -243,6 +244,15 @@ func (h *SkillsHandler) handleReadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if readErr != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": i18n.T(locale, i18n.MsgFileNotFound)})
+		return
+	}
+
+	if strings.EqualFold(r.URL.Query().Get("raw"), "true") {
+		w.Header().Set("Content-Type", http.DetectContentType(data))
+		if strings.EqualFold(r.URL.Query().Get("download"), "true") {
+			w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(relPath)+`"`)
+		}
+		http.ServeContent(w, r, filepath.Base(relPath), info.ModTime(), bytes.NewReader(data))
 		return
 	}
 

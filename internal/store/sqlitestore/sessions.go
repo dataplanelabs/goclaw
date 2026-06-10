@@ -32,6 +32,12 @@ func NewSQLiteSessionStore(db *sql.DB) *SQLiteSessionStore {
 	return &SQLiteSessionStore{db: db, cache: make(map[string]*store.SessionData)}
 }
 
+func (s *SQLiteSessionStore) invalidateCache(ctx context.Context, key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.cache, sessionCacheKey(ctx, key))
+}
+
 // sessionCacheKey prefixes session key with tenant UUID to prevent cross-tenant cache collisions.
 func sessionCacheKey(ctx context.Context, key string) string {
 	tid := store.TenantIDFromContext(ctx)

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -758,15 +759,201 @@ func skillMarkdown(name, slug string) string {
 	return "---\nname: " + name + "\nslug: " + slug + "\n---\nSkill body\n"
 }
 
+// newZipUploadRequestWithSource builds an upload request with explicit `source`
+// and `force_imperative` multipart form fields. Used by the Phase 1 ownership-gate
+// tests. Empty source omits the field (handler defaults to "unknown").
+func newZipUploadRequestWithSource(t *testing.T, ctx context.Context, files map[string]string, source string, forceImperative bool) *http.Request {
+	t.Helper()
+
+	var zipBuf bytes.Buffer
+	zw := zip.NewWriter(&zipBuf)
+	for name, content := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("zip create %s: %v", name, err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatalf("zip write %s: %v", name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
+	}
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("file", "skill.zip")
+	if err != nil {
+		t.Fatalf("multipart file: %v", err)
+	}
+	if _, err := part.Write(zipBuf.Bytes()); err != nil {
+		t.Fatalf("multipart write: %v", err)
+	}
+	if source != "" {
+		if err := mw.WriteField("source", source); err != nil {
+			t.Fatalf("multipart source: %v", err)
+		}
+	}
+	if forceImperative {
+		if err := mw.WriteField("force_imperative", "true"); err != nil {
+			t.Fatalf("multipart force_imperative: %v", err)
+		}
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("multipart close: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/skills/upload", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	return req.WithContext(ctx)
+}
+
+// TestHandleUpload_RefusesGcplaneOverwriteWithoutForce verifies the source-of-truth
+// ownership gate: a skill stamped source=gcplane cannot be silently overwritten
+// from a different source. Returns 409 with managed_skill_overwrite error_code.
+func TestHandleUpload_RefusesGcplaneOverwriteWithoutForce(t *testing.T) {
+	handler, _, ctx, _ := newTestUploadHandler(t)
+	stubUploadDepFns(t,
+		func(context.Context, *skills.SkillManifest, []string) (*skills.InstallResult, error) {
+			return nil, nil
+		},
+		func(*skills.SkillManifest) (bool, []string) { return true, nil },
+	)
+
+	// Step 1: gcplane uploads the skill.
+	w1 := httptest.NewRecorder()
+	handler.handleUpload(w1, newZipUploadRequestWithSource(t, ctx, map[string]string{
+		"SKILL.md": skillMarkdown("Managed Skill", "owned-by-gcplane"),
+	}, "gcplane", false))
+	if w1.Code != http.StatusCreated {
+		t.Fatalf("gcplane create: status = %d, body = %s", w1.Code, w1.Body.String())
+	}
+
+	// Step 2: CLI tries to overwrite with different content, no force flag → 409.
+	w2 := httptest.NewRecorder()
+	handler.handleUpload(w2, newZipUploadRequestWithSource(t, ctx, map[string]string{
+		"SKILL.md": skillMarkdown("Managed Skill", "owned-by-gcplane") + "\nDIFFERENT CONTENT\n",
+	}, "cli", false))
+	if w2.Code != http.StatusConflict {
+		t.Fatalf("cli overwrite (no force): status = %d, want 409; body = %s", w2.Code, w2.Body.String())
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(w2.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode 409 body: %v", err)
+	}
+	if got, want := resp["error_code"], "managed_skill_overwrite"; got != want {
+		t.Fatalf("error_code = %v, want %v", got, want)
+	}
+	if got, want := resp["managed_by"], "gcplane"; got != want {
+		t.Fatalf("managed_by = %v, want %v", got, want)
+	}
+}
+
+// TestHandleUpload_AllowsGcplaneOverwriteWithForce verifies force_imperative=true
+// bypasses the ownership gate. (Audit-log emission is verified at the integration
+// layer via slog handler injection — a follow-up to keep this test focused.)
+func TestHandleUpload_AllowsGcplaneOverwriteWithForce(t *testing.T) {
+	handler, _, ctx, _ := newTestUploadHandler(t)
+	stubUploadDepFns(t,
+		func(context.Context, *skills.SkillManifest, []string) (*skills.InstallResult, error) {
+			return nil, nil
+		},
+		func(*skills.SkillManifest) (bool, []string) { return true, nil },
+	)
+
+	w1 := httptest.NewRecorder()
+	handler.handleUpload(w1, newZipUploadRequestWithSource(t, ctx, map[string]string{
+		"SKILL.md": skillMarkdown("Managed Skill", "force-target"),
+	}, "gcplane", false))
+	if w1.Code != http.StatusCreated {
+		t.Fatalf("gcplane create: status = %d, body = %s", w1.Code, w1.Body.String())
+	}
+
+	w2 := httptest.NewRecorder()
+	handler.handleUpload(w2, newZipUploadRequestWithSource(t, ctx, map[string]string{
+		"SKILL.md": skillMarkdown("Managed Skill", "force-target") + "\nFORCED OVERRIDE\n",
+	}, "cli", true))
+	if w2.Code != http.StatusCreated {
+		t.Fatalf("cli force overwrite: status = %d, want 201; body = %s", w2.Code, w2.Body.String())
+	}
+}
+
+// TestHandleUpload_RejectsInvalidSource verifies the source enum allow-list:
+// case-mismatched ("GCPLANE") and unknown values must 400 before the gate runs.
+func TestHandleUpload_RejectsInvalidSource(t *testing.T) {
+	handler, _, ctx, _ := newTestUploadHandler(t)
+	stubUploadDepFns(t,
+		func(context.Context, *skills.SkillManifest, []string) (*skills.InstallResult, error) {
+			return nil, nil
+		},
+		func(*skills.SkillManifest) (bool, []string) { return true, nil },
+	)
+
+	for _, source := range []string{"GCPLANE", "Gcplane", "bundled", "garbage", "ev1l"} {
+		t.Run("source="+source, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			handler.handleUpload(w, newZipUploadRequestWithSource(t, ctx, map[string]string{
+				"SKILL.md": skillMarkdown("X", "x-"+strings.ToLower(source)),
+			}, source, false))
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body = %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestHandleUpload_GateIsTenantScoped verifies the ownership gate does NOT fire
+// across tenants — tenant B uploading the same slug doesn't see tenant A's
+// gcplane stamp.
+func TestHandleUpload_GateIsTenantScoped(t *testing.T) {
+	handler, _, ctxA, _ := newTestUploadHandler(t)
+	stubUploadDepFns(t,
+		func(context.Context, *skills.SkillManifest, []string) (*skills.InstallResult, error) {
+			return nil, nil
+		},
+		func(*skills.SkillManifest) (bool, []string) { return true, nil },
+	)
+
+	// Tenant A (master): gcplane uploads.
+	w1 := httptest.NewRecorder()
+	handler.handleUpload(w1, newZipUploadRequestWithSource(t, ctxA, map[string]string{
+		"SKILL.md": skillMarkdown("Per-Tenant", "shared-slug"),
+	}, "gcplane", false))
+	if w1.Code != http.StatusCreated {
+		t.Fatalf("tenant A gcplane create: status = %d, body = %s", w1.Code, w1.Body.String())
+	}
+
+	// Tenant B: same slug, CLI source, distinct content (sidesteps the orthogonal
+	// content-hash dedup which the stub keys per-slug not per-tenant).
+	// Expected: 201 created — the gcplane gate is tenant-scoped so tenant A's stamp
+	// must not block tenant B.
+	tenantB := uuid.New()
+	ctxB := store.WithLocale(
+		store.WithTenantID(
+			store.WithUserID(context.Background(), "user-b"),
+			tenantB,
+		),
+		"en",
+	)
+	w2 := httptest.NewRecorder()
+	handler.handleUpload(w2, newZipUploadRequestWithSource(t, ctxB, map[string]string{
+		"SKILL.md": skillMarkdown("Per-Tenant", "shared-slug") + "\nTENANT B CONTENT\n",
+	}, "cli", false))
+	if w2.Code != http.StatusCreated {
+		t.Fatalf("tenant B cli create: status = %d, want 201; body = %s", w2.Code, w2.Body.String())
+	}
+}
+
 type skillManageStoreStub struct {
-	baseDir     string
-	version     int64
-	nextBySlug  map[string]int
-	skills      map[uuid.UUID]store.SkillInfo
-	systemDirs  map[string]string
-	hashBySlug  map[string]string // slug -> SKILL.md content hash (most recent)
-	grantCalls  []skillGrantCall
-	grantErrors map[uuid.UUID]error
+	baseDir      string
+	version      int64
+	nextBySlug   map[string]int
+	skills       map[uuid.UUID]store.SkillInfo
+	systemDirs   map[string]string
+	hashBySlug   map[string]string // slug -> SKILL.md content hash (most recent)
+	sourceBySlug map[string]string // slug -> source attribution (unknown|cli|gcplane|bundled)
+	grantCalls   []skillGrantCall
+	grantErrors  map[uuid.UUID]error
 }
 
 type skillGrantCall struct {
@@ -779,12 +966,13 @@ type skillGrantCall struct {
 
 func newSkillManageStoreStub(baseDir string) *skillManageStoreStub {
 	return &skillManageStoreStub{
-		baseDir:     baseDir,
-		nextBySlug:  map[string]int{},
-		skills:      map[uuid.UUID]store.SkillInfo{},
-		systemDirs:  map[string]string{},
-		hashBySlug:  map[string]string{},
-		grantErrors: map[uuid.UUID]error{},
+		baseDir:      baseDir,
+		nextBySlug:   map[string]int{},
+		skills:       map[uuid.UUID]store.SkillInfo{},
+		systemDirs:   map[string]string{},
+		hashBySlug:   map[string]string{},
+		sourceBySlug: map[string]string{},
+		grantErrors:  map[uuid.UUID]error{},
 	}
 }
 
@@ -891,6 +1079,14 @@ func (s *skillManageStoreStub) CreateSkillManaged(ctx context.Context, p store.S
 	if p.FileHash != nil {
 		s.hashBySlug[p.Slug] = *p.FileHash
 	}
+	// Track ownership source for the gcplane-managed overwrite gate.
+	// Key is composite (tenant|slug) so cross-tenant tests can verify the gate
+	// scopes per tenant, mirroring the WHERE tenant_id=? in the real impls.
+	src := p.Source
+	if src == "" {
+		src = "unknown"
+	}
+	s.sourceBySlug[tenantID.String()+"|"+p.Slug] = src
 	return id, nil
 }
 
@@ -902,6 +1098,18 @@ func (s *skillManageStoreStub) GetSkillHashBySlug(_ context.Context, slug string
 	// Find the latest version for this slug.
 	version := s.nextBySlug[slug]
 	return hash, version, true
+}
+
+func (s *skillManageStoreStub) GetSkillSourceBySlug(ctx context.Context, slug string) (string, bool) {
+	tenantID := store.TenantIDFromContext(ctx)
+	if tenantID == uuid.Nil {
+		tenantID = store.MasterTenantID
+	}
+	src, ok := s.sourceBySlug[tenantID.String()+"|"+slug]
+	if !ok {
+		return "", false
+	}
+	return src, true
 }
 
 func (s *skillManageStoreStub) UpdateSkill(ctx context.Context, id uuid.UUID, updates map[string]any) error {

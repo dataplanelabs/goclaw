@@ -2,17 +2,22 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/audio"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu/refstore"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway/methods"
 	httpapi "github.com/nextlevelbuilder/goclaw/internal/http"
 	mcpbridge "github.com/nextlevelbuilder/goclaw/internal/mcp"
 	"github.com/nextlevelbuilder/goclaw/internal/media"
+	"github.com/nextlevelbuilder/goclaw/internal/oauth"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/store/pg"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
@@ -95,6 +100,27 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	}
 	if h.secureCLIGrant != nil {
 		d.server.SetSecureCLIGrantHandler(h.secureCLIGrant)
+	}
+
+	// B3-01: per-operator Google integrations. Wire only when SecureCLI store
+	// exists; the handler returns MsgOAuthNotConfigured when client_id/secret
+	// env vars are unset, so safe to register unconditionally otherwise.
+	if d.pgStores != nil && d.pgStores.SecureCLI != nil {
+		// B3-01.1: GoogleClientManager resolves config per-tenant (DB rows in
+		// config_secrets + system_configs) with env-var fallback.
+		googleManager := oauth.NewGoogleClientManager(d.cfg.OAuth.Google, d.pgStores.ConfigSecrets, d.pgStores.SystemConfigs)
+		uiBase := d.cfg.Gateway.UIBaseURL
+		integrationsH := httpapi.NewIntegrationsHandler(d.pgStores.SecureCLI, googleManager, d.msgBus, uiBase)
+		d.server.SetIntegrationsHandler(integrationsH)
+
+		// B3-01 Phase 4: refresh worker — uses the manager so each row is
+		// refreshed via its OWNING tenant's OAuth client.
+		tick := envDurationSeconds("GOCLAW_OAUTH_REFRESH_TICK_SECONDS", 24*time.Hour)
+		threshold := envDurationSeconds("GOCLAW_OAUTH_REFRESH_THRESHOLD_SECONDS", 7*24*time.Hour)
+		worker := oauth.NewRefreshWorker(d.pgStores.SecureCLI, googleManager, tick, threshold)
+		worker.Start(context.Background())
+		healthH := httpapi.NewOAuthRefreshHealthHandler(worker)
+		d.server.SetOAuthRefreshHealthHandler(healthH)
 	}
 
 	// Activity audit log API
@@ -252,6 +278,7 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	// V3: Knowledge Vault document API
 	if d.pgStores != nil && d.pgStores.Vault != nil {
 		vh := httpapi.NewVaultHandler(d.pgStores.Vault, d.pgStores.Teams, d.workspace, d.domainBus, d.pgStores.Agents, d.pgStores.Teams)
+		vh.SetContactStore(d.pgStores.Contacts)
 		vh.SetEnrichProgress(d.enrichProgress)
 		vh.SetEnrichWorker(d.enrichWorker)
 		d.server.SetVaultHandler(vh)
@@ -286,7 +313,7 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	d.server.SetFilesHandler(httpapi.NewFilesHandler(d.workspace, d.dataDir))
 
 	// Storage file management — browse/delete files under the resolved workspace directory.
-	d.server.SetStorageHandler(httpapi.NewStorageHandler(d.workspace, d.pgStores.Tenants))
+	d.server.SetStorageHandler(httpapi.NewStorageHandler(d.workspace, d.pgStores.Tenants).SetContactStore(d.pgStores.Contacts))
 
 	// Media upload endpoint — accepts multipart file uploads, returns temp path + MIME type.
 	d.server.SetMediaUploadHandler(httpapi.NewMediaUploadHandler())
@@ -301,6 +328,7 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	// TTL 1h + LRU cap 1000 tenants.
 	{
 		voiceCache := audio.NewVoiceCache(1*time.Hour, 1000)
+		d.voiceCache = voiceCache
 		var secretStore store.ConfigSecretsStore
 		if d.pgStores != nil && d.pgStores.ConfigSecrets != nil {
 			secretStore = d.pgStores.ConfigSecrets
@@ -310,6 +338,9 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 			tenantStore = d.pgStores.Tenants
 		}
 		voicesH := httpapi.NewVoicesHandler(voiceCache, secretStore, tenantStore)
+		if d.audioMgr != nil {
+			voicesH.SetManager(d.audioMgr)
+		}
 		d.server.SetVoicesHandler(voicesH)
 		// Wire WS method — provider nil means each request resolves key via secretStore at HTTP layer.
 		// For WS, use same cache. Provider is resolved via secretStore at WS level in a future phase.
@@ -339,6 +370,35 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 		d.server.SetTTSConfigHandler(httpapi.NewTTSConfigHandler(d.pgStores.SystemConfigs, d.pgStores.ConfigSecrets, d.pgStores.Tenants))
 	}
 
+	// VieNeu cloned-voice support — initialize refstore + attach lookup to the
+	// registered Provider (if any), then wire the HTTP CRUD handler.
+	if d.pgStores.VieneuClonedVoices != nil && d.audioMgr != nil {
+		if rs, err := refstore.New(filepath.Join(d.dataDir, "vieneu-refs")); err != nil {
+			slog.Warn("vieneu refstore init failed", "err", err)
+		} else {
+			d.vieneuRefStore = rs
+			if p, ok := d.audioMgr.GetProvider("vieneu"); ok {
+				if vp, ok := p.(*vieneu.Provider); ok {
+					vp.SetClonedVoices(&vieneuClonedAdapter{
+						store:    d.pgStores.VieneuClonedVoices,
+						refStore: rs,
+					})
+					d.vieneuDaemonURL = "http://127.0.0.1:7333"
+					if e := d.cfg.Tts.VieNeu.Endpoint; e != "" {
+						d.vieneuDaemonURL = e
+					}
+				}
+			}
+			d.server.SetTTSVieneuVoicesHandler(httpapi.NewTTSVieneuVoicesHandler(
+				d.pgStores.VieneuClonedVoices,
+				rs,
+				d.vieneuDaemonURL,
+				d.pgStores.Tenants,
+				d.voiceCache,
+			))
+		}
+	}
+
 	// Workstations API — Standard edition only.
 	// Lite edition MUST NOT expose these routes (silent orphan data + contract violation).
 	if edition.Current().Name != "lite" {
@@ -365,4 +425,19 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 		backfillWebFetchSettings(context.Background(), d.pgStores.BuiltinTools)
 		applyBuiltinToolDisables(context.Background(), d.pgStores.BuiltinTools, d.toolsReg)
 	}
+}
+
+// envDurationSeconds reads an integer env var (seconds) and returns the
+// matching time.Duration; falls back to defaultDur when unset/invalid.
+func envDurationSeconds(key string, defaultDur time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultDur
+	}
+	var secs int
+	if _, err := fmt.Sscanf(v, "%d", &secs); err != nil || secs <= 0 {
+		slog.Warn("invalid duration env var, using default", "key", key, "value", v, "default", defaultDur)
+		return defaultDur
+	}
+	return time.Duration(secs) * time.Second
 }

@@ -9,13 +9,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	mediapkg "github.com/nextlevelbuilder/goclaw/internal/channels/media"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 )
 
 // videoGenProviderPriority is the default order for video generation providers.
-var videoGenProviderPriority = []string{"gemini", "minimax", "openrouter", "byteplus"}
+var videoGenProviderPriority = []string{"gemini", "minimax", "openrouter", "byteplus", "dashscope"}
 
 // videoGenModelDefaults maps provider names to default video generation models.
 var videoGenModelDefaults = map[string]string{
@@ -23,6 +22,7 @@ var videoGenModelDefaults = map[string]string{
 	"minimax":    "MiniMax-Hailuo-2.3",
 	"openrouter": "google/veo-3.1-lite-generate-preview",
 	"byteplus":   "seedance-1-5-pro",
+	"dashscope":  "wan2.2-t2v-plus",
 }
 
 // maxImageToVideoBytes is the maximum image file size for image-to-video (20 MB).
@@ -194,8 +194,12 @@ func (t *CreateVideoTool) Execute(ctx context.Context, args map[string]any) *Res
 		slog.Info("create_video: file saved", "path", videoPath, "size", fi.Size(), "data_len", len(chainResult.Data))
 	}
 
-	result := &Result{ForLLM: fmt.Sprintf("MEDIA:%s\nUse the EXACT filename when referencing: %s", videoPath, filepath.Base(videoPath))}
-	result.Media = []bus.MediaFile{{Path: videoPath, MimeType: "video/mp4", Filename: filepath.Base(videoPath)}}
+	result := &Result{ForLLM: fmt.Sprintf(
+		"Generated video saved to: %s\n"+
+			"To share it with the user, call `send_file(path=%q)` in this turn — "+
+			"the video is NOT auto-delivered. Pass the path EXACTLY as shown.",
+		videoPath, videoPath,
+	)}
 	result.Deliverable = fmt.Sprintf("[Generated video: %s]\nPrompt: %s", filepath.Base(videoPath), prompt)
 	if t.vaultIntc != nil {
 		go t.vaultIntc.AfterWriteMedia(context.WithoutCancel(ctx), videoPath, prompt, "video/mp4")
@@ -227,8 +231,9 @@ func (t *CreateVideoTool) callProvider(ctx context.Context, cp credentialProvide
 		return callMinimaxVideoGen(ctx, cp.APIKey(), cp.APIBase(), model, params)
 	case "byteplus":
 		return callBytePlusVideoGen(ctx, cp.APIKey(), cp.APIBase(), model, prompt, duration, aspectRatio, params)
+	case "dashscope":
+		return callDashScopeVideoGen(ctx, cp.APIKey(), cp.APIBase(), model, prompt, duration, aspectRatio, params)
 	default:
 		return t.callChatVideoGen(ctx, cp.APIKey(), cp.APIBase(), model, prompt, duration, aspectRatio, params)
 	}
 }
-

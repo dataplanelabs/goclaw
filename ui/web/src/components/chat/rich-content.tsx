@@ -10,6 +10,7 @@ import {
   MapPin,
   Download,
   ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/shared/markdown-renderer";
 import {
@@ -31,16 +32,121 @@ const mediaIcons: Record<string, typeof Image> = {
   animation: Video,
 };
 
-function MediaBadge({ mediaType }: { mediaType: string }) {
+function MediaBadge({ mediaType, url, name, inline }: { mediaType: string; url?: string; name?: string; inline?: boolean }) {
   const { t } = useTranslation("chat");
   const Icon = mediaIcons[mediaType] ?? FileText;
-  const label = t(`media.${mediaType}`, { defaultValue: mediaType });
+  const label = name || t(`media.${mediaType}`, { defaultValue: mediaType });
+
+  if (!inline) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300">
+        <Icon className="h-3.5 w-3.5" />
+        {label} {t("media.attached")}
+      </span>
+    );
+  }
+
+  if (url && mediaType === "image") {
+    return <InlineImage url={url} label={label} icon={Icon} />;
+  }
+
+  if (url && (mediaType === "video" || mediaType === "animation")) {
+    return <InlineVideo url={url} label={label} icon={Icon} />;
+  }
+
+  if (url && (mediaType === "audio" || mediaType === "voice")) {
+    return <InlineAudio url={url} label={label} icon={Icon} />;
+  }
 
   return (
     <span className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300">
       <Icon className="h-3.5 w-3.5" />
-      {label} {t("media.attached")}
+      {url ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="underline">
+          {label}
+        </a>
+      ) : (
+        <>{label} {t("media.attached")}</>
+      )}
     </span>
+  );
+}
+
+type IconComponent = typeof Image;
+
+function MediaFallbackLink({
+  url,
+  label,
+  icon: Icon,
+}: {
+  url: string;
+  label: string;
+  icon: IconComponent;
+}) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900 transition"
+      title={url}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      <span>{label}</span>
+      <ExternalLink className="h-3 w-3 opacity-60" />
+    </a>
+  );
+}
+
+function InlineImage({ url, label, icon }: { url: string; label: string; icon: IconComponent }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <MediaFallbackLink url={url} label={label} icon={icon} />;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block max-w-xs overflow-hidden rounded-md border bg-muted/30 hover:opacity-90 transition"
+    >
+      <img
+        src={url}
+        alt={label}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        className="max-h-48 w-auto object-contain"
+        onError={() => setFailed(true)}
+      />
+    </a>
+  );
+}
+
+function InlineVideo({ url, label, icon }: { url: string; label: string; icon: IconComponent }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <MediaFallbackLink url={url} label={label} icon={icon} />;
+  return (
+    <video
+      src={url}
+      controls
+      preload="metadata"
+      crossOrigin="anonymous"
+      className="max-h-48 max-w-xs rounded-md border bg-muted/30"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function InlineAudio({ url, label, icon }: { url: string; label: string; icon: IconComponent }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <MediaFallbackLink url={url} label={label} icon={icon} />;
+  return (
+    <audio
+      src={url}
+      controls
+      preload="metadata"
+      crossOrigin="anonymous"
+      className="max-w-xs"
+      onError={() => setFailed(true)}
+    />
   );
 }
 
@@ -156,9 +262,11 @@ function VideoNoticeBadge({ content }: { content: string }) {
 interface RichContentProps {
   content: string;
   role: string;
+  /** Opt-in: render inline thumbnails/players for <media:* url="..."> tags. Default off — chat-thread uses MediaGallery instead. */
+  inlineMediaUrls?: boolean;
 }
 
-export function RichContent({ content, role }: RichContentProps) {
+export function RichContent({ content, role, inlineMediaUrls }: RichContentProps) {
   const cleaned = deduplicateMediaLinks(content);
   const blocks = parseRichContent(cleaned);
 
@@ -175,7 +283,7 @@ export function RichContent({ content, role }: RichContentProps) {
           case "forward":
             return <ForwardBadge key={i} from={block.from} date={block.date} />;
           case "media":
-            return <MediaBadge key={i} mediaType={block.mediaType} />;
+            return <MediaBadge key={i} mediaType={block.mediaType} url={block.url} name={block.name} inline={inlineMediaUrls} />;
           case "video-notice":
             return <VideoNoticeBadge key={i} content={block.content} />;
           case "markdown":

@@ -18,6 +18,7 @@ export interface TtsProviderConfig {
   enabled?: boolean;
   rate?: string;
   group_id?: string;
+  emotion?: string; // VieNeu: "natural" | "storytelling"
   /**
    * Generic params blob (Phase C dual-write).
    * Mirrors the tts.{provider}.params JSON stored in system_configs.
@@ -37,6 +38,7 @@ export interface TtsConfig {
   edge: TtsProviderConfig;
   minimax: TtsProviderConfig;
   gemini: TtsProviderConfig;
+  vieneu: TtsProviderConfig;
 }
 
 const DEFAULT_TTS: TtsConfig = {
@@ -50,6 +52,7 @@ const DEFAULT_TTS: TtsConfig = {
   edge: {},
   minimax: {},
   gemini: {},
+  vieneu: {},
 };
 
 export interface SynthesizeParams {

@@ -28,7 +28,24 @@ type TMessage struct {
 	CMD      int         `json:"cmd"`
 	ST       int         `json:"st"`
 	AT       int         `json:"at"`
-	Quote    *TQuote     `json:"quote,omitempty"`
+	// Held as raw JSON so a polymorphic / unexpected quote shape (e.g. attach
+	// as object instead of string) never fails the parent TMessage unmarshal
+	// and silently drops the entire message in handleUserMessages.
+	Quote json.RawMessage `json:"quote,omitempty"`
+}
+
+// ParseQuote decodes the lazy Quote raw JSON into TQuote. Returns nil, nil if
+// no quote is attached. Returns nil, err on parse failure — caller decides
+// whether to drop quote metadata or fall back to a minimal stamp.
+func (m *TMessage) ParseQuote() (*TQuote, error) {
+	if len(m.Quote) == 0 || string(m.Quote) == "null" {
+		return nil, nil
+	}
+	var q TQuote
+	if err := json.Unmarshal(m.Quote, &q); err != nil {
+		return nil, err
+	}
+	return &q, nil
 }
 
 // TQuote represents a quoted message attached to a TMessage (when a user replies
@@ -38,12 +55,14 @@ type TMessage struct {
 // Numeric ID fields use json.Number because Zalo serializes the same field as a
 // string or number depending on endpoint version. PropertyExt is kept as raw
 // JSON so the opaque server-side payload survives a marshal/unmarshal roundtrip
-// for outbound /quote sends.
+// for outbound /quote sends. MsgType (raw inbound wire string) is preferred
+// over CliMsgType for outbound qmsgType — the int↔string roundtrip is lossy.
 type TQuote struct {
-	OwnerID     string          `json:"ownerId"`
+	OwnerID     json.Number     `json:"ownerId"`
 	CliMsgID    json.Number     `json:"cliMsgId"`
 	GlobalMsgID json.Number     `json:"globalMsgId"`
 	CliMsgType  int             `json:"cliMsgType"`
+	MsgType     string          `json:"msgType,omitempty"`
 	TS          json.Number     `json:"ts"`
 	Msg         string          `json:"msg"`
 	Attach      string          `json:"attach"`
@@ -69,7 +88,7 @@ type TGroupMessage struct {
 
 // TMention represents an @mention in a group message.
 type TMention struct {
-	UID  string      `json:"uid"`  // user ID or "-1" for @all
+	UID  string      `json:"uid"` // user ID or "-1" for @all
 	Pos  int         `json:"pos"`
 	Len  int         `json:"len"`
 	Type MentionType `json:"type"` // 0=individual, 1=all
@@ -79,9 +98,9 @@ type TMention struct {
 type MentionType int
 
 const (
-	MentionEach MentionType = 0
-	MentionAll  MentionType = 1
-	MentionAllUID           = "-1"
+	MentionEach   MentionType = 0
+	MentionAll    MentionType = 1
+	MentionAllUID             = "-1"
 )
 
 // Content is a union type: can be a plain string or an attachment object.
@@ -157,8 +176,10 @@ func (a *Attachment) BestMediaURL() string {
 }
 
 // extractParamURLs handles both wire shapes Zalo uses for the params field:
-//   params: { ... }            // raw object
-//   params: "{ ... }"          // stringified JSON (zca-js's typed shape)
+//
+//	params: { ... }            // raw object
+//	params: "{ ... }"          // stringified JSON (zca-js's typed shape)
+//
 // Returns URLs in priority order: hdUrl, oriUrl, normalUrl, url. Any unmarshal
 // failure returns the zero array — callers fall through to Thumb.
 func extractParamURLs(raw json.RawMessage) [4]string {
@@ -200,8 +221,10 @@ func (c Content) ParseAttachment() *Attachment {
 }
 
 // imageExts lists file extensions recognized as images by the agent's vision pipeline.
+// `.jxl` is included so Zalo HD photos (decoded to JPEG via agent.SanitizeImage)
+// surface correct media-kind labels in placeholders.
 var imageExts = map[string]bool{
-	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".jxl": true,
 }
 
 // IsImage reports whether the attachment is an image. Short-circuits on
@@ -225,7 +248,8 @@ func (a *Attachment) IsImage() bool {
 	// Zalo CDN paths like https://f20-zpc.zdn.vn/jpg/...
 	lower := strings.ToLower(path)
 	return strings.Contains(lower, "/jpg/") || strings.Contains(lower, "/png/") ||
-		strings.Contains(lower, "/gif/") || strings.Contains(lower, "/webp/")
+		strings.Contains(lower, "/gif/") || strings.Contains(lower, "/webp/") ||
+		strings.Contains(lower, "/jxl/")
 }
 
 // AttachmentText returns a human-readable placeholder for non-text content.

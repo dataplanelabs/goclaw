@@ -43,11 +43,16 @@ func (ln *Listener) handleUserMessages(ctx context.Context, data string, encType
 	for _, raw := range envelope.Data.Msgs {
 		var msg TMessage
 		if err := json.Unmarshal(raw, &msg); err != nil {
+			preview := string(raw)
+			if len(preview) > 400 {
+				preview = preview[:400]
+			}
+			slog.Warn("zalo_personal: parse user msg failed (dropped)", "err", err, "raw_preview", preview)
 			continue
 		}
 		um := NewUserMessage(ln.sess.UID, msg)
 		if um.IsSelf() {
-			continue // skip self-sent messages
+			continue
 		}
 		emit(ctx, ln.messageCh, Message(um))
 	}
@@ -77,6 +82,11 @@ func (ln *Listener) handleGroupMessages(ctx context.Context, data string, encTyp
 	for _, raw := range envelope.Data.GroupMsgs {
 		var msg TGroupMessage
 		if err := json.Unmarshal(raw, &msg); err != nil {
+			preview := string(raw)
+			if len(preview) > 400 {
+				preview = preview[:400]
+			}
+			slog.Warn("zalo_personal: parse group msg failed (dropped)", "err", err, "raw_preview", preview)
 			continue
 		}
 		gm := NewGroupMessage(ln.sess.UID, msg)

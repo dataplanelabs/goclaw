@@ -14,6 +14,7 @@ func StripMarkdown(text string) string {
 		return text
 	}
 
+	text = renderMarkdownTables(text)
 	text = reFencedCode.ReplaceAllString(text, "$1")
 	text = reInlineCode.ReplaceAllString(text, "$1")
 	text = reImage.ReplaceAllString(text, "")
@@ -60,4 +61,92 @@ func stripBoldUnder(match string) string {
 		return match
 	}
 	return inner
+}
+
+// renderMarkdownTables rewrites GFM-style tables into bullet blocks so Zalo
+// (no monospace, no table support) shows labeled rows instead of raw pipes.
+func renderMarkdownTables(text string) string {
+	if !strings.Contains(text, "|") {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); i++ {
+		if i+1 < len(lines) && isTableRow(lines[i]) && isTableSeparatorRow(lines[i+1]) {
+			headers := parseTableRow(lines[i])
+			j := i + 2
+			for j < len(lines) && isTableRow(lines[j]) {
+				j++
+			}
+			if rendered := formatTableAsBlocks(headers, lines[i+2:j]); rendered != "" {
+				out = append(out, rendered)
+			}
+			i = j - 1
+			continue
+		}
+		out = append(out, lines[i])
+	}
+	return strings.Join(out, "\n")
+}
+
+func isTableRow(line string) bool {
+	s := strings.TrimSpace(line)
+	return strings.HasPrefix(s, "|") && strings.HasSuffix(s, "|") && strings.Count(s, "|") >= 2
+}
+
+func isTableSeparatorRow(line string) bool {
+	if !isTableRow(line) {
+		return false
+	}
+	s := strings.Trim(strings.TrimSpace(line), "|")
+	sawDash := false
+	for _, ch := range s {
+		switch ch {
+		case '-':
+			sawDash = true
+		case ':', '|', ' ', '\t':
+		default:
+			return false
+		}
+	}
+	return sawDash
+}
+
+func parseTableRow(line string) []string {
+	s := strings.Trim(strings.TrimSpace(line), "|")
+	cells := strings.Split(s, "|")
+	for i := range cells {
+		cells[i] = strings.TrimSpace(cells[i])
+	}
+	return cells
+}
+
+func formatTableAsBlocks(headers, dataRows []string) string {
+	var b strings.Builder
+	first := true
+	for _, row := range dataRows {
+		cells := parseTableRow(row)
+		if len(cells) == 0 || (len(cells) == 1 && cells[0] == "") {
+			continue
+		}
+		if !first {
+			b.WriteString("\n")
+		}
+		first = false
+		b.WriteString("• ")
+		b.WriteString(cells[0])
+		for k := 1; k < len(cells); k++ {
+			v := cells[k]
+			if v == "" {
+				continue
+			}
+			b.WriteString("\n  ")
+			if k < len(headers) && headers[k] != "" {
+				b.WriteString(headers[k])
+				b.WriteString(": ")
+			}
+			b.WriteString(v)
+		}
+	}
+	return b.String()
 }

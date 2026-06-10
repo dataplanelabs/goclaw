@@ -34,6 +34,7 @@ type SecureCLIBinary struct {
 	IsGlobal       bool            `json:"is_global" db:"is_global"`
 	Enabled        bool            `json:"enabled" db:"enabled"`
 	CreatedBy      string          `json:"created_by" db:"created_by"`
+	Version        *string         `json:"version,omitempty" db:"version"` // installed CLI version for requires.cli cross-check
 	UserEnv        []byte          `json:"-" db:"-"` // per-user encrypted env (populated by LookupByBinary LEFT JOIN)
 	// EnvKeys is set by HTTP handlers only (names from decrypted env, no values); not a DB column.
 	EnvKeys []string `json:"env_keys,omitempty" db:"-"`
@@ -111,6 +112,12 @@ type SecureCLIStore interface {
 	// If userID is non-empty, also fetches per-user env overrides via LEFT JOIN.
 	LookupByBinary(ctx context.Context, binaryName string, agentID *uuid.UUID, userID string) (*SecureCLIBinary, error)
 
+	// GetByName returns the binary for the tenant in ctx by binary_name
+	// (case-insensitive). Returns nil, nil when not found. Used by the
+	// B3-01 OAuth callback to resolve "gws" → binary UUID without an
+	// agentID (no grant context yet at credential-write time).
+	GetByName(ctx context.Context, binaryName string) (*SecureCLIBinary, error)
+
 	// ListEnabled returns all enabled configs (for TOOLS.md context generation).
 	ListEnabled(ctx context.Context) ([]SecureCLIBinary, error)
 
@@ -130,9 +137,30 @@ type SecureCLIStore interface {
 	// --- Per-user credential management ---
 
 	GetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string) (*SecureCLIUserCredential, error)
-	SetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string, encryptedEnv []byte) error
+	// SetUserCredentials writes plaintext env (store layer encrypts) + raw metadata JSON.
+	// metadata may be nil or empty JSON ("{}"); B3-01 callers pass
+	// {"account_email", "scopes", "expires_at", "refreshed_at"}. Existing
+	// non-OAuth callers (HTTP PUT) pass json.RawMessage("{}").
+	SetUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string, encryptedEnv []byte, metadata json.RawMessage) error
 	DeleteUserCredentials(ctx context.Context, binaryID uuid.UUID, userID string) error
 	ListUserCredentials(ctx context.Context, binaryID uuid.UUID) ([]SecureCLIUserCredential, error)
+
+	// ListUserCredentialsByBinaryName lists user-credential rows JOINed
+	// with their binary across ALL tenants (cross-tenant) — used by the
+	// B3-01 refresh worker which scans every tenant's credentials for
+	// near-expiry tokens. Caller is expected to run under a master/
+	// cross-tenant context (no tenant filter applied here).
+	ListUserCredentialsByBinaryName(ctx context.Context, binaryName string) ([]SecureCLIUserCredentialWithBinary, error)
+}
+
+// SecureCLIUserCredentialWithBinary is a join view returned by
+// ListUserCredentialsByBinaryName — credential + the parent binary's
+// (id, name, tenant_id) needed for the refresh worker to write back
+// with the correct tenant scope.
+type SecureCLIUserCredentialWithBinary struct {
+	SecureCLIUserCredential
+	BinaryName string    `json:"binary_name" db:"binary_name"`
+	TenantID   uuid.UUID `json:"tenant_id" db:"tenant_id"`
 }
 
 // SecureCLIAgentGrantStore manages per-agent grants for secure CLI binaries.

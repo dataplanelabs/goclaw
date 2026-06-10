@@ -1,14 +1,19 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"image/jpeg"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/disintegration/imaging"
+	_ "github.com/gen2brain/jpegxl" // register JXL decoder so loadImageFromPath can re-encode .jxl as JPEG
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 )
 
@@ -42,6 +47,22 @@ func MediaImageRefsFromCtx(ctx context.Context) []providers.MediaRef {
 	return v
 }
 
+const ctxCurrentTurnImageRefs toolContextKey = "tool_current_turn_image_refs"
+
+// WithCurrentTurnUserImageRefs stores MediaRefs for images the USER uploaded
+// in the CURRENT turn only (excludes historical refs). Used by create_image
+// to auto-inject a reference when the LLM forgets to pass reference_image_ids
+// despite the user having just uploaded a photo (common with weaker models).
+func WithCurrentTurnUserImageRefs(ctx context.Context, refs []providers.MediaRef) context.Context {
+	return context.WithValue(ctx, ctxCurrentTurnImageRefs, refs)
+}
+
+// CurrentTurnUserImageRefsFromCtx retrieves current-turn user image refs.
+func CurrentTurnUserImageRefsFromCtx(ctx context.Context) []providers.MediaRef {
+	v, _ := ctx.Value(ctxCurrentTurnImageRefs).([]providers.MediaRef)
+	return v
+}
+
 // --- ReadImageTool ---
 
 // visionProviderPriority is the order in which providers are tried for vision.
@@ -61,17 +82,34 @@ var visionModelDefaults = map[string]string{
 
 // ReadImageTool uses a vision-capable provider to describe images attached to the current message.
 type ReadImageTool struct {
-	registry *providers.Registry
+	registry        *providers.Registry
+	allowedPrefixes []string // extra allowed path prefixes (e.g. skills-store dirs)
+	deniedPrefixes  []string // path prefixes the tool must reject (e.g. memory.db)
 }
 
 func NewReadImageTool(registry *providers.Registry) *ReadImageTool {
 	return &ReadImageTool{registry: registry}
 }
 
+// AllowPaths registers extra read-allowed path prefixes (PathAllowable interface).
+// Wired at startup with system/builtin skill dirs alongside read_file and send_file.
+// Per-session activated skills flow through ctx automatically — no AllowPaths needed.
+func (t *ReadImageTool) AllowPaths(prefixes ...string) {
+	t.allowedPrefixes = append(t.allowedPrefixes, prefixes...)
+}
+
+// DenyPaths registers path prefixes the tool must reject even when they fall
+// inside an allowed scope (e.g. memory.db, config.json). Wired alongside the
+// other filesystem tools so read_image cannot be used to exfiltrate sensitive
+// in-workspace files via vision-model API roundtrip.
+func (t *ReadImageTool) DenyPaths(prefixes ...string) {
+	t.deniedPrefixes = append(t.deniedPrefixes, prefixes...)
+}
+
 func (t *ReadImageTool) Name() string { return "read_image" }
 
 func (t *ReadImageTool) Description() string {
-	return "Analyze images using vision AI. Works with: (1) images sent by the user (<media:image> tags), (2) workspace/generated image files (pass a file path)."
+	return "Analyze images using vision AI. Without `path`: analyzes only the images attached in the current user turn (<media:image> tags). With `path`: loads a specific image from disk — use this for older images from earlier turns or generated outputs in workspace."
 }
 
 func (t *ReadImageTool) Parameters() map[string]any {
@@ -84,7 +122,7 @@ func (t *ReadImageTool) Parameters() map[string]any {
 			},
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Optional file path to an image in the workspace. Use this for generated images or attachments. If omitted, analyzes images from the conversation.",
+				"description": "Optional file path to an image in the workspace. Use this for older images from earlier turns (e.g. a previously generated image the user references later). If omitted, analyzes only the images attached in the current turn.",
 			},
 		},
 		"required": []string{"prompt"},
@@ -94,7 +132,16 @@ func (t *ReadImageTool) Parameters() map[string]any {
 // maxImageFileBytes is the max size for loading workspace images (10MB).
 const maxImageFileBytes = 10 * 1024 * 1024
 
-func (t *ReadImageTool) Execute(ctx context.Context, args map[string]any) *Result {
+func (t *ReadImageTool) Execute(ctx context.Context, args map[string]any) (result *Result) {
+	timeout := toolTimeoutFromEnv("READ_IMAGE")
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	defer func() {
+		if result != nil && result.IsError && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			result = ErrorResult(fmt.Sprintf("read_image timed out after %s (set READ_IMAGE_TIMEOUT_SEC to adjust).", timeout))
+		}
+	}()
+
 	prompt, _ := args["prompt"].(string)
 	if prompt == "" {
 		prompt = "Describe this image in detail."
@@ -135,11 +182,11 @@ func (t *ReadImageTool) Execute(ctx context.Context, args map[string]any) *Resul
 		return ErrorResult(fmt.Sprintf("Image analysis failed — all vision providers returned errors: %v. The user may need to check their provider API keys or configuration.", err))
 	}
 
-	result := NewResult(string(chainResult.Data))
-	result.Usage = chainResult.Usage
-	result.Provider = chainResult.Provider
-	result.Model = chainResult.Model
-	return result
+	out := NewResult(string(chainResult.Data))
+	out.Usage = chainResult.Usage
+	out.Provider = chainResult.Provider
+	out.Model = chainResult.Model
+	return out
 }
 
 // callProvider dispatches the vision call using provider.Chat().
@@ -147,11 +194,13 @@ func (t *ReadImageTool) callProvider(ctx context.Context, cp credentialProvider,
 	prompt := GetParamString(params, "prompt", "Describe this image in detail.")
 	images, _ := params["images"].([]providers.ImageContent)
 
-	// Get the full provider for Chat() access
-	p, err := t.registry.Get(ctx, providerName)
+	// Use the provider resolved by ExecuteWithChain when present so wrapped
+	// providers (e.g. ChatGPT OAuth pools) are preserved for this media call.
+	p, err := providerFromChainParams(ctx, t.registry, providerName, params)
 	if err != nil {
 		return nil, nil, fmt.Errorf("provider %q not available: %w", providerName, err)
 	}
+	model = normalizeCodexOnlyModelForProvider("read_image", p, model)
 
 	slog.Info("read_image: calling vision provider", "provider", providerName, "model", model, "images", len(images))
 
@@ -186,36 +235,54 @@ func (t *ReadImageTool) callProvider(ctx context.Context, cp credentialProvider,
 }
 
 // loadImageFromPath reads an image file from the workspace and returns it as ImageContent.
+// JPEG XL inputs are transparently decoded and re-encoded as JPEG so the vision
+// providers (Anthropic / OpenAI / Gemini), which don't accept image/jxl, see a
+// supported format.
 func (t *ReadImageTool) loadImageFromPath(ctx context.Context, path string) ([]providers.ImageContent, error) {
-	// Infer MIME type from extension
 	ext := strings.ToLower(filepath.Ext(path))
 	mimeTypes := map[string]string{
 		".jpg": "image/jpeg", ".jpeg": "image/jpeg",
 		".png": "image/png", ".gif": "image/gif",
 		".webp": "image/webp", ".bmp": "image/bmp",
+		".jxl": "image/jxl",
 	}
 	mime, ok := mimeTypes[ext]
 	if !ok {
-		return nil, fmt.Errorf("unsupported image format: %s (supported: jpg, png, gif, webp, bmp)", ext)
+		return nil, fmt.Errorf("unsupported image format: %s (supported: jpg, png, gif, webp, bmp, jxl)", ext)
 	}
 
-	// Resolve path within workspace (respect workspace restriction).
 	workspace := ToolWorkspaceFromCtx(ctx)
-	resolved, err := resolvePathWithAllowed(path, workspace, effectiveRestrict(ctx, true), allowedWithTeamWorkspace(ctx, nil))
+	resolved, err := resolvePathWithAllowed(path, workspace, effectiveRestrict(ctx, true), allowedWithTeamWorkspace(ctx, t.allowedPrefixes))
 	if err != nil {
 		return nil, fmt.Errorf("invalid image path: %w", err)
 	}
-	if err := checkDeniedPath(resolved, workspace, nil); err != nil {
+	if err := checkDeniedPath(resolved, workspace, t.deniedPrefixes); err != nil {
 		return nil, err
 	}
 
-	// Pre-check file size before loading into memory.
-	fi, err := os.Stat(resolved)
+	resolved, fi, err := statImagePathWithSiblingFallback(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat image file: %w", err)
 	}
 	if fi.Size() > maxImageFileBytes {
 		return nil, fmt.Errorf("image file too large (%d bytes, max %d)", fi.Size(), maxImageFileBytes)
+	}
+
+	// JXL → JPEG re-encode so providers accept it. image/jxl is not in any
+	// major vision provider's supported list (Anthropic/OpenAI/Gemini all reject).
+	if mime == "image/jxl" {
+		img, err := imaging.Open(resolved, imaging.AutoOrientation(true))
+		if err != nil {
+			return nil, fmt.Errorf("decode jxl: %w", err)
+		}
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
+			return nil, fmt.Errorf("encode jpeg: %w", err)
+		}
+		return []providers.ImageContent{{
+			MimeType: "image/jpeg",
+			Data:     base64.StdEncoding.EncodeToString(buf.Bytes()),
+		}}, nil
 	}
 
 	data, err := os.ReadFile(resolved)
@@ -227,4 +294,52 @@ func (t *ReadImageTool) loadImageFromPath(ctx context.Context, path string) ([]p
 		MimeType: mime,
 		Data:     base64.StdEncoding.EncodeToString(data),
 	}}, nil
+}
+
+func statImagePathWithSiblingFallback(path string) (string, os.FileInfo, error) {
+	fi, err := os.Stat(path)
+	if err == nil || !os.IsNotExist(err) {
+		return path, fi, err
+	}
+
+	alt, ok := findNormalizedSiblingImage(path)
+	if !ok {
+		return path, nil, err
+	}
+	altFI, altErr := os.Stat(alt)
+	if altErr != nil {
+		return path, nil, err
+	}
+	slog.Warn("read_image: corrected missing image path to generated sibling",
+		"requested", path,
+		"resolved", alt)
+	return alt, altFI, nil
+}
+
+func findNormalizedSiblingImage(path string) (string, bool) {
+	dir := filepath.Dir(path)
+	target := normalizedGeneratedImageName(filepath.Base(path))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false
+	}
+	var matches []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.EqualFold(filepath.Ext(name), filepath.Ext(path)) &&
+			normalizedGeneratedImageName(name) == target {
+			matches = append(matches, filepath.Join(dir, name))
+		}
+	}
+	if len(matches) != 1 {
+		return "", false
+	}
+	return matches[0], true
+}
+
+func normalizedGeneratedImageName(name string) string {
+	return strings.ReplaceAll(strings.ToLower(name), "-", "_")
 }

@@ -103,6 +103,23 @@ export const Methods = {
   CHANNEL_INSTANCES_UPDATE: "channels.instances.update",
   CHANNEL_INSTANCES_DELETE: "channels.instances.delete",
 
+  // Standby schedules
+  CHANNELS_SCHEDULE_GET: "channels.schedule_get",
+  CHANNELS_SCHEDULE_SET: "channels.schedule_set",
+  CHANNELS_SCHEDULE_DELETE: "channels.schedule_delete",
+  CHANNELS_THREAD_SCHEDULE_LIST: "channels.thread_schedule_list",
+  CHANNELS_THREAD_SCHEDULE_GET: "channels.thread_schedule_get",
+  CHANNELS_THREAD_SCHEDULE_SET: "channels.thread_schedule_set",
+  CHANNELS_THREAD_SCHEDULE_DELETE: "channels.thread_schedule_delete",
+
+  // Team-reply capture + evaluations (Phase 6)
+  CHANNELS_TEAM_REPLIES_LIST: "channels.team_replies_list",
+  CHANNELS_TEAM_REPLIES_GET: "channels.team_replies_get",
+  CHANNELS_TEAM_REPLIES_EXPORT_JSONL: "channels.team_replies_export_jsonl",
+  CHANNELS_TEAM_REPLIES_REJUDGE: "channels.team_replies_rejudge",
+  CHANNELS_TEAM_REPLIES_GRADE_PENDING: "channels.team_replies_grade_pending",
+  CHANNELS_TEAM_CAPTURE_TOGGLE: "channels.team_capture_toggle",
+
   PAIRING_REQUEST: "device.pair.request",
   PAIRING_APPROVE: "device.pair.approve",
   PAIRING_DENY: "device.pair.deny",

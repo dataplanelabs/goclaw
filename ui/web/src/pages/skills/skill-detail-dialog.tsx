@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { MarkdownRenderer } from "@/components/shared/markdown-renderer";
+import { isTextFile } from "@/lib/file-helpers";
 import type { SkillInfo, SkillFile, SkillVersions } from "@/types/skill";
 import { buildTree } from "./skill-file-helpers";
 import { FileBrowser } from "./skill-file-browser";
@@ -31,6 +32,7 @@ interface SkillDetailDialogProps {
   getSkillVersions: (id: string) => Promise<SkillVersions>;
   getSkillFiles: (id: string, version?: number) => Promise<SkillFile[]>;
   getSkillFileContent: (id: string, path: string, version?: number) => Promise<{ content: string; path: string; size: number }>;
+  getSkillFileBlob: (id: string, path: string, version?: number) => Promise<Blob>;
 }
 
 export function SkillDetailDialog({
@@ -43,6 +45,7 @@ export function SkillDetailDialog({
   getSkillVersions,
   getSkillFiles,
   getSkillFileContent,
+  getSkillFileBlob,
 }: SkillDetailDialogProps) {
   const { t } = useTranslation("skills");
   const hasFiles = !!skill.id;
@@ -81,22 +84,40 @@ export function SkillDetailDialog({
     }
   }, [skill.id, versions, selectedVersionParam, getSkillVersions]);
 
+  // Monotonic sequence so out-of-order responses from concurrent loads can't
+  // clobber the latest one (e.g. a stale/empty version response landing after
+  // the correct current-version response).
+  const fileLoadSeq = useRef(0);
+
   const loadFiles = useCallback(async (version?: number) => {
     if (!skill.id) return;
+    const seq = ++fileLoadSeq.current;
     setFilesLoading(true);
     try {
       const f = await getSkillFiles(skill.id, version);
+      if (seq !== fileLoadSeq.current) return; // superseded by a newer load
       setFiles(f);
       setActivePath(null);
       setFileContent(null);
+    } catch (err) {
+      if (seq !== fileLoadSeq.current) return;
+      // Don't clobber an already-loaded tree on a transient failure (e.g. a
+      // version dir mid-write); leave the last good list in place.
+      console.error("skill files load failed", err);
     } finally {
-      setFilesLoading(false);
+      if (seq === fileLoadSeq.current) setFilesLoading(false);
     }
   }, [skill.id, getSkillFiles]);
 
   const loadFileContent = useCallback(async (path: string) => {
     if (!skill.id) return;
     setActivePath(path);
+    const selectedFile = files.find((file) => file.path === path);
+    if (selectedFile && !selectedFile.isDir && !isTextFile(path)) {
+      setFileContent({ content: "", path, size: selectedFile.size });
+      setContentLoading(false);
+      return;
+    }
     setContentLoading(true);
     try {
       const c = await getSkillFileContent(skill.id, path, selectedVersion ?? undefined);
@@ -104,26 +125,33 @@ export function SkillDetailDialog({
     } finally {
       setContentLoading(false);
     }
-  }, [skill.id, selectedVersion, getSkillFileContent]);
+  }, [skill.id, files, selectedVersion, getSkillFileContent]);
 
+  const fetchSkillFileBlob = useCallback(
+    (path: string) => {
+      if (!skill.id) return Promise.reject(new Error("skill id missing"));
+      return getSkillFileBlob(skill.id, path, selectedVersion ?? undefined);
+    },
+    [skill.id, selectedVersion, getSkillFileBlob],
+  );
+
+  // Resolve versions as soon as the dialog opens so selectedVersion settles on
+  // the authoritative current version BEFORE the Files tab is viewed. (The list
+  // `skill.version` can lag the on-disk current version right after a
+  // regenerate, so we never pre-seed from it.)
   useEffect(() => {
-    if (selectedVersion != null) {
+    if (hasFiles) loadVersions();
+  }, [hasFiles, loadVersions]);
+
+  // Load files only with a resolved version — never undefined. A bare
+  // (versionless) load returned the wrong/empty set for multi-version skills,
+  // so the Files tab showed "No files found" on first open until a version
+  // switch forced a reload.
+  useEffect(() => {
+    if (detailTab === "files" && hasFiles && selectedVersion != null) {
       loadFiles(selectedVersion);
     }
-  }, [selectedVersion, loadFiles]);
-
-  useEffect(() => {
-    if (detailTab !== "files" || !hasFiles) return;
-    loadVersions();
-    const versionParam = parseSkillDetailVersionParam(selectedVersionParam);
-    if (versionParam !== null && versionParam !== selectedVersion) {
-      setSelectedVersion(versionParam);
-      return;
-    }
-    if (selectedVersion == null && skill.version) {
-      setSelectedVersion(skill.version);
-    }
-  }, [detailTab, hasFiles, loadVersions, selectedVersion, selectedVersionParam, skill.version]);
+  }, [detailTab, hasFiles, selectedVersion, loadFiles]);
 
   useEffect(() => {
     if (!shouldLoadSkillDetailFile(detailTab, selectedFilePath, files.length, activePath)) return;
@@ -131,13 +159,9 @@ export function SkillDetailDialog({
   }, [activePath, detailTab, files.length, loadFileContent, selectedFilePath]);
 
   const handleTabChange = (tab: string) => {
+    // File loading is owned by the version-resolution effects above, which always
+    // use a concrete current version — so just switch the tab here.
     onStateChange({ detailTab: tab });
-    if (tab === "files" && hasFiles) {
-      loadVersions();
-      if (files.length === 0 && !filesLoading) {
-        loadFiles(selectedVersion ?? undefined);
-      }
-    }
   };
 
   const handleVersionChange = (v: string) => {
@@ -155,16 +179,12 @@ export function SkillDetailDialog({
     loadFileContent(path);
   };
 
-  useEffect(() => {
-    if (hasFiles) loadVersions();
-  }, [hasFiles, loadVersions]);
-
   const headerVersion = selectedVersion ?? versions?.current ?? skill.version;
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
-      <DialogContent className="max-h-[85vh] md:min-h-[60vh] overflow-hidden flex flex-col sm:max-w-2xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl">
-        <DialogHeader>
+      <DialogContent className="h-dvh overflow-hidden flex flex-col gap-3 sm:h-[86dvh] sm:max-h-[900px] sm:max-w-2xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl">
+        <DialogHeader className="shrink-0">
           <div className="flex flex-col gap-2 pr-8 sm:flex-row sm:items-start sm:justify-between">
             <DialogTitle className="flex min-w-0 flex-wrap items-center gap-2">
               {skill.name}
@@ -199,7 +219,7 @@ export function SkillDetailDialog({
             ) : null}
           </div>
           {skill.description && (
-            <p className="text-sm text-muted-foreground">{skill.description}</p>
+            <p className="line-clamp-3 text-sm text-muted-foreground">{skill.description}</p>
           )}
           <div className="flex flex-wrap gap-1 pt-1 text-xs text-muted-foreground">
             {skill.author && <span>{t("columns.author")}: {skill.author}</span>}
@@ -244,6 +264,7 @@ export function SkillDetailDialog({
                 onSelect={handleFileSelect}
                 contentLoading={contentLoading}
                 fileContent={fileContent}
+                fetchBlob={fetchSkillFileBlob}
               />
             </TabsContent>
           )}

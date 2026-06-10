@@ -8,10 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/hooks"
@@ -49,6 +51,11 @@ type ResolverDeps struct {
 	BootstrapCleanup  BootstrapCleanupFunc
 	CacheInvalidate   CacheInvalidateFunc
 	DefaultTimezone   string // system default timezone for bootstrap pre-fill
+
+	// ChannelInstances is used to resolve per-channel timezone overrides
+	// (channel_instances.config.timezone) at prompt-build time. Optional —
+	// nil falls back to DefaultTimezone only.
+	ChannelInstances store.ChannelInstanceStore
 
 	// Security
 	InjectionAction string // "log", "warn", "block", "off"
@@ -98,6 +105,11 @@ type ResolverDeps struct {
 	// Tracing store for budget enforcement queries
 	TracingStore store.TracingStore
 
+	ReplayPayloadStore store.ReplayPayloadStore
+	// ReplayRetention controls how long captured retry payloads survive.
+	// 0 = legacy behavior (sweep on every successful run); >0 = absolute TTL.
+	ReplayRetention time.Duration
+
 	// Memory store for extractive memory fallback
 	MemoryStore store.MemoryStore
 
@@ -134,6 +146,10 @@ type ResolverDeps struct {
 
 	// Vault hook: called when a text file is uploaded by user (nil = no vault registration)
 	OnTextUploaded func(ctx context.Context, path, content string)
+
+	// StandbyResolveMode resolves the effective standby/active mode at pipeline entry.
+	// Wired from the gateway-level ScheduleRegistry; nil = standby feature disabled.
+	StandbyResolveMode func(ctx context.Context, tenantID, channelName, threadKey string, now time.Time) schedule.Mode
 }
 
 // NewManagedResolver creates a ResolverFunc that builds Loops from DB agent data.
@@ -497,6 +513,7 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			BootstrapCleanup:       deps.BootstrapCleanup,
 			CacheInvalidate:        deps.CacheInvalidate,
 			DefaultTimezone:        deps.DefaultTimezone,
+			ChannelInstances:       deps.ChannelInstances,
 			OnEvent:                deps.OnEvent,
 			TraceCollector:         deps.TraceCollector,
 			InjectionAction:        deps.InjectionAction,
@@ -513,6 +530,7 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			ReasoningConfig:        store.ResolveEffectiveReasoningConfig(providerReasoningDefaults, ag.ParseReasoningConfig()),
 			PromptMode:             PromptMode(ag.ParsePromptMode()),
 			PinnedSkills:           ag.ParsePinnedSkills(),
+			ToolSkillRequirements:  ag.ParseToolSkillRequirements(),
 			SelfEvolve:             ag.ParseSelfEvolve(),
 			AllowImageGeneration:   ag.ParseAllowImageGeneration(),
 			TTSAutoMode:            deps.TTSAutoMode,
@@ -528,6 +546,8 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			ModelPricing:           deps.ModelPricing,
 			BudgetMonthlyCents:     derefInt(ag.BudgetMonthlyCents),
 			TracingStore:           deps.TracingStore,
+			ReplayPayloadStore:     deps.ReplayPayloadStore,
+			ReplayRetention:        deps.ReplayRetention,
 			MemoryStore:            deps.MemoryStore,
 			MCPStore:               deps.MCPStore,
 			MCPPool:                deps.MCPPool,
@@ -537,6 +557,7 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			DelegateTargets:        delegateTargets,
 			EvolutionMetricsStore:  evoMetricsStore,
 			UserResolver:           newContactResolver(deps.ContactStore),
+			StandbyResolveMode:     deps.StandbyResolveMode,
 		})
 
 		slog.Info("resolved agent from DB", "agent", agentKey, "model", ag.Model, "provider", ag.Provider)

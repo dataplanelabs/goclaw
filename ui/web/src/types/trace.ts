@@ -22,7 +22,9 @@ export interface TraceData {
   error?: string;
   tags?: string[];
   metadata?: { total_cache_read_tokens?: number; total_cache_creation_tokens?: number };
+  outbound_emitted?: boolean;
   created_at: string;
+  chat_title?: string;
 }
 
 export interface SpanData {

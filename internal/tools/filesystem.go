@@ -11,6 +11,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/sandbox"
+	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -328,9 +329,9 @@ func allowedWriteWithTeamWorkspace(ctx context.Context, base []string) []string 
 	return buildAllowedPrefixes(ctx, base, false)
 }
 
-// buildAllowedPrefixes merges base + tenant paths + team workspace, optionally
-// including team root. Extracted to share the slice-building logic between read
-// and write variants without duplication.
+// buildAllowedPrefixes merges base + tenant paths + team workspace + any skills
+// activated this session, optionally including team root. Extracted to share the
+// slice-building logic between read and write variants without duplication.
 func buildAllowedPrefixes(ctx context.Context, base []string, includeTeamRoot bool) []string {
 	tenantPaths := TenantAllowedPathsFromCtx(ctx)
 	teamWs := ToolTeamWorkspaceFromCtx(ctx)
@@ -338,12 +339,13 @@ func buildAllowedPrefixes(ctx context.Context, base []string, includeTeamRoot bo
 	if includeTeamRoot {
 		teamRoot = ToolTeamRootFromCtx(ctx)
 	}
+	skillPaths := skills.SkillAllowedPrefixesFromContext(ctx)
 
-	if len(tenantPaths) == 0 && teamWs == "" && teamRoot == "" {
+	if len(tenantPaths) == 0 && teamWs == "" && teamRoot == "" && len(skillPaths) == 0 {
 		return base
 	}
 
-	capacity := len(base) + len(tenantPaths)
+	capacity := len(base) + len(tenantPaths) + len(skillPaths)
 	if teamWs != "" {
 		capacity++
 	}
@@ -360,6 +362,7 @@ func buildAllowedPrefixes(ctx context.Context, base []string, includeTeamRoot bo
 	if teamRoot != "" && teamRoot != teamWs {
 		out = append(out, teamRoot)
 	}
+	out = append(out, skillPaths...)
 	return out
 }
 

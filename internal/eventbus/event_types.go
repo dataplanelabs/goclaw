@@ -33,6 +33,8 @@ const (
 	// EventWorkstationPermChanged triggers AllowlistChecker cache invalidation (Phase 6).
 	// SourceID = workstation UUID.
 	EventWorkstationPermChanged EventType = "workstation.perm.changed"
+
+	// Team-reply capture events. Payload + SourceID helper live in event_team_reply.go.
 )
 
 // DomainEvent is a typed event with metadata for the consolidation pipeline.

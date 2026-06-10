@@ -52,6 +52,7 @@ func (c *Config) ApplySystemConfigs(configs map[string]string) {
 	boolean("gateway.block_reply", &c.Gateway.BlockReply)
 	boolean("gateway.tool_status", &c.Gateway.ToolStatus)
 	integer("gateway.task_recovery_interval_sec", &c.Gateway.TaskRecoveryIntervalSec)
+	integer("trace.replay_retention_days", &c.Gateway.ReplayRetentionDays)
 
 	// Background workers (vault enrichment, consolidation)
 	str("background.provider", &c.Gateway.BackgroundProvider)
@@ -67,6 +68,7 @@ func (c *Config) ApplySystemConfigs(configs map[string]string) {
 	str("tts.auto", &c.Tts.Auto)
 	str("tts.mode", &c.Tts.Mode)
 	integer("tts.max_length", &c.Tts.MaxLength)
+	integer("tts.timeout_ms", &c.Tts.TimeoutMs)
 
 	// Cron
 	integer("cron.max_retries", &c.Cron.MaxRetries)

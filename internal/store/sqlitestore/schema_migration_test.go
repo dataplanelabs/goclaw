@@ -424,6 +424,56 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`ALTER TABLE skill_agent_grants DROP COLUMN can_manage`)
 	}
 
+	if targetVersion < 41 {
+		// Migration 40→41 adds channel_instances.silence_schedule + channel_thread_schedules table.
+		db.Exec(`ALTER TABLE channel_instances DROP COLUMN silence_schedule`)
+		db.Exec(`DROP INDEX IF EXISTS idx_channel_thread_schedules_expires`)
+		db.Exec(`DROP TABLE IF EXISTS channel_thread_schedules`)
+	}
+
+	if targetVersion < 42 {
+		// Migration 41→42 adds skills.source.
+		db.Exec(`DROP INDEX IF EXISTS idx_skills_source`)
+		db.Exec(`ALTER TABLE skills DROP COLUMN source`)
+	}
+
+	if targetVersion < 43 {
+		// Migration 42→43 adds secure_cli_binaries.version.
+		db.Exec(`DROP INDEX IF EXISTS idx_secure_cli_binaries_version`)
+		db.Exec(`ALTER TABLE secure_cli_binaries DROP COLUMN version`)
+	}
+
+	if targetVersion < 44 {
+		// Migration 43→44 adds team_reply_evaluations table.
+		db.Exec(`DROP INDEX IF EXISTS idx_team_reply_evals_tenant_time`)
+		db.Exec(`DROP INDEX IF EXISTS idx_team_reply_evals_channel_time`)
+		db.Exec(`DROP INDEX IF EXISTS idx_team_reply_evals_thread`)
+		db.Exec(`DROP INDEX IF EXISTS idx_team_reply_evals_pending_judge`)
+		db.Exec(`DROP TABLE IF EXISTS team_reply_evaluations`)
+	}
+
+	if targetVersion < 45 {
+		// Migration 44→45 creates trace_replay_payloads + trace_retry_locks
+		// and adds traces.outbound_emitted.
+		db.Exec(`DROP INDEX IF EXISTS idx_replay_payloads_session`)
+		db.Exec(`DROP INDEX IF EXISTS idx_replay_payloads_tenant`)
+		db.Exec(`DROP TABLE IF EXISTS trace_replay_payloads`)
+		db.Exec(`DROP INDEX IF EXISTS idx_retry_locks_expiry`)
+		db.Exec(`DROP TABLE IF EXISTS trace_retry_locks`)
+		db.Exec(`ALTER TABLE traces DROP COLUMN outbound_emitted`)
+	}
+
+	if targetVersion < 46 {
+		// Migration 45→46 adds agents.write_only_hash.
+		db.Exec(`ALTER TABLE agents DROP COLUMN write_only_hash`)
+	}
+
+	if targetVersion < 47 {
+		// Migration 46→47 creates vieneu_cloned_voices.
+		db.Exec(`DROP INDEX IF EXISTS idx_vieneu_voices_tenant_voice`)
+		db.Exec(`DROP TABLE IF EXISTS vieneu_cloned_voices`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db

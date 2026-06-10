@@ -50,6 +50,10 @@ func parseTTL(s string) time.Duration {
 func (s *PruneStage) Execute(ctx context.Context, state *RunState) error {
 	s.result = Continue
 
+	if state.Think.LastResponse != nil && len(state.Think.LastResponse.ToolCalls) == 0 {
+		return nil
+	}
+
 	// Compute budget using the effective context window for this run's model.
 	// ContextStage resolves EffectiveContextWindow once per run via ModelRegistry;
 	// if zero (unknown model, registry not wired) fall back to the pipeline-wide

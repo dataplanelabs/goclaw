@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/nextlevelbuilder/goclaw/internal/agent"
 	"github.com/nextlevelbuilder/goclaw/internal/audio"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu/refstore"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/cache"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
@@ -37,4 +38,7 @@ type gatewayDeps struct {
 	domainBus        eventbus.DomainEventBus
 	audioMgr         *audio.Manager      // nil if TTS not configured; used by TTSHandler
 	ttsHandler       *httpapi.TTSHandler // nil if TTS not configured; for hot-reload
+	vieneuRefStore   *refstore.Store     // nil if voice cloning is disabled
+	vieneuDaemonURL  string              // base URL for the in-pod VieNeu daemon ("" = disabled)
+	voiceCache       *audio.VoiceCache   // shared by GET /v1/voices + cloned-voice CRUD invalidation
 }

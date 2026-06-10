@@ -122,10 +122,11 @@ func (t *ReadAudioTool) callProvider(ctx context.Context, cp credentialProvider,
 	}
 
 	// Other providers: try standard Chat API with base64 audio as image_url (best effort).
-	p, err := t.registry.Get(ctx, providerName)
+	p, err := providerFromChainParams(ctx, t.registry, providerName, params)
 	if err != nil {
 		return nil, nil, fmt.Errorf("provider %q not available: %w", providerName, err)
 	}
+	model = normalizeCodexOnlyModelForProvider("read_audio", p, model)
 
 	slog.Info("read_audio: using chat API fallback", "provider", providerName, "model", model, "size", len(data))
 	resp, err := p.Chat(ctx, providers.ChatRequest{

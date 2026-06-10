@@ -21,6 +21,7 @@ import {
   ImageViewer,
   UnsupportedFileViewer,
 } from "./file-viewer-panels";
+import { SpreadsheetViewer } from "./file-viewer-spreadsheet";
 
 export function FileContentBody({
   path,
@@ -40,6 +41,11 @@ export function FileContentBody({
   // Image files
   if (isImageFile(path) && fetchBlob) {
     return <ImageViewer path={path} fetchBlob={fetchBlob} />;
+  }
+
+  // Excel spreadsheets (binary; parsed client-side via read-excel-file).
+  if ((ext === "xlsx" || ext === "xlsm") && fetchBlob) {
+    return <SpreadsheetViewer path={path} fetchBlob={fetchBlob} />;
   }
 
   // Text-based files

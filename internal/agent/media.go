@@ -3,12 +3,14 @@ package agent
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -186,7 +188,7 @@ func loadImages(files []bus.MediaFile) []providers.ImageContent {
 // All media types (images, documents, audio, video) are stored within the user's
 // workspace for filesystem-level tenant isolation.
 // workspace is the per-user workspace path from ToolWorkspaceFromCtx(ctx).
-func (l *Loop) persistMedia(sessionKey string, files []bus.MediaFile, workspace string) []providers.MediaRef {
+func (l *Loop) persistMedia(sessionKey string, files []bus.MediaFile, workspace, senderName string) []providers.MediaRef {
 	if workspace == "" {
 		slog.Warn("media: no workspace, cannot persist media")
 		return nil
@@ -207,8 +209,12 @@ func (l *Loop) persistMedia(sessionKey string, files []bus.MediaFile, workspace 
 	var refs []providers.MediaRef
 	for _, f := range files {
 		mime := f.MimeType
-		if mime == "" {
-			mime = mimeFromExt(filepath.Ext(f.Path))
+		if mime == "" || mime == "application/octet-stream" {
+			if inferred := documentMIMEFromFilename(f.Filename); inferred != "" {
+				mime = inferred
+			} else if mime == "" {
+				mime = mimeFromExt(filepath.Ext(f.Path))
+			}
 		}
 		kind := mediaKindFromMime(mime)
 
@@ -218,7 +224,13 @@ func (l *Loop) persistMedia(sessionKey string, files []bus.MediaFile, workspace 
 		if kind == "image" {
 			sanitized, err := SanitizeImage(f.Path)
 			if err != nil {
-				slog.Warn("media: sanitize image failed, using original", "path", f.Path, "error", err)
+				slog.Warn("media: sanitize image failed", "path", f.Path, "mime", mime, "error", err)
+				// JXL and HEIC fall-throughs would ship raw bytes that providers reject;
+				// drop the file entirely rather than fail the LLM call. Other formats
+				// (JPEG/PNG/WebP/GIF) are provider-accepted so fall back to original.
+				if mime == "image/jxl" || mime == "image/heic" || mime == "image/heif" {
+					continue
+				}
 			} else {
 				srcPath = sanitized
 				sanitizedTemp = sanitized
@@ -232,14 +244,17 @@ func (l *Loop) persistMedia(sessionKey string, files []bus.MediaFile, workspace 
 			ext = filepath.Ext(srcPath) // fallback to source extension
 		}
 
-		// Disk-naming: preserve user filename when present so vault enrichment
-		// can process uploads (UUID-only names are skipped by enrich_skip_filter).
-		// Empty Filename (voice note, clipboard paste, tool-generated) →
-		// fall back to UUID, keeping legacy behavior.
-		diskName := id + ext
-		if stem := sanitizeFilename(f.Filename); stem != "" {
-			diskName = stem + "-" + shortID(8) + ext
+		// Disk-naming: metadata-rich + dedup-friendly —
+		//   {YYYYMMDD-HHmmss}_{sender}_{orig-or-kind}_{contenthash8}{ext}
+		// Human-readable parts let agents/operators identify uploads when
+		// browsing; the content hash lets identical re-uploads collapse onto one
+		// file (checked below). The UUID stays the stable MediaRef.ID.
+		fullHash := fileSHA256(srcPath)
+		hash8 := shortID(8) // unreadable file → random (never dedups)
+		if len(fullHash) >= 8 {
+			hash8 = fullHash[:8]
 		}
+		diskName := inboundDiskName(time.Now(), senderName, f.Filename, kind, hash8, ext)
 		dstPath := filepath.Join(uploadsDir, diskName)
 
 		// Traversal guard: ensure resolved path is inside uploadsDir.
@@ -255,7 +270,13 @@ func (l *Loop) persistMedia(sessionKey string, files []bus.MediaFile, workspace 
 			continue
 		}
 
-		if err := copyMediaFile(srcPath, dstPath); err != nil {
+		// Dedup: identical content already persisted (under any name) → reuse it
+		// instead of writing a second timestamped copy. Verify the FULL sha256
+		// (not just the 8-hex prefix) so a prefix collision between two different
+		// files never silently serves the wrong bytes.
+		if existing, _ := filepath.Glob(filepath.Join(uploadsDir, "*_"+hash8+ext)); len(existing) > 0 && fullHash != "" && fileSHA256(existing[0]) == fullHash {
+			dstPath = existing[0]
+		} else if err := copyMediaFile(srcPath, dstPath); err != nil {
 			slog.Warn("media: failed to persist file", "path", f.Path, "error", err)
 			if sanitizedTemp != "" {
 				os.Remove(sanitizedTemp)
@@ -297,6 +318,53 @@ func copyMediaFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// inboundDiskName builds a metadata-rich, dedup-friendly upload filename:
+//
+//	{YYYYMMDD-HHmmss}_{sender}_{orig-or-kind}_{contenthash8}{ext}
+//
+// Empty sender is dropped; a synthetic/opaque original name (our own
+// "goclaw*" temp-file basename) or an empty one falls back to the media kind.
+func inboundDiskName(now time.Time, senderName, origFilename, kind, hash8, ext string) string {
+	parts := []string{now.Format("20060102-150405")}
+	if s := sanitizeFilename(senderName); s != "" {
+		parts = append(parts, s)
+	}
+	nameTok := ""
+	if !isSyntheticStem(origFilename) {
+		nameTok = sanitizeFilename(origFilename)
+	}
+	if nameTok == "" {
+		nameTok = kind
+	}
+	if nameTok == "" {
+		nameTok = "file"
+	}
+	parts = append(parts, nameTok, hash8)
+	return strings.Join(parts, "_") + ext
+}
+
+// isSyntheticStem reports whether a filename is one of our own generated temp
+// names (e.g. "goclaw_zca_1234.jpg") rather than a real user-provided name.
+func isSyntheticStem(name string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(filepath.Base(name))), "goclaw")
+}
+
+// fileSHA256 returns the lowercase-hex sha256 of the file, or "" if unreadable.
+// The first 8 chars seed the disk-name fingerprint; the full digest verifies a
+// dedup candidate so a prefix collision can't serve the wrong file.
+func fileSHA256(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // enrichDocumentPaths updates the last user message to include persisted file paths
@@ -540,6 +608,27 @@ func mediaKindFromMime(mime string) string {
 	}
 }
 
+func documentMIMEFromFilename(filename string) string {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".pdf":
+		return "application/pdf"
+	case ".doc":
+		return "application/msword"
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".xls":
+		return "application/vnd.ms-excel"
+	case ".xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case ".ppt":
+		return "application/vnd.ms-powerpoint"
+	case ".pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	default:
+		return ""
+	}
+}
+
 // replaceFirstMediaTag finds the first tag in content starting with prefix
 // whose full text satisfies match, and replaces it using replace.
 // Forward scanning ensures natural positional pairing when iterating refs in order.
@@ -642,6 +731,8 @@ func inferImageMime(path string) string {
 		return "image/gif"
 	case ".webp":
 		return "image/webp"
+	case ".jxl":
+		return "image/jxl"
 	default:
 		return ""
 	}

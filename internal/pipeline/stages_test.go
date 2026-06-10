@@ -15,6 +15,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
 	"github.com/nextlevelbuilder/goclaw/internal/workspace"
 )
 
@@ -47,7 +48,7 @@ func (m *mockTokenCounter) CountMessages(_ string, msgs []providers.Message) int
 	return len(msgs) * m.countPerMessage
 }
 func (m *mockTokenCounter) CountToolSchemas(_ string, _ []providers.ToolDefinition) int { return 0 }
-func (m *mockTokenCounter) ModelContextWindow(_ string) int                              { return 200_000 }
+func (m *mockTokenCounter) ModelContextWindow(_ string) int                             { return 200_000 }
 
 // --- ThinkStage tests ---
 
@@ -1750,6 +1751,60 @@ func TestFinalizeStage_DeduplicatesMediaByPath(t *testing.T) {
 	}
 }
 
+// Regression: trace 019e5f1b-… — a path the `message` tool already published
+// directly to msgBus must be dropped from MediaResults so the consumer
+// doesn't dispatch a second outbound for the same file (mp3 sent twice on
+// zalo-shtp). PublishedMedia tracker injected via ctx; FinalizeStage filters.
+func TestFinalizeStage_DropsPublishedMedia(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	const published = "/tmp/tts-1779712157829875910.mp3"
+	const fresh = "/tmp/chart.png"
+	state.Tool.MediaResults = []MediaResult{
+		{Path: published, ContentType: "audio/mpeg"},
+		{Path: fresh, ContentType: "image/png"},
+	}
+
+	pm := tools.NewPublishedMedia()
+	pm.Mark(published)
+	ctx := tools.WithPublishedMedia(context.Background(), pm)
+
+	if err := stage.Execute(ctx, state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if len(state.Tool.MediaResults) != 1 {
+		t.Fatalf("MediaResults len = %d, want 1 (published path filtered)", len(state.Tool.MediaResults))
+	}
+	if state.Tool.MediaResults[0].Path != fresh {
+		t.Errorf("survivor = %q, want %q", state.Tool.MediaResults[0].Path, fresh)
+	}
+}
+
+func TestFinalizeStage_DropsScratchMedia(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	const scratch = "/workspace/_tmp_render_report.py"
+	const final = "/workspace/generated/2026-06-01/report.png"
+	state.Tool.MediaResults = []MediaResult{
+		{Path: scratch, ContentType: "text/x-python"},
+		{Path: final, ContentType: "image/png"},
+	}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if len(state.Tool.MediaResults) != 1 {
+		t.Fatalf("MediaResults len = %d, want 1 (scratch path filtered)", len(state.Tool.MediaResults))
+	}
+	if state.Tool.MediaResults[0].Path != final {
+		t.Errorf("survivor = %q, want %q", state.Tool.MediaResults[0].Path, final)
+	}
+}
+
 // TestFinalizeStage_PersistsFromObserveAccumulator verifies that FinalizeStage
 // sources assistant images from state.Observe.AssistantImages, NOT from
 // LastResponse.Images. This guards against the regression where a mid-loop
@@ -2306,8 +2361,8 @@ func TestParseTTL_ValidInputs(t *testing.T) {
 		{"5m", 5 * time.Minute},
 		{"30s", 30 * time.Second},
 		{"1h30m", 90 * time.Minute},
-		{"bogus", 5 * time.Minute},  // invalid → fallback
-		{"-1m", 5 * time.Minute},    // negative → fallback
+		{"bogus", 5 * time.Minute}, // invalid → fallback
+		{"-1m", 5 * time.Minute},   // negative → fallback
 	}
 	for _, tc := range cases {
 		got := parseTTL(tc.in)
@@ -2441,5 +2496,105 @@ func TestPruneStage_CacheTtlGate_MarkTouchedOnlyOnMutation(t *testing.T) {
 	}
 	if atomic.LoadInt32(&touchCalled) != 0 {
 		t.Error("MarkCacheTouched should NOT be called when prune returns no mutation")
+	}
+}
+
+func TestFinalizeStage_RecoversFromLastResponseWhenObserveSkipped(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{
+		SanitizeContent: func(c string) string { return c },
+		FlushMessages:   func(_ context.Context, _ string, _ []providers.Message) error { return nil },
+	}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Observe.FinalContent = ""
+	state.Think.LastResponse = &providers.ChatResponse{
+		Content:      "the answer the user should see",
+		FinishReason: "stop",
+	}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if state.Observe.FinalContent != "the answer the user should see" {
+		t.Errorf("FinalContent = %q, want recovered from LastResponse", state.Observe.FinalContent)
+	}
+}
+
+func TestFinalizeStage_EmptyContentNoEllipsis(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{
+		SanitizeContent: func(c string) string { return c },
+		FlushMessages:   func(_ context.Context, _ string, _ []providers.Message) error { return nil },
+	}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Observe.FinalContent = ""
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if state.Observe.FinalContent != "" {
+		t.Errorf("FinalContent = %q, want empty (silent delivery, no ellipsis)", state.Observe.FinalContent)
+	}
+}
+
+func TestFinalizeStage_DoesNotRecoverWhenToolCallsPresent(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{
+		SanitizeContent: func(c string) string { return c },
+		FlushMessages:   func(_ context.Context, _ string, _ []providers.Message) error { return nil },
+	}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Observe.FinalContent = ""
+	state.Think.LastResponse = &providers.ChatResponse{
+		Content:   "intermediate text with pending tool call",
+		ToolCalls: []providers.ToolCall{{Name: "search"}},
+	}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if state.Observe.FinalContent != "" {
+		t.Errorf("FinalContent = %q, want empty (tool-iteration text must not be recovered as final)", state.Observe.FinalContent)
+	}
+}
+
+func TestPruneStage_SkipsWhenThinkHasFinalAnswer(t *testing.T) {
+	t.Parallel()
+	var compactCalled int32
+	deps := &PipelineDeps{
+		Config:       PipelineConfig{ContextWindow: 1000, MaxTokens: 100},
+		TokenCounter: &mockTokenCounter{countPerMessage: 100},
+		PruneMessages: func(msgs []providers.Message, _ int) ([]providers.Message, PruneStats) {
+			return msgs, PruneStats{}
+		},
+		CompactMessages: func(_ context.Context, msgs []providers.Message, _ string) ([]providers.Message, error) {
+			atomic.AddInt32(&compactCalled, 1)
+			return msgs, nil
+		},
+	}
+	stage := NewPruneStage(deps, NewMemoryFlushStage(deps))
+	state := defaultState()
+
+	history := make([]providers.Message, 50)
+	for i := range history {
+		history[i] = providers.Message{Role: "user", Content: "msg"}
+	}
+	state.Messages.SetHistory(history)
+	state.Think.LastResponse = &providers.ChatResponse{
+		Content:      "final answer",
+		FinishReason: "stop",
+	}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if stage.Result() != Continue {
+		t.Errorf("Result() = %v, want Continue (no AbortRun when Think has final answer)", stage.Result())
+	}
+	if atomic.LoadInt32(&compactCalled) != 0 {
+		t.Error("CompactMessages should NOT be called when Think has final answer")
 	}
 }

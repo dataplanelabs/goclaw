@@ -29,6 +29,9 @@ func (h *EpisodicHandler) auth(next http.HandlerFunc) http.HandlerFunc {
 // handleList returns episodic summaries for an agent, optionally filtered by user.
 func (h *EpisodicHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("agentID")
+	if !requireAgentUUID(w, agentID) {
+		return
+	}
 	userID := r.URL.Query().Get("user_id")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -55,6 +58,9 @@ func (h *EpisodicHandler) handleList(w http.ResponseWriter, r *http.Request) {
 func (h *EpisodicHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	locale := extractLocale(r)
 	agentID := r.PathValue("agentID")
+	if !requireAgentUUID(w, agentID) {
+		return
+	}
 
 	var body struct {
 		Query      string  `json:"query"`

@@ -310,6 +310,40 @@ func GetParamInt(params map[string]any, key string, fallback int) int {
 	return fallback
 }
 
+// providerFromChainParams returns the provider object resolved by
+// ExecuteWithChain, falling back to the registry for callers outside that path.
+// This preserves wrappers such as ChatGPTOAuthRouter instead of reloading the
+// bare configured provider by name inside individual media tools.
+func providerFromChainParams(ctx context.Context, registry *providers.Registry, providerName string, params map[string]any) (providers.Provider, error) {
+	if raw, ok := params["_native_provider"]; ok {
+		if p, ok := raw.(providers.Provider); ok {
+			return p, nil
+		}
+	}
+	if registry == nil {
+		return nil, fmt.Errorf("provider %q not available: registry is nil", providerName)
+	}
+	return registry.Get(ctx, providerName)
+}
+
+func normalizeCodexOnlyModelForProvider(toolName string, rawProvider any, model string) string {
+	model = strings.TrimSpace(model)
+	if !isCodexOnlyChatModel(model) {
+		return model
+	}
+	p, ok := rawProvider.(interface{ DefaultModel() string })
+	if !ok {
+		return model
+	}
+	fallback := strings.TrimSpace(p.DefaultModel())
+	if fallback == "" || fallback == model {
+		return model
+	}
+	slog.Warn(toolName+": codex-only model normalized to provider default",
+		"configured_model", model, "fallback_model", fallback)
+	return fallback
+}
+
 // typedProvider is optionally implemented by providers that carry their DB provider_type.
 type typedProvider interface {
 	ProviderType() string

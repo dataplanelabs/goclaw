@@ -4,6 +4,244 @@ Significant changes, features, and fixes in reverse chronological order.
 
 ---
 
+## 2026-06-02 — Create Image reference safety
+
+### fix(create_image): fail closed when required refs cannot be applied
+
+Reference-image requests now use only providers that can actually forward image
+references. If a skill logo, user photo, or other explicit reference resolves
+but the refs-capable provider chain fails, `create_image` returns a tool error
+instead of silently generating a prompt-only image.
+
+**Fixes:**
+- Prevented text-only fallback artifacts when an exact logo/face/reference was
+  required.
+- Normalized native Codex image generation so image-tool models such as
+  `gpt-image-2` are treated as `image_model`, while Codex-only parent models
+  such as `gpt-5.3-codex` fall back to the provider default parent model.
+- Updated tool schema text to make the fail-closed reference behavior explicit.
+
+**Tests:**
+- Added regression coverage for resolved refs plus failed refs-provider chain:
+  the text-only fallback provider must not be called.
+- Added native image model normalization coverage for Codex image generation.
+
+---
+
+## 2026-05-26 — VieNeu Vietnamese TTS provider
+
+### feat(tts): add VieNeu Vietnamese TTS with voice cloning
+
+New TTS provider tailored for Vietnamese, bundled into the `goclaw:-full`
+image (same edge-tts deployment pattern). Apache-2.0 licensed; CPU-only,
+no API key.
+
+**Capabilities:**
+- 6 preset voices + zero-shot per-tenant voice cloning (3–5s WAV reference)
+- Two model modes: `standard` (higher quality) and `turbo` (faster)
+- Format enum: mp3 / opus / m4a / wav — Telegram + Zalo Personal voice
+  bubbles work out of the box via existing channel send paths
+- LLM tool fallback for default voice/model honors `system_configs[tts.vieneu.*]`
+  (matches PR #172 contract)
+
+**Architecture:**
+- Python FastAPI daemon at `internal/audio/vieneu-sidecar/`, supervised by
+  goclaw on startup (subprocess on loopback `127.0.0.1:7333` — not a
+  separate Pod)
+- Go provider at `internal/audio/vieneu/` implementing TTSProvider +
+  VoiceListProvider + DescribableProvider
+- New tenant-scoped file store `internal/audio/vieneu/refstore/` for ref
+  audio (path-traversal guarded)
+- Provider registers on a `/healthz` probe at gateway boot; absent daemon
+  in non-`:full` images → `slog.Info("audio.tts: vieneu skipped")`, no errors
+
+**HTTP endpoints (Phase 04 cloning):**
+- `POST /v1/tts/vieneu/voices` — multipart upload (audio + ref_text + name)
+- `GET /v1/tts/vieneu/voices` — list tenant's cloned voices
+- `DELETE /v1/tts/vieneu/voices/{voiceID}` — soft-delete + ref-file removal
+- 5 MB body cap, 10-voice/tenant quota, daemon-side `/clone-preview`
+  validation before persistence
+
+**Database:**
+- PG migration `000077_vieneu_cloned_voices.up.sql` (RequiredSchemaVersion
+  bumped 76 → 77)
+- SQLite migration `46 → 47` mirrored in `schema.sql` + `schema.go`
+
+**Dashboard:**
+- `vieneu` added to TTS provider catalog (web + desktop)
+- 6 new locale files updated (EN / VI / ZH × web + desktop)
+- Status badge "Built-in (Vietnamese TTS)" replaces operator-editable
+  endpoint URL field (loopback only)
+
+**Operator note:** ENABLE_FULL_SKILLS=true at image build time bakes the
+ONNX model weights via `RUN python -c "from vieneu import Vieneu; Vieneu()"`.
+First cold-start without baked weights downloads from HF Hub.
+
+Branch: `feat/vieneu-tts-integration`. Plan: `plans/260526-0749-vieneu-tts-integration/`.
+
+---
+
+## 2026-05-25 (early morning — renderer list grouping)
+
+### Zalo Personal: fix `1.` restart bug in numbered lists
+
+`emitListStyles` now groups consecutive same-kind list items into ONE `lst_*` Style range. Previously each line emitted its own range, causing Zalo's native client to restart numbering at "1." for every range — a 5-item numbered list rendered as `1. ... 1. ... 1. ... 1. ... 1. ...`.
+
+**New behavior:**
+- Consecutive `1./2./3.` (or `- /- /-`) lines → ONE combined style range → Zalo numbers/bullets sequentially
+- Single isolated `1. foo` (surrounded by non-list content) → KEEPS the literal `"1."` prefix visible, no style
+- Single isolated `- foo` → strips `-` + emits `lst_1` (Zalo bullet looks cleaner than literal `-`)
+- Blank-line break or opposite-kind line terminates the run
+- Nested LLM patterns (numbered headers with unicode `•` sub-items) leave numbers visible as plain text
+
+Root cause: `plans/reports/debug-260525-0057-zalo-styles-list-numbering.md`. Trace `019e5b1f-c49f-7e0e-a646-5a4cfd11a39c` captured the original bug.
+
+---
+
+## 2026-05-24 (late night — native styles)
+
+### Zalo Personal: native rich-text styling via `textProperties`
+
+The outbound renderer no longer strips markdown wholesale. LLM-emitted `**bold**`, `*italic*` / `_italic_`, `~~strike~~`, `<u>underline</u>`, `-`/`*` unordered lists, and `1.` ordered lists now land as **native Zalo styled spans** via the `textProperties` wire field (same field Zalo Web/Mobile clients use natively per zca-js).
+
+**Coverage** (Option A scope):
+- bold, italic, underline, strikethrough — direct 1:1 markdown → Zalo style
+- unordered + ordered lists — Zalo client auto-prefixes bullets/numbers
+- mentions inside styled spans still resolve correctly (`ParseMarkersWithStyles` adjusts positions across `@[uid]→@DisplayName` replacement with a 5-case overlap algorithm)
+- UTF-16 position math reuses the existing helper (`pkg/protocol.UTF16Len`) — Vietnamese diacritics + emoji handled
+- multi-chunk sends drop styles (mirrors mention behavior); single-chunk carries styles + mentions together
+
+**Cross-channel ready:** `Style` type + `RenderStyles` function live under `internal/channels/zalo/common/` (sibling to existing `StripMarkdown`). Future OA/Bot adoption reuses without code duplication — only needs config flag + wire payload write in each channel's own send-payload builder.
+
+**Config (Web UI):** "Native text styles" toggle under channel-detail Behavior section, default ON. Set `enable_native_styles: false` to fall back to legacy v3.21.10 markdown-strip behavior verbatim. Instant rollback, no code change.
+
+**Deferred** (see `plans/reports/researcher-260524-2208-zalo-personal-styling.md`): headers → Big font, colors, nested-list indent, code blocks (no Zalo native target), markdown links (Zalo auto-detects bare URLs).
+
+---
+
+## 2026-05-24 (night — reminder tool)
+
+### Zalo Personal: reminder scheduling tool
+
+Two new channel-bound tools let agents schedule future reminders in any Zalo group or DM:
+
+- `zalo_personal_create_reminder` — schedule a reminder with `title`, `start_time` (RFC3339 or Unix epoch), `repeat` (`none|daily|weekly|monthly`), and group-only `pin_to_top`.
+- `zalo_personal_remove_reminder` — cancel by reminder ID.
+
+**Wire shape** mirrors zca-js merged `createReminder` API: `/api/board/topic/createv2` for groups (flat payload with stringified `params`), `/api/board/oneone/create` for DMs (nested `objectData` wrapper). Both route through a new `group_board` service endpoint in `ZpwServiceMapV3`.
+
+**Validation** — tool layer rejects past times (`< now()+60s`), unknown repeat modes, malformed timestamps, and oversized titles (>1000 chars). DM path requires a logged-in session UID.
+
+**Defers:** edit reminder, list reminder responses, listening for accept/reject events.
+
+---
+
+## 2026-05-24 (evening — quote-toggle bug fix)
+
+### Zalo Personal: removed legacy `quote_user_message` field entirely
+
+**Bug:** Dual-toggle split from PR #83 introduced silent fallback to the deprecated `quote_user_message` field whenever the new `quote_user_message_in_{dm,group}` keys were absent in the saved config. When users toggled "Quote in DMs" OFF in the UI, the save omitted the new key (default false) but left the legacy `quote_user_message: true` intact → `quoteInDM()` fell through to legacy → DM kept quoting despite the UI showing off.
+
+**Fix:**
+- Removed `QuoteUserMessage` from `ZaloPersonalConfig` (Go struct).
+- Simplified `quoteInDM()` / `quoteInGroup()` to use new fields directly with defaults (DM=false, Group=true) — no fallback chain.
+- Updated test factory + 3 affected handler tests to use new fields.
+- Backfilled prod DB rows: copied legacy value into missing new fields, then stripped `quote_user_message` key entirely from `zalo_personal` rows.
+
+**OA channel unchanged** — `quote_user_message` is still the active field for `zalo_oa` (not deprecated there).
+
+---
+
+## 2026-05-24 (late afternoon — mention v3)
+
+### Zalo Personal: mention v3 — zca-js fact-check corrections + bare-`@Name` auto-wrap
+
+**Critical fixes** (from `plans/reports/researcher-260524-1339-zca-js-fact-check.md`):
+
+- **Fixed phantom endpoint:** `FetchGroupMembers` was POSTing to `/api/group/getmem-v2` which does not exist in zca-js — silently failed every slow-path member lookup. Rewrote as 2-step per real zca-js flow: `/api/group/getmg-v2` returns `memVerList`, then `/api/social/group/members` returns profiles (50-batched, IDs suffixed `_0` per `friend_pversion_map` convention).
+- **Removed quote-with-attachment mention-drop rule:** my code was dropping `mentionInfo` when quote had an attachment, but zca-js's `sendMessage.ts` does NOT drop — `isMentionsValid` controls mention inclusion regardless of `qmsgAttach`. Test renamed `TestSendMessageWithOptions_QuoteAttachment_KeepsMentions`.
+- **Added zca-js defensive pre-filter:** `pos >= 0 && uid != "" && len > 0` before wire send (matches `sendMessage.ts:273`).
+
+**New feature: bare-`@Name` auto-wrap**
+
+LLMs ignore the "use marker syntax" constraint frequently. New `wrapBareMentions` pass scans rendered text for `@Word(Word){0,3}` patterns and rewrites them as `@[Name]` markers when the name resolves to exactly one known group member. Greedy longest-prefix-first match; refuses ambiguity. Skips reserved tokens (`@all`/`@All`/`@everyone`) and existing markers. Runs only on group threads, before the parser.
+
+**Prompt tightening**
+
+- Added explicit "NEVER guess or fabricate names" rule with examples — addresses the LLM hallucinating "Trang" / "Ngoc Tran" placeholders.
+
+**Tests**
+
+- 11 bare-mention auto-wrap tests (single-word hit, multi-word, longest-prefix, shrink-on-miss, no-match, reserved skip, marker-no-double-wrap, email-not-matched, diacritics, start-of-text, ambiguous refuse).
+- New `TestSendMessageWithOptions_FiltersInvalidMentions` (defensive pre-filter).
+- Renamed quote+attach test to assert mentions ARE retained.
+
+---
+
+## 2026-05-24 (afternoon — mention v2)
+
+### Zalo Personal: mention robustness — name fallback, @All capitalization, auto-asker
+
+**Features**
+
+- **Name-fallback resolver:** when LLM emits `@[Display Name]` instead of `@[uid]`, the resolver now scans the group member cache (NFC + casefold + trim normalization) and matches if unique. Ambiguous (≥2 same name) or unknown names preserve as literal text — never mention wrong target. Triggers a rate-limited `/getmem-v2` slow fetch on first cache miss.
+- **UID in inbound annotation:** `[From: Van Duc]\n...` → `[From: Van Duc (uid:5234567890)]\n...`. Makes the UID a first-class token at the prompt position the LLM reads every turn.
+- **Auto-prepend asker mention:** group replies automatically lead with `@[<sender_uid>]` of the user being answered. Deduped if the LLM already mentioned them or used `@[all]`/`@[All]`.
+- **`@all` → `@All`:** matches Zalo native client's display capitalization. Aliases accepted: `@[all]`, `@[All]`, `@[everyone]`.
+- **Strengthened prompt addendum:** explicit constraint "never write `@<Name>` as bare text", priority-ordered marker forms (UID > display name > @all), asker-addressing guidance, with worked Vietnamese example.
+
+**Internal**
+
+- `internal/channels/zalo/personal/name_lookup.go` — `LookupGroupMemberByName` with hybrid cache → slow-path strategy mirroring `LookupGroupMember`.
+- `internal/channels/zalo/personal/member_cache.go::FindByName` — refuse-on-ambiguity scan.
+- `internal/channels/zalo/personal/asker_prepend.go` — extracted helper for testability.
+- Reuses Phase 5's `MemberFetchLimiter` (60s window per thread) and `memberFetchTimeout` (3s) — no new infra.
+
+**Tests**
+
+- 5 normalization + cache-find tests (Vietnamese, ambiguous refusal, NFC).
+- 4 `LookupGroupMemberByName` tests (cache hit, slow-path fetch, empty input, NFC normalization).
+- 5 asker-prepend tests (add, dedupe, skip on @[all], empty asker, empty content).
+- @all alias coverage (`all` / `All` / `everyone`).
+
+---
+
+## 2026-05-24
+
+### Channels: team-reply capture + evaluation (Zalo OA)
+
+Captures every human-team-typed reply on Zalo OA channels into the bot's transcript + a new `team_reply_evaluations` table (PG migration 000074 + SQLite slot 44, `RequiredSchemaVersion=74`, `SchemaVersion=44`). Per-channel polling worker (`/onbehalf/conversation`, 60s tick) opted in via `config.capture_team_replies=true`. New `team.reply.observed` DomainEvent subscribed by a `JudgeWorker` (consolidation pipeline) that invokes a per-tenant judge agent via `agent.Router.Get(...).Run(...)` to produce hypothesized bot reply + diff score 0–1 + reasoning, then writes verdict to the evaluations table. Per-tenant rate limit (10/min, 5 burst) prevents runaway eval costs. 4 new WS RPCs (`channels.team_replies_list|get|export_jsonl|team_capture_toggle`) — toggle is admin-only. Web UI: new "Team Analytics" tab on channel detail with 10-bucket diff distribution histogram, recent captures table, thread filter, JSONL export in OpenAI chat-completions training shape. Polling chosen over webhook after research showed `oa_send_*` webhook delivery for Manager-app human-typed sends is undocumented + empirically NO-GO. Phase 2 outbox correlation deferred to v2 (Option C hybrid). See `docs/team-reply-evaluation.md`.
+
+### Zalo Personal: @[uid] mention support for group chats
+
+**Features**
+
+- Added server-parsed `@[uid]` and `@[all]` mention markers for Zalo Personal group sends. Agents emit markers inline (e.g. `"Cảm ơn @[5234567890]!"`); the gateway rewrites them to `@DisplayName` and routes to Zalo's `/api/group/mention` endpoint with UTF-16-correct `mentionInfo` offsets so recipients get clickable, notification-firing mentions.
+- Introduced channel-neutral `pkg/protocol.Mention` envelope shared with future Zalo OA group adapter; UTF-16 length helper handles Vietnamese diacritics + emoji surrogate pairs correctly.
+- Inbound Zalo Personal group messages now stamp `metadata["sender_uid"]` (universal) and `metadata["mentions"]` (JSON-encoded `[]Mention` when mentions present) so downstream agents can learn UIDs and emit follow-up mentions.
+- Added hybrid group-member lookup: recent posters via existing history → in-process member cache → rate-limited on-demand fetch via new `/api/group/getmem-v2` call. Opportunistic warming caches every inbound sender for free.
+- New channel-gated bootstrap addendum `ZALO_PERSONAL_ADDENDUM.md` teaches the LLM marker syntax when its agent has a Zalo Personal channel configured; zero token cost for agents without one.
+- Graceful degrade for unsupported surfaces: DMs strip wire mentions but still rewrite markers to readable `@DisplayName` text; Zalo Bot channel rewrites markers to literal `@<uid>` (no group/mention API support upstream).
+
+**Internal**
+
+- New sub-package `internal/channels/mentions` (parser + chunk-boundary helper) is channel-agnostic for future reuse.
+- `protocol.SendMessage` now thin-shims through new `SendMessageWithOptions` with `SendOptions{Text, Quote, Mentions}`. Existing callers unchanged.
+- `ErrMentionRejected` mirrors `ErrQuoteRejected` pattern: on Zalo refusing the mention payload, the channel auto-falls back to `/sendmsg` so users never see a dropped reply.
+
+**Tests**
+
+- 23 parser tests covering ASCII, Vietnamese diacritics, emoji surrogate pairs, CJK, @all, unresolved markers, adjacent markers, markdown-link no-collision.
+- 9 wire-shape tests asserting endpoint routing, mentionInfo JSON exact-byte match, quote+mention coexistence rules, DM wire-drop.
+- 11 LookupGroupMember + MemberCache + rate-limiter tests including opportunistic warming.
+- Bot strip-marker tests + DM short-circuit test.
+- Integration test for byte-equality against a zca-js wire-capture fixture is scaffolded but skipped pending one-off Node + zca-js fixture capture (Path B from Phase 1 spike); Phase 5 manual dogfood remains the load-bearing verification until fixture lands.
+### Channels: agent standby mode
+
+Declarative per-channel + per-thread silence schedule (`channel_instances.silence_schedule` JSONB + `channel_thread_schedules`). New `StandbyGate` pipeline stage gates message processing at iteration entry: when a `(tenant, channel, thread)` resolves to `standby`, the gate sets `AbortRun` — Think/Tool/Observe skipped, FinalizeStage still writes working + episodic memory. Per-thread overrides REPLACE the instance default (no merge); one-shot windows beat recurring on overlap. Agent self-pause via `enter_standby(duration_seconds, reason)` tool. 7 new WS RPCs under `channels.schedule_*` + `channels.thread_schedule_*` (tenant admin guard). PG migration 000071 + SQLite slot 41 (`RequiredSchemaVersion=71`, `SchemaVersion=41`). Web UI: new "Standby" tab on channel detail with raw-JSON editor + thread override list. Frozen-clock unit tests cover DST, cross-midnight, one-shot-beats-recurring; PG integration tests cover round-trip + cross-tenant isolation + FK cascade. See `docs/standby-mode.md`.
+
+---
+
 ## 2026-05-18
 
 ### Packages: GitHub installer runtime path

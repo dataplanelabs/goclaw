@@ -51,11 +51,17 @@ func (l *Loop) hasReadImageProvider() bool {
 }
 
 // loadHistoricalImagesForTool collects image MediaRefs from historical messages
-// and loads them into context for the read_image tool. Merges with any images already
-// in context (from current turn). Limited to last maxMediaReloadMessages messages with image refs.
+// and loads them into context for the read_image tool. Skipped when the current
+// turn already has attached images — in that case read_image without `path`
+// should focus on the current turn (historical accessible via explicit path).
+// Limited to last maxMediaReloadMessages messages with image refs.
 func (l *Loop) loadHistoricalImagesForTool(ctx context.Context, currentRefs []providers.MediaRef, messages []providers.Message) context.Context {
-	// Start with current-turn images already in context.
 	existing := tools.MediaImagesFromCtx(ctx)
+	if len(existing) > 0 {
+		// Current turn has images; don't dilute read_image's view with history.
+		// History stays reachable via explicit path argument.
+		return ctx
+	}
 
 	// Collect image paths from historical messages (scan backwards, limit count).
 	var histPaths []bus.MediaFile
@@ -93,10 +99,6 @@ func (l *Loop) loadHistoricalImagesForTool(ctx context.Context, currentRefs []pr
 		return ctx
 	}
 
-	// Merge: existing (current turn) + historical.
-	merged := make([]providers.ImageContent, 0, len(existing)+len(histImages))
-	merged = append(merged, existing...)
-	merged = append(merged, histImages...)
-	slog.Debug("vision: loaded historical images for read_image tool", "current", len(existing), "historical", len(histImages))
-	return tools.WithMediaImages(ctx, merged)
+	slog.Debug("vision: loaded historical images for read_image tool", "historical", len(histImages))
+	return tools.WithMediaImages(ctx, histImages)
 }

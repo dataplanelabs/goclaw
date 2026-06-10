@@ -12,6 +12,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/audio/minimax"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -22,12 +23,19 @@ type VoicesHandler struct {
 	provider    audio.VoiceListProvider // nil when resolved at request time from stores
 	secretStore store.ConfigSecretsStore
 	tenantStore store.TenantStore
+	mgr         *audio.Manager // optional; prefers already-registered providers (vieneu needs daemon URL + cloned-voice lookup)
 }
 
 // NewVoicesHandler creates a handler that resolves the provider at request time
 // from config_secrets. Use NewVoicesHandlerWithProvider for tests.
 func NewVoicesHandler(cache *audio.VoiceCache, secretStore store.ConfigSecretsStore, tenantStore store.TenantStore) *VoicesHandler {
 	return &VoicesHandler{cache: cache, secretStore: secretStore, tenantStore: tenantStore}
+}
+
+// SetManager wires the audio manager so resolveProvider can prefer already-
+// registered providers (which carry runtime deps the secret-only path lacks).
+func (h *VoicesHandler) SetManager(mgr *audio.Manager) {
+	h.mgr = mgr
 }
 
 // NewVoicesHandlerWithProvider creates a handler with a pre-built provider.
@@ -137,6 +145,16 @@ func (h *VoicesHandler) resolveProvider(r *http.Request, tenantID uuid.UUID) (au
 			return nil, fmt.Errorf("ElevenLabs API key not found for tenant %s", tenantID)
 		}
 		return elevenlabs.NewTTSProvider(elevenlabs.Config{APIKey: apiKey}), nil
+
+	case "vieneu":
+		if h.mgr != nil {
+			if p, ok := h.mgr.GetProvider("vieneu"); ok {
+				if vl, ok := p.(audio.VoiceListProvider); ok {
+					return vl, nil
+				}
+			}
+		}
+		return vieneu.NewProvider(vieneu.Config{}), nil
 
 	default:
 		return nil, fmt.Errorf("unsupported voice provider: %s", providerName)

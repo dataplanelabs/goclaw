@@ -18,19 +18,27 @@ func (s *PGSkillStore) UpsertSystemSkill(ctx context.Context, p store.SkillCreat
 	var existingID uuid.UUID
 	var existingHash *string
 	var existingFilePath string
+	var existingSource string
 	err := s.db.QueryRowContext(ctx,
-		"SELECT id, file_hash, file_path FROM skills WHERE slug = $1", p.Slug,
-	).Scan(&existingID, &existingHash, &existingFilePath)
+		"SELECT id, file_hash, file_path, source FROM skills WHERE slug = $1", p.Slug,
+	).Scan(&existingID, &existingHash, &existingFilePath, &existingSource)
 
 	if err == nil {
 		// Skill exists — check if hash changed
 		if existingHash != nil && p.FileHash != nil && *existingHash == *p.FileHash {
+			if existingSource != "bundled" {
+				_, _ = s.db.ExecContext(ctx,
+					`UPDATE skills SET source = 'bundled', updated_at = NOW() WHERE id = $1`,
+					existingID,
+				)
+				s.BumpVersion()
+			}
 			return existingID, false, existingFilePath, nil // unchanged, use existing path
 		}
 		// existingHash is nil (old record without hash) — backfill hash without bumping version
 		if existingHash == nil && p.FileHash != nil {
 			_, _ = s.db.ExecContext(ctx,
-				`UPDATE skills SET file_hash = $1, updated_at = NOW() WHERE id = $2`,
+				`UPDATE skills SET file_hash = $1, source = 'bundled', updated_at = NOW() WHERE id = $2`,
 				p.FileHash, existingID,
 			)
 			return existingID, false, existingFilePath, nil
@@ -40,7 +48,7 @@ func (s *PGSkillStore) UpsertSystemSkill(ctx context.Context, p store.SkillCreat
 		_, err = s.db.ExecContext(ctx,
 			`UPDATE skills SET name = $1, description = $2, version = $3, frontmatter = $4,
 			 file_path = $5, file_size = $6, file_hash = $7, is_system = true,
-			 visibility = 'public', status = $8, updated_at = NOW()
+			 source = 'bundled', visibility = 'public', status = $8, updated_at = NOW()
 			 WHERE id = $9`,
 			p.Name, p.Description, p.Version, fmJSON,
 			p.FilePath, p.FileSize, p.FileHash, p.Status, existingID,
@@ -57,8 +65,8 @@ func (s *PGSkillStore) UpsertSystemSkill(ctx context.Context, p store.SkillCreat
 	fmJSON := marshalFrontmatter(p.Frontmatter)
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO skills (id, name, slug, description, owner_id, visibility, version, status,
-		 is_system, frontmatter, file_path, file_size, file_hash, tenant_id, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, 'system', 'public', $5, $6, true, $7, $8, $9, $10, $11, NOW(), NOW())`,
+		 is_system, frontmatter, file_path, file_size, file_hash, source, tenant_id, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, 'system', 'public', $5, $6, true, $7, $8, $9, $10, 'bundled', $11, NOW(), NOW())`,
 		id, p.Name, p.Slug, p.Description, p.Version, p.Status,
 		fmJSON, p.FilePath, p.FileSize, p.FileHash, store.MasterTenantID,
 	)

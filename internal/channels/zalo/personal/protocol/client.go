@@ -1,12 +1,14 @@
 package protocol
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -18,6 +20,32 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// Zalo CDN AAAA + no v6 egress = ENETUNREACH. Force tcp4. Trace 019e601a.
+var ipv4Dialer = &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+
+func dialIPv4(ctx context.Context, network, addr string) (net.Conn, error) {
+	return ipv4Dialer.DialContext(ctx, normalizeNetworkForIPv4(network), addr)
+}
+
+func normalizeNetworkForIPv4(network string) string {
+	switch network {
+	case "tcp", "tcp6":
+		return "tcp4"
+	}
+	return network
+}
+
+func newIPv4Transport() *http.Transport {
+	return &http.Transport{
+		DialContext:           dialIPv4,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+}
 
 // Session holds authenticated Zalo session state.
 type Session struct {
@@ -41,8 +69,9 @@ func NewSession() *Session {
 		Language:  DefaultLanguage,
 		CookieJar: jar,
 		Client: &http.Client{
-			Jar:     jar,
-			Timeout: 60 * time.Second,
+			Jar:       jar,
+			Timeout:   60 * time.Second,
+			Transport: newIPv4Transport(),
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= MaxRedirects {
 					return fmt.Errorf("zalo_personal: too many redirects")

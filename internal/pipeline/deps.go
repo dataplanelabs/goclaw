@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/hooks"
@@ -117,6 +118,11 @@ type PipelineDeps struct {
 	UpdateMetadata         func(ctx context.Context, sessionKey string, usage providers.Usage) error
 	BootstrapCleanup       func(ctx context.Context, state *RunState) error
 	MaybeSummarize         func(ctx context.Context, sessionKey string)
+
+	// ResolveStandbyMode (StandbyGate): given (tenantID, channelName, threadKey, now),
+	// returns the effective Mode (Active or Standby). nil = standby disabled
+	// (gate is a no-op).
+	ResolveStandbyMode func(ctx context.Context, tenantID, channelName, threadKey string, now time.Time) schedule.Mode
 }
 
 // FireHook is nil-safe. Returns FireResult{Decision: DecisionAllow} when no

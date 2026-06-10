@@ -84,7 +84,7 @@ func (l *Loop) compactMessagesInPlace(ctx context.Context, messages []providers.
 		}
 	}
 
-	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	sctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
 	inTokens := l.estimateSummaryInputTokens(toSummarize)

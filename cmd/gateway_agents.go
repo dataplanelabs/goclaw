@@ -3,10 +3,19 @@ package cmd
 import (
 	"context"
 	"log/slog"
+	"net/http"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/audio/elevenlabs"
 	geminiaudio "github.com/nextlevelbuilder/goclaw/internal/audio/gemini"
 	minimaxaudio "github.com/nextlevelbuilder/goclaw/internal/audio/minimax"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu/refstore"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/memory"
@@ -308,11 +317,162 @@ func setupTTS(cfg *config.Config) *tts.Manager {
 		}))
 	}
 
+	if spawnVieNeuDaemonIfPresent() {
+		go registerVieNeuIfHealthy(mgr, ttsCfg)
+	}
+
 	if !mgr.HasProviders() {
 		return nil
 	}
 
 	return mgr
+}
+
+// filteredDaemonEnv removes agent-runtime overlay vars so spawned daemons resolve deps from the image's system site-packages, not from /app/data/.runtime/pip (which can carry ABI-incompatible .so files across image rebuilds).
+func filteredDaemonEnv(parent []string) []string {
+	dropped := map[string]bool{
+		"PYTHONPATH":        true,
+		"PIP_TARGET":        true,
+		"PIP_CACHE_DIR":     true,
+		"NPM_CONFIG_PREFIX": true,
+		"NODE_PATH":         true,
+		"HF_HOME":           true,
+		"XDG_CACHE_HOME":    true,
+	}
+	out := make([]string, 0, len(parent))
+	for _, kv := range parent {
+		eq := strings.IndexByte(kv, '=')
+		if eq <= 0 {
+			out = append(out, kv)
+			continue
+		}
+		if dropped[kv[:eq]] {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+// spawnVieNeuDaemonIfPresent launches the bundled uvicorn daemon as a child
+// process when /app/vieneu-sidecar exists (only in :full images). Skips silently
+// otherwise. Daemon binds 127.0.0.1:7333; logs go to goclaw's stdout/stderr.
+func spawnVieNeuDaemonIfPresent() bool {
+	const dir = "/app/vieneu-sidecar"
+	if _, err := os.Stat(dir + "/app/main.py"); err != nil {
+		return false
+	}
+	cmd := exec.Command("python3", "-m", "uvicorn", "app.main:app",
+		"--host", "127.0.0.1", "--port", "7333", "--workers", "1")
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	hfCache := "/app/data/.cache/huggingface"
+	_ = os.MkdirAll(hfCache, 0o755)
+	cmd.Env = append(filteredDaemonEnv(os.Environ()),
+		"HF_HOME="+hfCache,
+		"XDG_CACHE_HOME=/app/data/.cache",
+	)
+	if err := cmd.Start(); err != nil {
+		slog.Warn("vieneu.daemon: spawn failed", "err", err)
+		return false
+	}
+	slog.Info("vieneu.daemon: spawn ok", "pid", cmd.Process.Pid)
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			slog.Warn("vieneu.daemon: exited", "err", err)
+		}
+	}()
+	return true
+}
+
+func registerVieNeuIfHealthy(mgr *tts.Manager, ttsCfg config.TtsConfig) {
+	registerVieNeuIfHealthyWith(mgr, ttsCfg, nil, nil)
+}
+
+// registerVieNeuIfHealthyWith is the cloning-aware variant. clonedStore + refStore
+// may be nil (preset voices only).
+func registerVieNeuIfHealthyWith(mgr *tts.Manager, ttsCfg config.TtsConfig, clonedStore store.VieneuClonedVoicesStore, refStore *refstore.Store) string {
+	endpoint := ttsCfg.VieNeu.Endpoint
+	if endpoint == "" {
+		endpoint = "http://127.0.0.1:7333"
+	}
+	// First start downloads ~600 MB GGUF + ONNX codec (~60-120s); warm restarts ~30s.
+	deadline := time.Now().Add(5 * time.Minute)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		probeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, endpoint+"/healthz", nil)
+		if err != nil {
+			cancel()
+			slog.Info("audio.tts: vieneu skipped — request build failed", "err", err)
+			return ""
+		}
+		resp, err := http.DefaultClient.Do(req)
+		cancel()
+		if err == nil && resp.StatusCode == http.StatusOK {
+			_ = resp.Body.Close()
+			lastErr = nil
+			break
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		lastErr = err
+		time.Sleep(3 * time.Second)
+	}
+	if lastErr != nil {
+		slog.Info("audio.tts: vieneu skipped — daemon unreachable", "endpoint", endpoint, "err", lastErr)
+		return ""
+	}
+
+	cfg := tts.VieNeuConfig{
+		Endpoint:  endpoint,
+		VoiceID:   ttsCfg.VieNeu.Voice,
+		Model:     ttsCfg.VieNeu.Model,
+		Emotion:   ttsCfg.VieNeu.Emotion,
+		TimeoutMs: ttsCfg.TimeoutMs,
+	}
+	if clonedStore != nil && refStore != nil {
+		cfg.ClonedVoices = &vieneuClonedAdapter{store: clonedStore, refStore: refStore}
+	}
+	mgr.RegisterProvider(tts.NewVieNeuProvider(cfg))
+	slog.Info("audio.tts: vieneu registered", "endpoint", endpoint, "cloning", cfg.ClonedVoices != nil)
+	return endpoint
+}
+
+// vieneuClonedAdapter bridges store.VieneuClonedVoicesStore + refstore.Store to
+// the audio/vieneu provider's ClonedVoiceLookup interface.
+type vieneuClonedAdapter struct {
+	store    store.VieneuClonedVoicesStore
+	refStore *refstore.Store
+}
+
+func (a *vieneuClonedAdapter) Get(ctx context.Context, tenantID uuid.UUID, voiceID string) (string, string, string, bool, error) {
+	row, err := a.store.Get(ctx, tenantID, voiceID)
+	if err != nil {
+		return "", "", "", false, err
+	}
+	if row == nil {
+		return "", "", "", false, nil
+	}
+	path, err := a.refStore.PathFor(tenantID, row.ID.String())
+	if err != nil {
+		return "", "", "", false, err
+	}
+	return path, row.RefText, row.Name, true, nil
+}
+
+func (a *vieneuClonedAdapter) List(ctx context.Context, tenantID uuid.UUID) ([]vieneu.ClonedVoiceListItem, error) {
+	rows, err := a.store.List(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]vieneu.ClonedVoiceListItem, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, vieneu.ClonedVoiceListItem{VoiceID: r.VoiceID, Name: r.Name})
+	}
+	return out, nil
 }
 
 // setupAudioExtras wires Music and SFX providers into the audio Manager.

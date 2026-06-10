@@ -428,7 +428,7 @@ func (s *SQLiteSkillStore) ListAccessible(ctx context.Context, agentID uuid.UUID
 			s.is_system = 1
 			OR s.visibility = 'public'
 			OR (s.visibility = 'private' AND (s.owner_id = ? OR s.owner_id = ?))
-			OR (s.visibility = 'internal' AND (sag.id IS NOT NULL OR sug.id IS NOT NULL))
+			OR (s.visibility IN ('internal', 'tenant') AND (sag.id IS NOT NULL OR sug.id IS NOT NULL))
 		)
 		ORDER BY s.name`,
 		append(queryArgs, userID, actorID)...,

@@ -134,13 +134,16 @@ func (c *Channel) onReactionEvent(ev ReactionEvent) {
 	if ev.IsHistoric {
 		return
 	}
-	if ev.IsSelf && !c.config.ListenSelfReactions {
+	mode := c.reactionsMode()
+	if mode == reactionsModeSilent {
 		return
 	}
-	switch c.reactionsMode() {
-	case reactionsModeSilent:
-		return
-	case reactionsModeFeedback:
+	if ev.IsSelf {
+		if mode == reactionsModeFeedback || !c.config.ListenSelfReactions {
+			return
+		}
+	}
+	if mode == reactionsModeFeedback {
 		c.recordReactionFeedback(ev)
 		return
 	}
@@ -151,7 +154,23 @@ func (c *Channel) onReactionEvent(ev ReactionEvent) {
 	c.reactionCoalescer.Submit(ev)
 }
 
+func (c *Channel) isSelfReactor(uid string) bool {
+	if uid == "" {
+		return false
+	}
+	if uid == protocol.DefaultUIDSelf {
+		return true
+	}
+	if sess := c.session(); sess != nil && sess.UID != "" && sess.UID == uid {
+		return true
+	}
+	return false
+}
+
 func (c *Channel) recordReactionFeedback(ev ReactionEvent) {
+	if c.isSelfReactor(ev.UIDFrom) {
+		return
+	}
 	icon := ev.Code
 	if u := protocol.ReactionCodeToUnicode(ev.Code); u != "" {
 		icon = u
@@ -159,7 +178,7 @@ func (c *Channel) recordReactionFeedback(ev ReactionEvent) {
 	sentiment := reactionSentiment(ev.Code)
 	reactorName := channels.SanitizeDisplayName(ev.DName)
 	if reactorName == "" {
-		reactorName = ev.UIDFrom
+		reactorName = "Someone"
 	}
 
 	slog.Info("zalo_personal.reaction.feedback",
@@ -183,10 +202,14 @@ func (c *Channel) recordReactionFeedback(ev ReactionEvent) {
 		return
 	}
 
-	summary := fmt.Sprintf("%s reacted %s (%s) on your message %s", reactorName, icon, sentiment, ev.MsgID)
-	if ev.Code == protocol.ReactionNone {
-		summary = fmt.Sprintf("%s removed their reaction on your message %s", reactorName, ev.MsgID)
-	}
+	preview := c.lookupOutboundPreview(context.Background(), ev.MsgID)
+	slog.Info("zalo_personal.reaction.preview_lookup",
+		"target_msg_id", ev.MsgID,
+		"target_cli_msg_id", ev.CliMsgID,
+		"hit", preview != "",
+		"preview_len", len(preview),
+	)
+	summary := buildReactionSummary(reactorName, icon, sentiment, ev.MsgID, preview, ev.Code == protocol.ReactionNone)
 
 	sessionKey := sessions.BuildSessionKey(c.AgentID(), c.Type(), sessions.PeerKindFromGroup(ev.ThreadType == protocol.ThreadTypeGroup), ev.ThreadID)
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
@@ -216,14 +239,27 @@ func reactionThreadTypeName(t protocol.ThreadType) string {
 	return "direct"
 }
 
+func buildReactionSummary(reactorName, icon, sentiment, msgID, preview string, removed bool) string {
+	if removed {
+		if preview != "" {
+			return fmt.Sprintf(`%s removed their reaction on your reply: %q`, reactorName, preview)
+		}
+		return fmt.Sprintf("%s removed their reaction on message %s", reactorName, msgID)
+	}
+	if preview != "" {
+		return fmt.Sprintf(`%s reacted %s (%s) on your reply: %q`, reactorName, icon, sentiment, preview)
+	}
+	return fmt.Sprintf("%s reacted %s (%s) on message %s", reactorName, icon, sentiment, msgID)
+}
+
 func reactionSentiment(code string) string {
 	switch code {
 	case protocol.ReactionHeart, protocol.ReactionLike, protocol.ReactionHaha:
 		return "positive"
-	case protocol.ReactionAngry, protocol.ReactionCry, protocol.ReactionWorry:
+	case protocol.ReactionAngry, protocol.ReactionCry:
 		return "negative"
 	case protocol.ReactionWow:
-		return "neutral"
+		return "surprise"
 	}
 	return "unknown"
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/audio/gemini"
 	"github.com/nextlevelbuilder/goclaw/internal/audio/minimax"
 	"github.com/nextlevelbuilder/goclaw/internal/audio/openai"
+	"github.com/nextlevelbuilder/goclaw/internal/audio/vieneu"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 )
 
@@ -29,6 +30,7 @@ func builtinTTSCapabilities() []audio.ProviderCapabilities {
 		(&edge.Provider{}).Capabilities(),
 		(&minimax.Provider{}).Capabilities(),
 		(&gemini.Provider{}).Capabilities(),
+		(&vieneu.Provider{}).Capabilities(),
 	}
 }
 

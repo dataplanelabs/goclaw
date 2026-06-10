@@ -149,7 +149,14 @@
       "timeout": "超时",
       "imageModelLabel": "图像模型",
       "imageModelDefaultOption": "默认 · gpt-image-2（推荐）",
-      "imageModelLegacyOption": "旧版 · gpt-image-1.5"
+      "imageModelLegacyOption": "旧版 · gpt-image-1.5",
+      "dailyLimit": "每日上限",
+      "dailyLimitHelp": "每天最多成功生成次数。留空 = 不限制。仅计成功次数；UTC 午夜重置。",
+      "scope": "范围",
+      "scopeChannel": "按渠道实例",
+      "scopeThread": "按群/会话",
+      "scopeAgent": "按 agent",
+      "scopeTool": "按租户（全局）"
     },
     "noMatchDescription": "请尝试其他搜索词。",
     "noMatchTitle": "未找到匹配工具",

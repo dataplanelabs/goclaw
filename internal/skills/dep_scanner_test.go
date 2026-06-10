@@ -63,7 +63,7 @@ deps:
 	if !got.FromManifest {
 		t.Fatal("FromManifest should be true")
 	}
-	wantPy := []string{"psycopg2-binary", "requests"}
+	wantPy := []string{"psycopg2", "requests"}
 	if !slices.Equal(got.RequiresPython, wantPy) {
 		t.Errorf("RequiresPython = %v, want %v (auto-scanned numpy should be overridden)", got.RequiresPython, wantPy)
 	}

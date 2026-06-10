@@ -45,8 +45,10 @@ const (
 	MsgInstanceNotFound   = "error.instance_not_found"   // "instance not found"
 
 	// --- Cron ---
-	MsgJobNotFound     = "error.job_not_found"     // "job not found"
-	MsgInvalidCronExpr = "error.invalid_cron_expr" // "invalid cron expression: %s"
+	MsgJobNotFound                = "error.job_not_found"                  // "job not found"
+	MsgInvalidCronExpr            = "error.invalid_cron_expr"              // "invalid cron expression: %s"
+	MsgCronDeliverChannelRequired = "error.cron_deliver_channel_required" // "cron job with deliver=true requires deliverChannel"
+	MsgCronDeliverToRequired      = "error.cron_deliver_to_required"      // "cron job with deliver=true requires deliverTo"
 
 	// --- Config ---
 	MsgConfigHashMismatch = "error.config_hash_mismatch" // "config has changed (hash mismatch)"
@@ -114,6 +116,8 @@ const (
 	// --- Skills ---
 	MsgSkillsUpdateNotSupported = "error.skills_update_not_supported" // "skills.update not supported for file-based skills"
 	MsgCannotResolveSkillID     = "error.cannot_resolve_skill_id"     // "cannot resolve skill ID for file-based skill"
+	MsgSkillManagedOverwrite    = "error.skill_managed_overwrite"     // "this skill is gcplane-managed; pass force_imperative=true to override (audit-logged)"
+	MsgSkillInvalidSource       = "error.skill_invalid_source"        // "invalid source value; allowed: unknown, cli, gcplane"
 	MsgInvalidVisibility        = "error.invalid_visibility"          // "invalid visibility %q: must be one of private, public"
 
 	// --- Package updates (Phase 4+5) ---
@@ -244,6 +248,17 @@ const (
 	MsgTtsParamUnknownKey       = "error.tts_param_unknown_key"       // "TTS param %q is not supported by this provider"
 	MsgTtsMiniMaxVoicesFailed   = "error.tts_minimax_voices_failed"   // "failed to fetch MiniMax voices: %s"
 
+	// --- VieNeu (Vietnamese TTS) ---
+	MsgTtsVieneuSynthesisFailed   = "error.tts_vieneu_synthesis_failed"   // "VieNeu synthesis failed: %s"
+	MsgTtsVieneuVoicesFailed      = "error.tts_vieneu_voices_failed"      // "failed to fetch VieNeu voices: %s"
+	MsgTtsVieneuRefAudioInvalid   = "error.tts_vieneu_ref_audio_invalid"  // "reference audio invalid: %s"
+	MsgTtsVieneuDaemonUnreachable = "error.tts_vieneu_daemon_unreachable" // "VieNeu daemon unreachable; ensure goclaw is built with ENABLE_FULL_SKILLS"
+	MsgVieneuRefAudioTooShort     = "error.vieneu_ref_audio_too_short"   // "reference audio too short: %s"
+	MsgVieneuRefAudioTooLong      = "error.vieneu_ref_audio_too_long"    // "reference audio too long: %s"
+	MsgVieneuRefTextRequired      = "error.vieneu_ref_text_required"     // "ref_text required for voice cloning"
+	MsgVieneuMaxClonedVoices      = "error.vieneu_max_cloned_voices"     // "max cloned voices per tenant reached: %d"
+	MsgVieneuClonedVoiceNotFound  = "error.vieneu_cloned_voice_not_found" // "cloned voice not found: %s"
+
 	// --- STT ---
 	MsgSTTAllProvidersFailed     = "error.stt_all_providers_failed"    // "All STT providers failed"
 	MsgSTTLegacyConfigDeprecated = "warn.stt_legacy_config_deprecated" // "Legacy STT config deprecated; migrate to builtin_tools[stt]"
@@ -348,4 +363,46 @@ const (
 	MsgGrantEnvValueInvalid = "error.grant_env_value_invalid" // "invalid env value: %s"
 	MsgGrantEnvTooManyKeys  = "error.grant_env_too_many_keys" // "too many env keys: max 50"
 	MsgGrantEnvRevealLimit  = "error.grant_env_reveal_limit"  // "rate limit exceeded for env reveal"
+
+	// --- Secure CLI execution ---
+	MsgSecureCliBinaryNotFound = "error.secure_cli_binary_not_found" // "binary %q is not registered for secure exec"
+	MsgSecureCliNoGrant        = "error.secure_cli_no_grant"         // "agent has no grant for binary %q"
+	MsgSecureCliDeniedByPolicy = "error.secure_cli_denied_by_policy" // "call denied by deny_args policy: %s"
+
+	// --- OAuth integrations (B3-01: per-operator Google connect flow) ---
+	MsgOAuthStateMismatch        = "error.oauth_state_mismatch"         // "OAuth state token mismatch or expired"
+	MsgOAuthExchangeFailed       = "error.oauth_exchange_failed"        // "OAuth code exchange failed: %s"
+	MsgOAuthBinaryNotFound       = "error.oauth_binary_not_found"       // "secure CLI binary %q not registered for this tenant"
+	MsgOAuthIntegrationNotFound  = "error.oauth_integration_not_found"  // "no integration found for %q"
+	MsgOAuthRevoked              = "error.oauth_revoked"                // "Google credentials revoked — please reconnect"
+	MsgOAuthNotConfigured        = "error.oauth_not_configured"         // "Google OAuth is not configured on this server"
+
+	// --- Standby mode ---
+	StandbyToolDescription      = "standby.tool.description"
+	StandbyToolParamDuration    = "standby.tool.param.duration"
+	StandbyToolParamReason      = "standby.tool.param.reason"
+	StandbyErrorInvalidDuration = "standby.error.invalid_duration"
+	StandbyErrorNoChannelCtx    = "standby.error.no_channel_context"
+	StandbyEntered              = "standby.entered"
+	StandbyRPCInvalidSchedule   = "standby.rpc.invalid_schedule"
+	StandbyRPCNoPermission      = "standby.rpc.no_permission"
+
+	// Team-reply capture + evaluation (Phase 6+7)
+	TeamCaptureRPCNoPermission    = "team_capture.rpc.no_permission"
+	TeamCaptureRPCInvalidConfig   = "team_capture.rpc.invalid_config"
+	TeamCaptureJudgeAgentNotFound = "team_capture.judge_agent_not_found"
+	TeamCaptureJudgeKeyRequired   = "team_capture.judge_key_required"
+	TeamCaptureScheduleInvalid    = "team_capture.schedule_invalid"
+	TeamEvalNotFound              = "team_eval.not_found"
+	TeamEvalJudgeError            = "team_eval.judge_error"
+
+	// --- Trace retry ---
+	TraceRetryPayloadOversize = "trace.retry.payload_oversize"
+	TraceRetryLocked          = "trace.retry.locked"
+	TraceRetryAgentGone       = "trace.retry.agent_gone"
+	TraceRetryProviderGone    = "trace.retry.provider_gone"
+	TraceRetryPayloadMissing  = "trace.retry.payload_missing"
+	TraceRetryConfirmRequired = "trace.retry.confirm_required"
+	TraceRetryStarted         = "trace.retry.started"
+	TraceRetryNotFailed       = "trace.retry.not_failed"
 )

@@ -22,16 +22,24 @@ import (
 // updateN uses atomic.Int32 so concurrent test goroutines can read it
 // without the lock.
 type fakeStore struct {
-	mu         sync.Mutex
-	updateN    atomic.Int32
-	mergeN     atomic.Int32
-	lastBlob   []byte
-	lastConfig map[string]any // tracks merged config across MergeConfig calls
-	updateErr  error
+	mu            sync.Mutex
+	updateN       atomic.Int32
+	mergeN        atomic.Int32
+	lastBlob      []byte
+	lastConfig    map[string]any // tracks merged config across MergeConfig calls
+	updateErr     error
+	requireTenant bool
+	seenTenant    uuid.UUID
 }
 
 func (f *fakeStore) UpdateCount() int { return int(f.updateN.Load()) }
 func (f *fakeStore) MergeCount() int  { return int(f.mergeN.Load()) }
+
+func (f *fakeStore) SeenTenant() uuid.UUID {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.seenTenant
+}
 
 // ConfigBlob returns the merged config as JSON bytes, mirroring what would
 // be persisted via SQL JSONB merge.
@@ -61,12 +69,17 @@ func (f *fakeStore) MergeConfig(_ context.Context, _ uuid.UUID, partial map[stri
 	return nil
 }
 
-func (f *fakeStore) Update(_ context.Context, _ uuid.UUID, updates map[string]any) error {
+func (f *fakeStore) Update(ctx context.Context, _ uuid.UUID, updates map[string]any) error {
 	f.updateN.Add(1)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.updateErr != nil {
 		return f.updateErr
+	}
+	tid := store.TenantIDFromContext(ctx)
+	f.seenTenant = tid
+	if f.requireTenant && tid == uuid.Nil {
+		return errors.New("tenant_id required for update")
 	}
 	if v, ok := updates["credentials"]; ok {
 		if b, ok := v.([]byte); ok {
@@ -233,6 +246,29 @@ func TestAccess_PropagatesRefreshTokenExpiry(t *testing.T) {
 	}
 }
 
+func TestAccess_PersistsWithChannelTenantWhenCallerContextWrong(t *testing.T) {
+	t.Parallel()
+	srv, count := newRefreshServer(t, "")
+	tenantID := uuid.New()
+	fs := &fakeStore{requireTenant: true}
+	ts := newTokenSourceForTest(t, srv.URL, time.Now().Add(time.Minute), fs)
+	ts.tenantID = tenantID
+
+	got, err := ts.Access(store.WithTenantID(context.Background(), uuid.New()))
+	if err != nil {
+		t.Fatalf("Access: %v", err)
+	}
+	if got != "AT-1" {
+		t.Errorf("Access = %q, want refreshed AT-1", got)
+	}
+	if n := atomic.LoadInt32(count); n != 1 {
+		t.Errorf("refresh hits = %d, want 1", n)
+	}
+	if seen := fs.SeenTenant(); seen != tenantID {
+		t.Errorf("persist tenant = %v, want %v", seen, tenantID)
+	}
+}
+
 // Single-flight: 10 concurrent Access() calls on a stale token must result
 // in exactly ONE upstream refresh call. Mirrors DBTokenSource.Token() single-mutex pattern.
 func TestAccess_SingleFlightUnderConcurrency(t *testing.T) {
@@ -334,11 +370,12 @@ func TestClassifyRefreshError(t *testing.T) {
 		wantAuth bool
 	}{
 		{"invalid_grant envelope", &APIError{Code: -118, Message: "invalid_grant"}, true},
+		{"zalo refresh token rejected", &APIError{Code: -14014, Message: ""}, true},
 		{"transient 5xx", errors.New("http 503"), false},
 		{"transient timeout", errors.New("http: read timeout"), false},
 		{"nil", nil, false},
-		// Below: must NOT escalate. Only the language-independent -118 code
-		// signals refresh-token death. Localized server messages containing
+		// Below: must NOT escalate. Only language-independent OAuth refresh
+		// rejection codes signal refresh-token death. Localized server messages containing
 		// "expired" or "invalid" must stay transient — substring matching
 		// would falsely force re-consent on FamilyServer 10000 in Vietnamese.
 		{"server with localized expired", &APIError{Code: 10000, Message: "Hết hạn (expired)"}, false},

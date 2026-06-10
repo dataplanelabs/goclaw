@@ -233,6 +233,17 @@ func isAdminMethod(method string) bool {
 		protocol.MethodChannelInstancesZaloOAExchangeCode,
 		protocol.MethodChannelInstancesZaloWebhookURL,
 
+		// Standby schedules — write paths.
+		protocol.MethodChannelsScheduleSet,
+		protocol.MethodChannelsScheduleDelete,
+		protocol.MethodChannelsThreadScheduleSet,
+		protocol.MethodChannelsThreadScheduleDelete,
+
+		// Team-reply capture toggle is an admin-only config write.
+		protocol.MethodChannelsTeamCaptureToggle,
+		protocol.MethodChannelsTeamRepliesRejudge,
+		protocol.MethodChannelsTeamRepliesGradePending,
+
 		// Pairing management (approve/revoke/list/deny require admin).
 		protocol.MethodPairingApprove,
 		protocol.MethodPairingDeny,
@@ -380,6 +391,12 @@ func isReadMethod(method string) bool {
 		protocol.MethodChannelsStatus,
 		protocol.MethodChannelInstancesList,
 		protocol.MethodChannelInstancesGet,
+		protocol.MethodChannelsScheduleGet,
+		protocol.MethodChannelsThreadScheduleList,
+		protocol.MethodChannelsThreadScheduleGet,
+		protocol.MethodChannelsTeamRepliesList,
+		protocol.MethodChannelsTeamRepliesGet,
+		protocol.MethodChannelsTeamRepliesExportJSONL,
 
 		// Usage / quota
 		protocol.MethodUsageGet,

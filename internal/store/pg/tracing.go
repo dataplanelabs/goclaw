@@ -57,11 +57,28 @@ func (s *PGTracingStore) UpdateTrace(ctx context.Context, traceID uuid.UUID, upd
 	return execMapUpdateWhereTenant(ctx, s.db, "traces", updates, traceID, tid)
 }
 
+// GetTraceByRunID returns the latest trace ID + status for the given run_id,
+// scoped to tenantID (uuid.Nil = master scope). Used by abort handler to
+// detect orphans whose owning process has gone but DB still shows running.
+func (s *PGTracingStore) GetTraceByRunID(ctx context.Context, runID string, tenantID uuid.UUID) (uuid.UUID, string, error) {
+	var id uuid.UUID
+	var status string
+	q := `SELECT id, status FROM traces WHERE run_id = $1`
+	args := []any{runID}
+	if tenantID != uuid.Nil {
+		q += ` AND tenant_id = $2`
+		args = append(args, tenantID)
+	}
+	q += ` ORDER BY created_at DESC LIMIT 1`
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&id, &status)
+	return id, status, err
+}
+
 func (s *PGTracingStore) GetTrace(ctx context.Context, traceID uuid.UUID) (*store.TraceData, error) {
 	query := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0) AS total_cost, span_count, llm_call_count, tool_call_count,
-		 status, error, COALESCE(metadata, '{}'::jsonb) AS metadata, COALESCE(tags, '{}') AS tags, team_id, created_at
+		 status, error, COALESCE(metadata, '{}'::jsonb) AS metadata, COALESCE(tags, '{}') AS tags, team_id, outbound_emitted, created_at
 		 FROM traces WHERE id = $1`
 	qArgs := []any{traceID}
 	if !store.IsCrossTenant(ctx) {
@@ -142,7 +159,7 @@ func (s *PGTracingStore) ListTraces(ctx context.Context, opts store.TraceListOpt
 	q := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0) AS total_cost, span_count, llm_call_count, tool_call_count,
-		 status, error, metadata, tags, team_id, created_at
+		 status, error, metadata, tags, team_id, outbound_emitted, created_at
 		 FROM traces` + where
 
 	limit := opts.Limit
@@ -162,7 +179,7 @@ func (s *PGTracingStore) ListChildTraces(ctx context.Context, parentTraceID uuid
 	q := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0) AS total_cost, span_count, llm_call_count, tool_call_count,
-		 status, error, metadata, tags, team_id, created_at
+		 status, error, metadata, tags, team_id, outbound_emitted, created_at
 		 FROM traces WHERE parent_trace_id = $1`
 	qArgs := []any{parentTraceID}
 
@@ -181,6 +198,18 @@ func (s *PGTracingStore) ListChildTraces(ctx context.Context, parentTraceID uuid
 		return nil, err
 	}
 	return traceRowsToData(rows), nil
+}
+
+func (s *PGTracingStore) SetOutboundEmitted(ctx context.Context, traceID uuid.UUID) error {
+	tenantID := store.TenantIDFromContext(ctx)
+	if tenantID == uuid.Nil {
+		return fmt.Errorf("tenant_id required")
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE traces SET outbound_emitted = true
+		 WHERE id = $1 AND tenant_id = $2 AND outbound_emitted = false`,
+		traceID, tenantID)
+	return err
 }
 
 func (s *PGTracingStore) CreateSpan(ctx context.Context, span *store.SpanData) error {

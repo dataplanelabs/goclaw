@@ -84,6 +84,13 @@ type AgentData struct {
 	ModelFallback       json.RawMessage `json:"model_fallback,omitempty" db:"model_fallback"`
 	ShellDenyGroups     json.RawMessage `json:"shell_deny_groups,omitempty" db:"shell_deny_groups"`
 	KGDedupConfig       json.RawMessage `json:"kg_dedup_config,omitempty" db:"kg_dedup_config"`
+
+	// WriteOnlyHash is an opaque content hash supplied by external reconcilers
+	// (gcplane) on every create/update. goclaw stores and echoes it but never
+	// inspects or validates the value. It enables drift detection on fields
+	// the API does not return (contextFiles, toolsConfig, sandboxConfig, ...)
+	// without exposing them. Empty string = no hash recorded yet.
+	WriteOnlyHash string `json:"write_only_hash,omitempty" db:"write_only_hash"`
 }
 
 // ParseToolsConfig returns per-agent tool policy, or nil if not configured.
@@ -309,6 +316,39 @@ func (a *AgentData) ParsePinnedSkills() []string {
 	}
 	if len(result) > 10 {
 		result = result[:10]
+	}
+	return result
+}
+
+// ParseToolSkillRequirements returns per-tool skill activation requirements
+// from OtherConfig JSONB. Keys are tool names, values are required skill slugs.
+func (a *AgentData) ParseToolSkillRequirements() map[string]string {
+	if len(a.OtherConfig) == 0 {
+		return nil
+	}
+	var bag map[string]json.RawMessage
+	if json.Unmarshal(a.OtherConfig, &bag) != nil {
+		return nil
+	}
+	raw, ok := bag["tool_skill_requirements"]
+	if !ok {
+		return nil
+	}
+	var reqs map[string]string
+	if json.Unmarshal(raw, &reqs) != nil {
+		return nil
+	}
+	result := make(map[string]string, len(reqs))
+	for toolName, skillSlug := range reqs {
+		toolName = strings.TrimSpace(toolName)
+		skillSlug = strings.TrimSpace(skillSlug)
+		if toolName == "" || skillSlug == "" {
+			continue
+		}
+		result[toolName] = skillSlug
+	}
+	if len(result) == 0 {
+		return nil
 	}
 	return result
 }

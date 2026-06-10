@@ -276,6 +276,76 @@ func (s *PGConfigPermissionStore) ListFileWriters(ctx context.Context, agentID u
 	return perms, nil
 }
 
+// ListEffectiveFileWriters: see store.ConfigPermissionStore. Widens to wildcard
+// scope/config_type for group/guild scopes; deduped by user_id; eff: cache key.
+func (s *PGConfigPermissionStore) ListEffectiveFileWriters(ctx context.Context, agentID uuid.UUID, scope string) ([]store.ConfigPermission, error) {
+	tid := store.TenantIDFromContext(ctx)
+	if tid == uuid.Nil {
+		tid = store.MasterTenantID
+	}
+	cacheKey := "eff:" + tid.String() + ":" + agentID.String() + ":" + scope
+
+	s.fwMu.RLock()
+	if entry, ok := s.fwCache[cacheKey]; ok && time.Since(entry.fetched) < permCacheTTL {
+		s.fwMu.RUnlock()
+		return entry.rows, nil
+	}
+	s.fwMu.RUnlock()
+
+	tClause, tArgs, _, err := scopeClause(ctx, 3)
+	if err != nil {
+		return nil, err
+	}
+
+	wildcard := strings.HasPrefix(scope, "group:") || strings.HasPrefix(scope, "guild:")
+	scopePred := "scope = $2"
+	typePred := "config_type = 'file_writer'"
+	if wildcard {
+		scopePred = "scope IN ($2, 'group:*', '*')"
+		typePred = "config_type IN ('file_writer', '*')"
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, agent_id, scope, config_type, user_id, permission, granted_by, metadata, created_at, updated_at
+		 FROM agent_config_permissions
+		 WHERE agent_id = $1 AND `+typePred+` AND `+scopePred+` AND permission = 'allow'`+tClause+`
+		 ORDER BY created_at`,
+		append([]any{agentID, scope}, tArgs...)...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	perms, err := scanConfigPermissions(rows)
+	if err != nil {
+		return nil, err
+	}
+	perms = dedupeWritersByUserID(perms)
+
+	s.fwMu.Lock()
+	s.fwCache[cacheKey] = fwCacheEntry{rows: perms, fetched: time.Now()}
+	s.fwMu.Unlock()
+
+	return perms, nil
+}
+
+// dedupeWritersByUserID keeps the first row per user_id, preserving order.
+func dedupeWritersByUserID(perms []store.ConfigPermission) []store.ConfigPermission {
+	if len(perms) < 2 {
+		return perms
+	}
+	seen := make(map[string]bool, len(perms))
+	out := perms[:0]
+	for _, p := range perms {
+		if seen[p.UserID] {
+			continue
+		}
+		seen[p.UserID] = true
+		out = append(out, p)
+	}
+	return out
+}
+
 func scanConfigPermissions(rows *sql.Rows) ([]store.ConfigPermission, error) {
 	var perms []store.ConfigPermission
 	for rows.Next() {

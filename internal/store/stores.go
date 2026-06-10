@@ -12,9 +12,12 @@ type Stores struct {
 	Skills    SkillStore
 	Agents    AgentStore
 	Providers ProviderStore
-	Tracing   TracingStore
+	Tracing        TracingStore
+	ReplayPayloads ReplayPayloadStore
+	RetryLocks     RetryLockStore
 	MCP              MCPServerStore
 	ChannelInstances ChannelInstanceStore
+	ChannelSchedules ChannelScheduleStore
 	ConfigSecrets    ConfigSecretsStore
 	AgentLinks       AgentLinkStore
 	Teams            TeamStore
@@ -38,6 +41,9 @@ type Stores struct {
 	Episodic               EpisodicStore
 	EvolutionMetrics       EvolutionMetricsStore
 	EvolutionSuggestions   EvolutionSuggestionStore
+	TeamReplyEvals         TeamReplyEvalStore
+	TeamReplyAtomicWriter  AtomicTeamReplyWriter
+	VieneuClonedVoices     VieneuClonedVoicesStore
 	// Hooks is hooks.HookStore — typed as any to avoid import cycle
 	// (hooks package imports store for context helpers).
 	// Callers: type-assert to hooks.HookStore before use.

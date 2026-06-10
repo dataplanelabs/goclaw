@@ -125,6 +125,11 @@ func NewCollector(ts store.TracingStore) *Collector {
 // Verbose returns true if verbose tracing is enabled (full LLM input logging).
 func (c *Collector) Verbose() bool { return c.verbose }
 
+// Store exposes the underlying TracingStore for callers needing direct reads
+// (e.g. router's orphan-abort path). Writes should still funnel through
+// FinishTrace / EmitSpanUpdate for single-source-of-truth.
+func (c *Collector) Store() store.TracingStore { return c.store }
+
 // PreviewMaxLen returns the max preview length: 200K when verbose, 500 otherwise.
 func (c *Collector) PreviewMaxLen() int {
 	if c.verbose {

@@ -165,6 +165,8 @@ func mimeFromExt(ext string) string {
 		return "image/gif"
 	case ".webp":
 		return "image/webp"
+	case ".jxl":
+		return "image/jxl"
 	case ".mp4":
 		return "video/mp4"
 	case ".ogg", ".opus":

@@ -36,6 +36,10 @@ func (l *Loop) pipelineCallbacks(req *RunRequest, bridgeRS *runState) pipelineCa
 		event.TenantID = l.tenantID
 		l.emit(event)
 	}
+	// enrichedUserMsg holds the post-EnrichMedia snapshot of the current-turn user
+	// message so flushMessages can persist it with media refs + enriched <media:*>
+	// tags instead of reconstructing from raw req.Message.
+	userMsgSnap := &enrichedUserMsgSnapshot{}
 	return pipelineCallbackSet{
 		emitRun:            emitRun,
 		injectContext:      l.makeInjectContext(req),
@@ -43,7 +47,7 @@ func (l *Loop) pipelineCallbacks(req *RunRequest, bridgeRS *runState) pipelineCa
 		resolveWorkspace:   l.makeResolveWorkspace(req),
 		loadContextFiles:   l.makeLoadContextFiles(),
 		buildMessages:      l.makeBuildMessages(),
-		enrichMedia:        l.makeEnrichMedia(req),
+		enrichMedia:        l.makeEnrichMedia(req, userMsgSnap),
 		injectReminders:    l.makeInjectReminders(req),
 		buildFilteredTools: l.makeBuildFilteredTools(req),
 		callLLM:            l.makeCallLLM(req, emitRun),
@@ -56,11 +60,17 @@ func (l *Loop) pipelineCallbacks(req *RunRequest, bridgeRS *runState) pipelineCa
 		processToolResult:  l.makeProcessToolResult(req, bridgeRS),
 		checkReadOnly:      l.makeCheckReadOnly(req, bridgeRS),
 		sanitizeContent:    SanitizeAssistantContent,
-		flushMessages:      l.makeFlushMessages(req),
+		flushMessages:      l.makeFlushMessages(req, userMsgSnap),
 		updateMetadata:     l.makeUpdateMetadata(req),
 		bootstrapCleanup:   l.makeBootstrapCleanup(),
 		maybeSummarize:     l.maybeSummarize,
 	}
+}
+
+// enrichedUserMsgSnapshot is per-request shared state set by EnrichMedia and
+// consumed by FlushMessages so the persisted user message includes media refs.
+type enrichedUserMsgSnapshot struct {
+	msg *providers.Message
 }
 
 // pipelineCallbackSet groups all typed callbacks for PipelineDeps.
@@ -130,7 +140,8 @@ func (l *Loop) makeBuildMessages() func(ctx context.Context, input *pipeline.Run
 			input.Message, input.ExtraSystemPrompt,
 			input.SessionKey, input.Channel, input.ChannelType,
 			input.ChatTitle, input.ChatID, input.PeerKind, input.UserID,
-			input.HistoryLimit, input.SkillFilter, input.LightContext)
+			input.HistoryLimit, input.SkillFilter, input.LightContext,
+			input.EnableNativeStyles)
 		return msgs, nil
 	}
 }
@@ -163,7 +174,7 @@ func (l *Loop) makeLoadSessionHistory() func(ctx context.Context, sessionKey str
 	}
 }
 
-func (l *Loop) makeEnrichMedia(req *RunRequest) func(ctx context.Context, state *pipeline.RunState) error {
+func (l *Loop) makeEnrichMedia(req *RunRequest, snap *enrichedUserMsgSnapshot) func(ctx context.Context, state *pipeline.RunState) error {
 	return func(ctx context.Context, state *pipeline.RunState) error {
 		// enrichInputMedia enriches messages in-place: attaches inline images,
 		// reloads historical media, enriches <media:*> tags, populates context
@@ -180,6 +191,17 @@ func (l *Loop) makeEnrichMedia(req *RunRequest) func(ctx context.Context, state 
 		// Skip system message (index 0) — only history + user messages are enriched.
 		if len(enrichedMsgs) > 1 {
 			state.Messages.SetHistory(enrichedMsgs[1:])
+		}
+		// Snapshot the enriched last user message so flushMessages can persist
+		// the version with media refs + tag enrichment, not the raw req.Message.
+		if snap != nil {
+			for i := len(enrichedMsgs) - 1; i >= 0; i-- {
+				if enrichedMsgs[i].Role == "user" {
+					m := enrichedMsgs[i]
+					snap.msg = &m
+					break
+				}
+			}
 		}
 		return nil
 	}
@@ -373,7 +395,7 @@ func (l *Loop) makeRunMemoryFlush() func(ctx context.Context, state *pipeline.Ru
 	}
 }
 
-func (l *Loop) makeFlushMessages(req *RunRequest) func(ctx context.Context, sessionKey string, msgs []providers.Message) error {
+func (l *Loop) makeFlushMessages(req *RunRequest, snap *enrichedUserMsgSnapshot) func(ctx context.Context, sessionKey string, msgs []providers.Message) error {
 	// Track whether user message has been persisted (first flush only).
 	// v2 adds user message to pendingMsgs explicitly; v3 keeps it in history
 	// (via BuildMessages) so it never reaches FlushPending. This closure
@@ -382,10 +404,13 @@ func (l *Loop) makeFlushMessages(req *RunRequest) func(ctx context.Context, sess
 	return func(ctx context.Context, sessionKey string, msgs []providers.Message) error {
 		if !userMsgFlushed && !req.HideInput && req.Message != "" {
 			userMsgFlushed = true
-			l.sessions.AddMessage(ctx, sessionKey, providers.Message{
-				Role:    "user",
-				Content: req.Message,
-			})
+			// Prefer EnrichMedia's snapshot (carries MediaRefs + enriched <media:*> tags)
+			// so future turns can resolve historical user-uploaded images.
+			userMsg := providers.Message{Role: "user", Content: req.Message}
+			if snap != nil && snap.msg != nil && snap.msg.Role == "user" {
+				userMsg = *snap.msg
+			}
+			l.sessions.AddMessage(ctx, sessionKey, userMsg)
 		}
 		for _, msg := range msgs {
 			l.sessions.AddMessage(ctx, sessionKey, msg)

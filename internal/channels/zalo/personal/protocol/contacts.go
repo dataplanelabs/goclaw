@@ -246,9 +246,25 @@ func fetchGroupDetails(ctx context.Context, sess *Session, gridVerMap map[string
 	return groups, nil
 }
 
+// InnerEnvelopeError carries the decrypted inner envelope's non-zero
+// error_code. Callers that issue quote-bearing requests use errors.As to
+// detect this and apply the same ErrQuoteRejected fallback logic the outer
+// envelope check already applies — without it, a Zalo /quote rejection that
+// rides in the inner envelope (e.g. code 114 "Tham số không hợp lệ") bubbles
+// as a plain decrypt error and the silent retry never fires.
+type InnerEnvelopeError struct {
+	Code    int
+	Message string
+}
+
+func (e *InnerEnvelopeError) Error() string {
+	return fmt.Sprintf("zalo_personal: inner error code %d: %s", e.Code, e.Message)
+}
+
 // decryptDataField decrypts an encrypted base64 data string from Zalo API response.
 // The decrypted payload is itself a Response envelope: {"error_code":0, "data":...},
 // so this function unwraps the inner envelope and returns the raw data field.
+// Returns *InnerEnvelopeError when the inner envelope carries a non-zero code.
 func decryptDataField(sess *Session, data string) ([]byte, error) {
 	key := SecretKey(sess.SecretKey).Bytes()
 	if key == nil {
@@ -269,7 +285,7 @@ func decryptDataField(sess *Session, data string) ([]byte, error) {
 		return nil, fmt.Errorf("zalo_personal: unwrap inner response: %w", err)
 	}
 	if inner.ErrorCode != 0 {
-		return nil, fmt.Errorf("zalo_personal: inner error code %d: %s", inner.ErrorCode, inner.ErrorMessage)
+		return nil, &InnerEnvelopeError{Code: inner.ErrorCode, Message: inner.ErrorMessage}
 	}
 	return inner.Data, nil
 }

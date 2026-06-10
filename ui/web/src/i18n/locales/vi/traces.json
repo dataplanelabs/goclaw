@@ -34,6 +34,9 @@
     "status": "Trạng thái:",
     "duration": "Thời lượng:",
     "channel": "Channel:",
+    "chatTitle": "Chat:",
+    "userId": "User ID:",
+    "groupId": "Group ID:",
     "tokens": "Token:",
     "spans": "Khoảng:",
     "started": "Bắt đầu:",
@@ -79,9 +82,28 @@
     "failedLoad": "Không thể tải dữ liệu theo dõi",
     "abortStopped": "Đã dừng tác vụ",
     "abortForced": "Đã buộc dừng tác vụ (đang dọn dẹp ở nền)",
+    "abortOrphan": "Đã dừng tác vụ (tiến trình không còn — bị bỏ rơi sau khi khởi động lại)",
     "abortAlreadyAborting": "Đang dừng tác vụ",
     "abortNotFound": "Tác vụ đã kết thúc",
     "abortUnauthorized": "Không có quyền dừng tác vụ này",
     "abortFailed": "Không thể dừng tác vụ"
+  },
+  "retry": {
+    "button": "Chạy lại",
+    "success": "Đã chạy lại — trace gốc #{{shortId}}",
+    "confirm": {
+      "title": "Chạy lại tác vụ này?",
+      "body": "Lần chạy này đã gửi tin nhắn tới kênh. Chạy lại có thể gửi trùng. Tiếp tục?",
+      "action": "Vẫn chạy lại",
+      "cancel": "Hủy"
+    },
+    "error": {
+      "locked": "Đang chạy lại — vui lòng chờ.",
+      "agent_gone": "Agent của trace này đã bị xóa.",
+      "provider_gone": "Provider của trace này đã bị xóa.",
+      "payload_missing": "Dữ liệu replay không còn khả dụng.",
+      "payload_oversize": "Tải dữ liệu quá lớn để chạy lại (>2 MB).",
+      "generic": "Chạy lại thất bại: {{message}}"
+    }
   }
 }

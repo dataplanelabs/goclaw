@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels/typing"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -30,7 +33,22 @@ type Channel struct {
 	reactionCoalescer *reactionCoalescer
 	episodicStore     store.EpisodicStore
 
+	reactions      sync.Map
+	reactionWG     sync.WaitGroup
+	reactionCtx    context.Context
+	reactionCancel context.CancelFunc
+	lastReplyChars sync.Map
+
 	preloadedCreds *protocol.Credentials
+
+	groups             *groupCache
+	lastGroupBootstrap atomic.Int64
+
+	memberCache        *MemberCache
+	memberFetchLimiter *MemberFetchLimiter
+	memberFetcher      func(ctx context.Context, sess *protocol.Session, groupID string) ([]protocol.GroupMember, error)
+
+	enableNativeStyles bool
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -58,30 +76,49 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 		requireMention = *cfg.RequireMention
 	}
 
+	enableNativeStyles := false
+	if cfg.EnableNativeStyles != nil {
+		enableNativeStyles = *cfg.EnableNativeStyles
+	}
+
 	ch := &Channel{
-		BaseChannel: base,
-		config:      cfg,
-		stopCh:      make(chan struct{}),
+		BaseChannel:        base,
+		config:             cfg,
+		groups:             newGroupCache(),
+		stopCh:             make(chan struct{}),
+		memberCache:        NewMemberCache(),
+		memberFetchLimiter: NewMemberFetchLimiter(60 * time.Second),
+		memberFetcher:      protocol.FetchGroupMembers,
+		enableNativeStyles: enableNativeStyles,
 	}
 	ch.SetPairingService(pairingSvc)
 	ch.SetGroupHistory(channels.MakeHistory(channels.TypeZaloPersonal, pendingStore, base.TenantID()))
 	ch.SetHistoryLimit(historyLimit)
 	ch.SetRequireMention(requireMention)
 	ch.reactionCoalescer = newReactionCoalescer(reactionCoalesceWindow, ch.emitCoalescedReaction)
+	ch.reactionCtx, ch.reactionCancel = context.WithCancel(context.Background())
 	return ch, nil
 }
 
 // BlockReplyEnabled returns the per-channel block_reply override (nil = inherit gateway default).
 func (c *Channel) BlockReplyEnabled() *bool { return c.config.BlockReply }
 
-func (c *Channel) QuoteInboundOnDM() bool { return c.quoteUserMessageEnabled() }
+func (c *Channel) QuoteInboundOnDM() bool { return c.quoteInDM() }
 
-// quoteUserMessageEnabled defaults to false (opt-in), mirroring zalo-oa.
-func (c *Channel) quoteUserMessageEnabled() bool {
-	if c.config.QuoteUserMessage == nil {
-		return false
+// quoteInGroup defaults true (groups need disambiguation).
+func (c *Channel) quoteInGroup() bool {
+	if c.config.QuoteUserMessageInGroup != nil {
+		return *c.config.QuoteUserMessageInGroup
 	}
-	return *c.config.QuoteUserMessage
+	return true
+}
+
+// quoteInDM defaults false (DM has no ambiguity).
+func (c *Channel) quoteInDM() bool {
+	if c.config.QuoteUserMessageInDM != nil {
+		return *c.config.QuoteUserMessageInDM
+	}
+	return false
 }
 
 // session returns the current session snapshot (thread-safe).
@@ -117,7 +154,17 @@ func (c *Channel) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("zalo_personal listener: %w", err)
 	}
-	if err := ln.Start(ctx); err != nil {
+	// Retry listener start on transient errors — primarily CoreDNS cold-miss
+	// SERVFAIL for ws*-msg.chat.zalo.me at pod boot, where DNS hasn't yet
+	// resolved the Zalo WS host. By attempt 2-3, DNS has warmed.
+	if _, err := providers.RetryDo(ctx, providers.RetryConfig{
+		Attempts: 5,
+		MinDelay: 500 * time.Millisecond,
+		MaxDelay: 10 * time.Second,
+		Jitter:   0.1,
+	}, func() (struct{}, error) {
+		return struct{}{}, ln.Start(ctx)
+	}); err != nil {
 		return fmt.Errorf("zalo_personal listener start: %w", err)
 	}
 
@@ -130,6 +177,10 @@ func (c *Channel) Start(ctx context.Context) error {
 
 	c.SetRunning(true)
 	go c.listenLoop(ctx)
+
+	if cc := c.ContactCollector(); cc != nil && shouldBootstrap(&c.lastGroupBootstrap) {
+		go bootstrapGroups(ctx, sess, cc, c.groups, c.Type(), c.Name())
+	}
 
 	slog.Info("zalo_personal listener loop started")
 	return nil
@@ -168,11 +219,12 @@ func (c *Channel) Stop(_ context.Context) error {
 		ln.Stop()
 	}
 	if c.reactionCoalescer != nil {
-		// Cancel pending sleepers; do NOT flush emitted events because Stop()
-		// means we're tearing down the agent path — synthetic reactions would
-		// land in a dead HandleMessage call.
 		c.reactionCoalescer.Cancel()
 	}
+	if c.reactionCancel != nil {
+		c.reactionCancel()
+	}
+	c.reactionWG.Wait()
 	c.SetRunning(false)
 	return nil
 }

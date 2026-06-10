@@ -96,7 +96,7 @@ func (t *WriteFileTool) Parameters() map[string]any {
 			},
 			"deliver": map[string]any{
 				"type":        "boolean",
-				"description": "Deliver this file to the user as an attachment. Defaults to true. Set to false ONLY for intermediate/temporary files the user will never see (e.g. config, cache, temp scripts). For any file the user requested or should receive, keep true (default).",
+				"description": "Deliver this file to the user as an attachment. Defaults to true. Set to false for intermediate/temporary files the user will never see (e.g. config, cache, temp scripts). Temp/staging/scratch paths are never delivered even when this is omitted. For any final file the user requested or should receive, keep true (default).",
 			},
 		},
 		"required": []string{"path", "content"},
@@ -219,12 +219,20 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *Resul
 		go t.vaultIntc.AfterWrite(context.WithoutCancel(ctx), resolved, content)
 	}
 
+	deliverySuppressed := false
+	if deliver && IsScratchDeliveryPath(resolved) {
+		deliver = false
+		deliverySuppressed = true
+	}
+
 	verb := "written"
 	if appendMode {
 		verb = "appended"
 	}
 	msg := fmt.Sprintf("File %s: %s (%d bytes)", verb, path, len(content))
-	if deliver {
+	if deliverySuppressed {
+		msg += ". Delivery suppressed because temp/staging/scratch files are not user-facing. Create or send only the final result file."
+	} else if deliver {
 		msg += ". File will be automatically delivered to the user — do NOT send it again via message tool."
 	}
 	result := SilentResult(msg)
@@ -258,26 +266,37 @@ func (t *WriteFileTool) executeInSandbox(ctx context.Context, path, content, san
 		return ErrorResult(fmt.Sprintf("failed to %s file: %v", verb, err) + MaybeFsBridgeHint(err))
 	}
 
+	deliveryPath := ""
+	deliverySuppressed := false
+	if deliver {
+		// Sandbox workspace is bind-mounted — resolve to host path for delivery.
+		workspace := ToolWorkspaceFromCtx(ctx)
+		if workspace == "" {
+			workspace = t.workspace
+		}
+		deliveryPath = filepath.Join(workspace, path)
+		if IsScratchDeliveryPath(deliveryPath) {
+			deliver = false
+			deliverySuppressed = true
+		}
+	}
+
 	verb := "written"
 	if appendMode {
 		verb = "appended"
 	}
 	msg := fmt.Sprintf("File %s: %s (%d bytes)", verb, path, len(content))
-	if deliver {
+	if deliverySuppressed {
+		msg += ". Delivery suppressed because temp/staging/scratch files are not user-facing. Create or send only the final result file."
+	} else if deliver {
 		msg += ". File will be automatically delivered to the user — do NOT send it again via message tool."
 	}
 	result := SilentResult(msg)
 	result.Deliverable = content
 	if deliver {
-		// Sandbox workspace is bind-mounted — resolve to host path for delivery
-		workspace := ToolWorkspaceFromCtx(ctx)
-		if workspace == "" {
-			workspace = t.workspace
-		}
-		hostPath := filepath.Join(workspace, path)
-		result.Media = []bus.MediaFile{{Path: hostPath, Filename: filepath.Base(hostPath)}}
+		result.Media = []bus.MediaFile{{Path: deliveryPath, Filename: filepath.Base(deliveryPath)}}
 		if dm := DeliveredMediaFromCtx(ctx); dm != nil {
-			dm.Mark(hostPath)
+			dm.Mark(deliveryPath)
 		}
 	}
 	return result

@@ -30,7 +30,7 @@ func ParseSkillFrontmatter(content string) (name, description, slug string, allF
 
 // Slugify converts a skill name into a valid slug (lowercase, alphanumeric + hyphens).
 func Slugify(name string) string {
-	s := strings.ToLower(name)
+	s := normalizeForSearch(name)
 	s = strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			return r

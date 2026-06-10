@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 // PendingCompactionConfig configures LLM-based compaction of pending group messages.
 // When a group accumulates more than Threshold pending messages, older messages are
 // summarized by an LLM and replaced with a compact summary, keeping KeepRecent raw messages.
@@ -186,6 +188,38 @@ type ZaloOAConfig struct {
 	// Polling knobs. Ignored when Transport="webhook".
 	PollCount            int `json:"poll_count,omitempty"`              // page size; default 10, clamp [1, 10] (Zalo hard cap, error -210 above)
 	PollBurndownMaxPages int `json:"poll_burndown_max_pages,omitempty"` // max pages per cycle; default 10, clamp [1, 20]; 1 disables burn-down
+
+	// Team-reply capture (Phase 4): polls /onbehalf/conversation for OA-side
+	// messages typed via Manager app, persists with metadata.source="team",
+	// emits team.reply.observed event. Distinct from the customer-msg poller.
+	CaptureTeamReplies           *bool  `json:"capture_team_replies,omitempty"`
+	JudgeEvaluation              *bool  `json:"judge_evaluation,omitempty"`
+	JudgeAgentKey                string `json:"judge_agent_key,omitempty"`
+	TeamReplyPollIntervalSeconds int    `json:"team_reply_poll_interval_seconds,omitempty"` // default 60
+	// JudgeEvaluationMode: "per_event" (default) or "scheduled". When scheduled,
+	// the poll worker skips publishing team.reply.observed; JudgeScheduler ticks
+	// per JudgeEvaluationSchedule cron expression and grades pending rows.
+	JudgeEvaluationMode     string `json:"judge_evaluation_mode,omitempty"`
+	JudgeEvaluationSchedule string `json:"judge_evaluation_schedule,omitempty"` // default "0 8-18 * * 1-5" Asia/Saigon
+	JudgeBatchSize int `json:"judge_batch_size,omitempty"`
+}
+
+// TeamReplyPollInterval returns the configured polling interval clamped
+// to [30s, ...] with a 60s default. Floor avoids hammering /onbehalf
+// when an operator misconfigures `team_reply_poll_interval_seconds: 1`.
+func (c *ZaloOAConfig) TeamReplyPollInterval() time.Duration {
+	const (
+		defaultInterval = 60 * time.Second
+		minInterval     = 30 * time.Second
+	)
+	if c.TeamReplyPollIntervalSeconds <= 0 {
+		return defaultInterval
+	}
+	d := time.Duration(c.TeamReplyPollIntervalSeconds) * time.Second
+	if d < minInterval {
+		return minInterval
+	}
+	return d
 }
 
 type ZaloPersonalConfig struct {
@@ -197,10 +231,18 @@ type ZaloPersonalConfig struct {
 	HistoryLimit        int                 `json:"history_limit,omitempty"`      // max pending group messages for context (default 50, 0=disabled)
 	CredentialsPath     string              `json:"credentials_path,omitempty"`   // path to saved cookies JSON
 	BlockReply          *bool               `json:"block_reply,omitempty"`        // override gateway block_reply (nil = inherit)
-	QuoteUserMessage    *bool               `json:"quote_user_message,omitempty"` // default false (opt-in); set true to render bot replies as native Zalo quote bubbles when user quoted
+	QuoteUserMessageInGroup *bool `json:"quote_user_message_in_group,omitempty"` // default true; group quoting disambiguates target in busy chats
+	QuoteUserMessageInDM    *bool `json:"quote_user_message_in_dm,omitempty"`    // default false; DM has no ambiguity
+	EnableNativeStyles      *bool `json:"enable_native_styles,omitempty"`        // default false; opt-in for textProperties native styling
 	DisablePolls        bool                `json:"disable_polls,omitempty"`         // kill switch for the 5 poll tools
-	DisableReactions    bool                `json:"disable_reactions,omitempty"`     // kill switch for the react tool AND inbound reaction synthesis
+	DisableReactions    bool                `json:"disable_reactions,omitempty"`     // kill switch for the inbound reaction feedback path
+	DisableVoiceSend    bool                `json:"disable_voice_send,omitempty"`    // kill switch for native voice-bubble; routes audio via share.file instead
 	ListenSelfReactions bool                `json:"listen_self_reactions,omitempty"` // opt-in: surface reactions to the bot's own messages
+	// Outbound deterministic reactions on user messages (thinking/done/error).
+	// off (default), minimal (terminal only), full (intermediate + terminal).
+	ReactionLevel              string `json:"reaction_level,omitempty"`
+	ReactionTerminalDelayMinMs int    `json:"reaction_terminal_delay_min_ms,omitempty"`
+	ReactionTerminalDelayMaxMs int    `json:"reaction_terminal_delay_max_ms,omitempty"`
 	// ReactionsMode controls what happens when an inbound reaction is observed.
 	//   "silent"   — drop without logging
 	//   "feedback" (default) — log the reaction as signal but do NOT trigger an agent run
@@ -421,6 +463,8 @@ type GatewayConfig struct {
 	TaskRecoveryIntervalSec int          `json:"task_recovery_interval_sec,omitempty"` // team task recovery ticker interval in seconds (default 300 = 5min)
 	BackgroundProvider      string       `json:"background_provider,omitempty"`        // LLM provider for background workers (vault enrichment, consolidation)
 	BackgroundModel         string       `json:"background_model,omitempty"`           // LLM model for background workers
+	UIBaseURL               string       `json:"ui_base_url,omitempty"`                // public-facing web UI URL (B3-01: OAuth popup redirect target after callback)
+	ReplayRetentionDays     int          `json:"replay_retention_days,omitempty"`      // how long captured retry payloads survive in trace_replay_payloads (default 7; 0 keeps the legacy "sweep on every successful run" behavior)
 }
 
 // ToolsConfig controls tool availability, policy, and web search.
@@ -473,9 +517,10 @@ type WebFetchPolicyConfig struct {
 
 // BrowserToolConfig controls the browser automation tool.
 type BrowserToolConfig struct {
-	Enabled         bool   `json:"enabled"`                    // enable the browser tool (default false)
-	Headless        bool   `json:"headless,omitempty"`         // run Chrome in headless mode (ignored when RemoteURL is set)
-	RemoteURL       string `json:"remote_url,omitempty"`       // CDP endpoint for remote Chrome sidecar, e.g. "ws://chrome:9222"
+	Enabled           bool   `json:"enabled"`                     // enable the browser tool (default false)
+	Headless          bool   `json:"headless,omitempty"`          // run Chrome in headless mode (ignored when RemoteURL is set)
+	RemoteURL         string `json:"remote_url,omitempty"`        // CDP endpoint for remote Chrome sidecar, e.g. "ws://chrome:9222"
+	PersistentProfile bool   `json:"persistent_profile,omitempty"` // share one authenticated profile across all tenants (single-identity only)
 	ActionTimeoutMs int    `json:"action_timeout_ms,omitempty"` // per-action timeout in ms (default 30000)
 	IdleTimeoutMs   int    `json:"idle_timeout_ms,omitempty"`   // idle page auto-close in ms (default 600000, 0=disabled)
 	MaxPages        int    `json:"max_pages,omitempty"`         // max open pages per tenant (default 5)
@@ -509,7 +554,7 @@ type SessionsConfig struct {
 // TtsConfig configures text-to-speech.
 // Matching TS src/config/types.tts.ts.
 type TtsConfig struct {
-	Provider   string              `json:"provider,omitempty"`   // "openai", "elevenlabs", "edge", "minimax", "gemini"
+	Provider   string              `json:"provider,omitempty"`   // "openai", "elevenlabs", "edge", "minimax", "gemini", "vieneu"
 	Auto       string              `json:"auto,omitempty"`       // "off" (default), "always", "inbound", "tagged"
 	Mode       string              `json:"mode,omitempty"`       // "final" (default), "all"
 	MaxLength  int                 `json:"max_length,omitempty"` // max text length before truncation (default 1500)
@@ -519,6 +564,7 @@ type TtsConfig struct {
 	Edge       TtsEdgeConfig       `json:"edge"`
 	MiniMax    TtsMiniMaxConfig    `json:"minimax"`
 	Gemini     TtsGeminiConfig     `json:"gemini"`
+	VieNeu     TtsVieNeuConfig     `json:"vieneu"`
 }
 
 // TtsGeminiConfig configures the Google Gemini TTS provider.
@@ -560,6 +606,17 @@ type TtsMiniMaxConfig struct {
 	APIBase string `json:"api_base,omitempty"` // default "https://api.minimax.io/v1"
 	Model   string `json:"model,omitempty"`    // default "speech-02-hd"
 	VoiceID string `json:"voice_id,omitempty"` // default "Wise_Woman"
+}
+
+// TtsVieNeuConfig configures the in-pod VieNeu Vietnamese TTS daemon. The
+// daemon ships inside the goclaw `:full` image; the endpoint defaults to
+// loopback (`http://127.0.0.1:7333`) and is NOT operator-configurable in
+// normal use — the field is kept only for tests / local-dev override.
+type TtsVieNeuConfig struct {
+	Endpoint string `json:"endpoint,omitempty"` // in-pod daemon URL; default "http://127.0.0.1:7333"
+	Voice    string `json:"voice,omitempty"`    // default "truc_ly"
+	Model    string `json:"model,omitempty"`    // "standard" or "turbo" — default "standard"
+	Emotion  string `json:"emotion,omitempty"`  // "natural" or "storytelling" — default "natural"
 }
 
 // MergeChannelGroupQuotas merges per-group quota overrides from channel configs

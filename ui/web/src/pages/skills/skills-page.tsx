@@ -39,7 +39,7 @@ export function SkillsPage() {
     skills, loading, refresh, getSkill, uploadSkill, updateSkill, deleteSkill,
     listAgentGrants, grantSkillToAgent, grantSkillToAgents, revokeSkillFromAgent,
     deleteSkills, toggleSkills,
-    getSkillVersions, getSkillFiles, getSkillFileContent, rescanDeps, installDeps, installSingleDep, toggleSkill,
+    getSkillVersions, getSkillFiles, getSkillFileContent, getSkillFileBlob, rescanDeps, installDeps, installSingleDep, toggleSkill,
     setTenantConfig, deleteTenantConfig,
   } = useSkills();
   const [params, setParams] = useSearchParams();
@@ -345,7 +345,7 @@ export function SkillsPage() {
                   </th>
                   <th className="px-4 py-3 text-left font-medium">{t("columns.name")}</th>
                   <th className="px-4 py-3 text-left font-medium">{t("columns.description")}</th>
-                  {tab === "custom" && <th className="px-4 py-3 text-left font-medium">{t("columns.agents")}</th>}
+                  {tab === "custom" && <th className="px-4 py-3 text-left font-medium">{t("columns.managedBy")}</th>}
                   <th className="px-4 py-3 text-left font-medium">{t("columns.status")}</th>
                   {tab === "custom" && <th className="px-4 py-3 text-left font-medium">{t("columns.visibility")}</th>}
                   <th className="px-4 py-3 text-right font-medium">{t("columns.actions")}</th>
@@ -396,6 +396,7 @@ export function SkillsPage() {
           getSkillVersions={getSkillVersions}
           getSkillFiles={getSkillFiles}
           getSkillFileContent={getSkillFileContent}
+          getSkillFileBlob={getSkillFileBlob}
         />
       )}
 

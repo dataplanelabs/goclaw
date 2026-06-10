@@ -115,7 +115,7 @@ func (h *SecureCLIHandler) handleSetUserCredentials(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if err := h.store.SetUserCredentials(r.Context(), binaryID, userID, body.Env); err != nil {
+	if err := h.store.SetUserCredentials(r.Context(), binaryID, userID, body.Env, json.RawMessage("{}")); err != nil {
 		locale := store.LocaleFromContext(r.Context())
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, err.Error())})
 		return

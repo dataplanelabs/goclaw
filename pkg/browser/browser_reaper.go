@@ -47,6 +47,7 @@ func (m *Manager) reapIdlePages() {
 		delete(m.pages, targetID)
 		delete(m.console, targetID)
 		delete(m.pageTenants, targetID)
+		delete(m.pageSessions, targetID)
 		delete(m.pageLastUsed, targetID)
 		m.refs.Remove(targetID)
 		m.logger.Info("reaper: closed idle page", "targetId", targetID, "idle", now.Sub(lastUsed).Round(time.Second))

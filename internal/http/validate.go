@@ -54,6 +54,9 @@ var agentAllowedFields = map[string]bool{
 	"self_evolve": true, "skill_evolve": true, "skill_nudge_interval": true,
 	"reasoning_config": true, "workspace_sharing": true, "chatgpt_oauth_routing": true,
 	"model_fallback": true, "shell_deny_groups": true, "kg_dedup_config": true,
+	// Opaque hash supplied by external reconcilers (gcplane) to detect drift in
+	// write-only fields (contextFiles, JSONB configs). Stored as-is.
+	"write_only_hash": true,
 }
 
 var providerAllowedFields = map[string]bool{

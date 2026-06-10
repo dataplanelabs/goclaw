@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
+	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -17,7 +19,7 @@ import (
 // buildMessages constructs the full message list for an LLM request.
 // Returns the messages and whether BOOTSTRAP.md was present in context files
 // (used by the caller for auto-cleanup without an extra DB roundtrip).
-func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, summary, userMessage, extraSystemPrompt, sessionKey, channel, channelType, chatTitle, chatID, peerKind, userID string, historyLimit int, skillFilter []string, lightContext bool) ([]providers.Message, bool) {
+func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, summary, userMessage, extraSystemPrompt, sessionKey, channel, channelType, chatTitle, chatID, peerKind, userID string, historyLimit int, skillFilter []string, lightContext, enableNativeStyles bool) ([]providers.Message, bool) {
 	var messages []providers.Message
 
 	// Build system prompt — 3-layer mode resolution: runtime > auto-detect > config
@@ -204,6 +206,7 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		Workspace:              promptWorkspace,
 		Channel:                channel,
 		ChannelType:            channelType,
+		UserTimezone:           userTimezoneFromCtx(ctx),
 		ChatID:                 chatID,
 		ChatTitle:              chatTitle,
 		PeerKind:               peerKind,
@@ -241,6 +244,10 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		ProviderContribution:   l.providerContribution(),
 	})
 
+	if addendum, ok := bootstrap.ChannelAddendum(channelType, bootstrap.AddendumOpts{EnableNativeStyles: enableNativeStyles}); ok {
+		systemPrompt = systemPrompt + "\n\n" + addendum
+	}
+
 	messages = append(messages, providers.Message{
 		Role:    "system",
 		Content: systemPrompt,
@@ -274,13 +281,39 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		l.sessions.Save(ctx, sessionKey)
 	}
 
-	// Current user message
+	// Current user message — stamp local arrival time so the agent has a
+	// per-message time-of-day dimension consistent with the group buffer.
 	messages = append(messages, providers.Message{
 		Role:    "user",
-		Content: userMessage,
+		Content: stampCurrentMessageTime(ctx, userMessage),
 	})
 
 	return messages, hadBootstrap
+}
+
+// stampCurrentMessageTime prefixes the inbound message with its local arrival
+// date-time (YYYY-MM-DD HH:MM) in the agent's resolved timezone. When the group
+// buffer is present it attaches the stamp to the current-message marker;
+// otherwise it prepends a stamp line. No-op without a RunContext (subagent
+// paths, tests).
+func stampCurrentMessageTime(ctx context.Context, msg string) string {
+	rc := store.RunContextFromCtx(ctx)
+	if rc == nil || rc.TurnStartedAt.IsZero() {
+		return msg
+	}
+	loc := time.UTC
+	if rc.UserTimezone != "" {
+		if l, err := time.LoadLocation(rc.UserTimezone); err == nil {
+			loc = l
+		}
+	}
+	// Include the tz offset so the LLM never mistakes the wall-clock for UTC.
+	stamp := rc.TurnStartedAt.In(loc).Format("2006-01-02 15:04 -07")
+	marker := channels.CurrentMessageMarker + "\n"
+	if strings.Contains(msg, marker) {
+		return strings.Replace(msg, marker, channels.CurrentMessageMarker+" ["+stamp+"]\n", 1)
+	}
+	return "[" + stamp + "]\n" + msg
 }
 
 // resolveContextFiles merges base context files (from resolver, e.g. auto-generated

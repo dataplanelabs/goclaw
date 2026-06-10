@@ -47,6 +47,10 @@ func (h *SecureCLIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /v1/cli-credentials/{id}", h.auth(h.handleDelete))
 	mux.HandleFunc("POST /v1/cli-credentials/{id}/test", h.auth(h.handleDryRun))
 
+	// Skill conventions: tenant-scoped read of installed CLI versions for
+	// gcplane validate cross-check against skill frontmatter `requires.cli`.
+	mux.HandleFunc("GET /v1/system/cli-versions", h.auth(h.handleCliVersions))
+
 	// Per-user credential management
 	mux.HandleFunc("GET /v1/cli-credentials/{id}/user-credentials", h.auth(h.handleListUserCredentials))
 	mux.HandleFunc("GET /v1/cli-credentials/{id}/user-credentials/{userId}", h.auth(h.handleGetUserCredentials))
@@ -132,6 +136,28 @@ func envValueAsString(v any) (string, error) {
 	default:
 		return "", fmt.Errorf("value must be a string")
 	}
+}
+
+// handleCliVersions returns {binary_name: version} for the caller's tenant.
+// Drives `gcplane validate` cross-check against skill frontmatter requires.cli.
+// Enabled binaries with non-NULL versions only; NULL versions are omitted
+// (cleaner UX than returning empty strings).
+func (h *SecureCLIHandler) handleCliVersions(w http.ResponseWriter, r *http.Request) {
+	locale := store.LocaleFromContext(r.Context())
+	rows, err := h.store.ListEnabled(r.Context())
+	if err != nil {
+		slog.Error("secure_cli.cli_versions", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgFailedToList, "CLI versions")})
+		return
+	}
+	out := make(map[string]string, len(rows))
+	for _, b := range rows {
+		if b.Version == nil || *b.Version == "" {
+			continue
+		}
+		out[b.BinaryName] = *b.Version
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"versions": out})
 }
 
 func (h *SecureCLIHandler) handleList(w http.ResponseWriter, r *http.Request) {

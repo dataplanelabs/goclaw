@@ -65,6 +65,7 @@ type ttsConfigResponse struct {
 	Edge       ttsProviderConfigResponse `json:"edge"`
 	MiniMax    ttsProviderConfigResponse `json:"minimax"`
 	Gemini     ttsProviderConfigResponse `json:"gemini"`
+	VieNeu     ttsProviderConfigResponse `json:"vieneu"`
 }
 
 type ttsProviderConfigResponse struct {
@@ -78,6 +79,7 @@ type ttsProviderConfigResponse struct {
 	GroupID  string         `json:"group_id,omitempty"`
 	Enabled  *bool          `json:"enabled,omitempty"`
 	Rate     string         `json:"rate,omitempty"`
+	Emotion  string         `json:"emotion,omitempty"`  // VieNeu: "natural" / "storytelling"
 	Speakers string         `json:"speakers,omitempty"` // JSON-encoded []SpeakerVoice (Gemini multi-speaker)
 	Params   map[string]any `json:"params,omitempty"`   // provider-specific params blob
 }
@@ -177,6 +179,18 @@ func (h *TTSConfigHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		if v, _ := h.systemConfigs.Get(ctx, "tts.gemini.speakers"); v != "" {
 			resp.Gemini.Speakers = v
 		}
+		// VieNeu (no api_key, no endpoint — endpoint is build-time loopback).
+		if v, _ := h.systemConfigs.Get(ctx, "tts.vieneu.voice"); v != "" {
+			resp.VieNeu.Voice = v
+			resp.VieNeu.VoiceID = v
+		}
+		if v, _ := h.systemConfigs.Get(ctx, "tts.vieneu.model"); v != "" {
+			resp.VieNeu.Model = v
+			resp.VieNeu.ModelID = v
+		}
+		if v, _ := h.systemConfigs.Get(ctx, "tts.vieneu.emotion"); v != "" {
+			resp.VieNeu.Emotion = v
+		}
 		// Params blobs (dual-read: legacy flat keys already loaded above; return blob as-is for UI)
 		if v, _ := h.systemConfigs.Get(ctx, "tts.openai.params"); v != "" {
 			_ = json.Unmarshal([]byte(v), &resp.OpenAI.Params)
@@ -192,6 +206,9 @@ func (h *TTSConfigHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		}
 		if v, _ := h.systemConfigs.Get(ctx, "tts.gemini.params"); v != "" {
 			_ = json.Unmarshal([]byte(v), &resp.Gemini.Params)
+		}
+		if v, _ := h.systemConfigs.Get(ctx, "tts.vieneu.params"); v != "" {
+			_ = json.Unmarshal([]byte(v), &resp.VieNeu.Params)
 		}
 	}
 
@@ -230,6 +247,7 @@ type ttsConfigSaveRequest struct {
 	Edge       *ttsProviderSaveRequest `json:"edge,omitempty"`
 	MiniMax    *ttsProviderSaveRequest `json:"minimax,omitempty"`
 	Gemini     *ttsProviderSaveRequest `json:"gemini,omitempty"`
+	VieNeu     *ttsProviderSaveRequest `json:"vieneu,omitempty"`
 }
 
 type ttsProviderSaveRequest struct {
@@ -243,6 +261,7 @@ type ttsProviderSaveRequest struct {
 	GroupID  string         `json:"group_id,omitempty"`
 	Enabled  *bool          `json:"enabled,omitempty"`
 	Rate     string         `json:"rate,omitempty"`
+	Emotion  string         `json:"emotion,omitempty"`  // VieNeu
 	Speakers string         `json:"speakers,omitempty"` // JSON-encoded []SpeakerVoice (Gemini multi-speaker)
 	Params   map[string]any `json:"params,omitempty"`   // provider-specific params blob
 }
@@ -344,6 +363,17 @@ func (h *TTSConfigHandler) handleSave(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if req.VieNeu != nil {
+			if v := req.VieNeu.resolvedVoice(); v != "" && !set("tts.vieneu.voice", v, "vieneu voice") {
+				return
+			}
+			if v := req.VieNeu.resolvedModel(); v != "" && !set("tts.vieneu.model", v, "vieneu model") {
+				return
+			}
+			if req.VieNeu.Emotion != "" && !set("tts.vieneu.emotion", req.VieNeu.Emotion, "vieneu emotion") {
+				return
+			}
+		}
 		// Dual-write: validate then save params blobs alongside legacy flat keys.
 		// Finding #3: ValidateParams enforces Min/Max/Enum + rejects unknown keys.
 		if req.OpenAI != nil && req.OpenAI.Params != nil {
@@ -368,6 +398,11 @@ func (h *TTSConfigHandler) handleSave(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Gemini != nil && req.Gemini.Params != nil {
 			if !validateAndSaveParamsBlob(w, ctx, h.systemConfigs.Set, "tts.gemini.params", "gemini", req.Gemini.Params, locale) {
+				return
+			}
+		}
+		if req.VieNeu != nil && req.VieNeu.Params != nil {
+			if !validateAndSaveParamsBlob(w, ctx, h.systemConfigs.Set, "tts.vieneu.params", "vieneu", req.VieNeu.Params, locale) {
 				return
 			}
 		}
@@ -481,6 +516,10 @@ func NewTenantTTSResolver(sc store.SystemConfigStore, cs store.ConfigSecretsStor
 			req.APIBase, _ = sc.Get(ctx, "tts.gemini.api_base")
 			req.VoiceID, _ = sc.Get(ctx, "tts.gemini.voice")
 			req.ModelID, _ = sc.Get(ctx, "tts.gemini.model")
+
+		case "vieneu":
+			req.VoiceID, _ = sc.Get(ctx, "tts.vieneu.voice")
+			req.ModelID, _ = sc.Get(ctx, "tts.vieneu.model")
 
 		default:
 			return nil, "", "", fmt.Errorf("unsupported provider: %s", providerName)

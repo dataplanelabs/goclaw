@@ -11,6 +11,7 @@ import { useUiStore } from "@/stores/use-ui-store";
 import { SpanTreeNode, StatusBadge } from "./trace-span-tree-node";
 import { buildSpanTree } from "@/adapters/trace.adapter";
 import { TracePreviewBlock } from "./trace-preview-block";
+import { RetryButton } from "./components/retry-button";
 import type { TraceData, SpanData } from "./hooks/use-traces";
 import type { AgentEventPayload } from "@/types/chat";
 
@@ -18,11 +19,13 @@ interface TraceDetailDialogProps {
   traceId: string;
   onClose: () => void;
   getTrace: (id: string) => Promise<{ trace: TraceData; spans: SpanData[] } | null>;
+  retryTrace?: (args: { traceId: string; confirmDoubleSend?: boolean }) => Promise<{ original_trace_id: string; provider: string; message: string }>;
+  onRetried?: (originalTraceID: string) => void;
   onNavigateTrace?: (traceId: string) => void;
   onAbortRun?: (trace: TraceData, e: React.MouseEvent) => void;
 }
 
-export function TraceDetailDialog({ traceId, onClose, getTrace, onNavigateTrace, onAbortRun }: TraceDetailDialogProps) {
+export function TraceDetailDialog({ traceId, onClose, getTrace, retryTrace, onRetried, onNavigateTrace, onAbortRun }: TraceDetailDialogProps) {
   const { t } = useTranslation("traces");
   const tz = useUiStore((s) => s.timezone);
   const http = useHttp();
@@ -101,6 +104,9 @@ export function TraceDetailDialog({ traceId, onClose, getTrace, onNavigateTrace,
                 <Square className="h-3.5 w-3.5" />{t("detail.stopRun")}
               </button>
             )}
+            {trace && trace.status !== "running" && retryTrace && (
+              <RetryButton trace={trace} retry={retryTrace} onRetried={onRetried} />
+            )}
           </DialogTitle>
         </DialogHeader>
 
@@ -138,6 +144,20 @@ export function TraceDetailDialog({ traceId, onClose, getTrace, onNavigateTrace,
 }
 
 /** Trace metadata summary grid */
+// parsePeerId splits trace.user_id into kind + bare peer ID. The raw form
+// for group sessions is `group:<channel>:<chatId>`; for DMs it's typically
+// a plain numeric or opaque token. The channel segment is dropped — the
+// modal already has its own Channel row.
+function parsePeerId(raw: string): { kind: "group" | "user"; peerId: string } {
+  if (raw.startsWith("group:")) {
+    const parts = raw.split(":");
+    if (parts.length >= 3) {
+      return { kind: "group", peerId: parts.slice(2).join(":") };
+    }
+  }
+  return { kind: "user", peerId: raw };
+}
+
 function TraceSummaryGrid({ trace, tz, onNavigateTrace }: { trace: TraceData; tz: string; onNavigateTrace?: (id: string) => void }) {
   const { t } = useTranslation("traces");
   return (
@@ -146,6 +166,12 @@ function TraceSummaryGrid({ trace, tz, onNavigateTrace }: { trace: TraceData; tz
       <div><span className="text-muted-foreground">{t("detail.status")}</span> <StatusBadge status={trace.status} /></div>
       <div><span className="text-muted-foreground">{t("detail.duration")}</span> {formatDuration(trace.duration_ms || computeDurationMs(trace.start_time, trace.end_time))}</div>
       <div><span className="text-muted-foreground">{t("detail.channel")}</span> {trace.channel || "—"}</div>
+      {trace.chat_title && (
+        <div className="col-span-2 sm:col-span-2" title={trace.chat_title}>
+          <span className="text-muted-foreground">{t("detail.chatTitle")}</span>{" "}
+          <span className="font-medium">{trace.chat_title}</span>
+        </div>
+      )}
       <div>
         <span className="text-muted-foreground">{t("detail.tokens")}</span>{" "}
         {formatTokens(trace.total_input_tokens)} in / {formatTokens(trace.total_output_tokens)} out
@@ -164,6 +190,16 @@ function TraceSummaryGrid({ trace, tz, onNavigateTrace }: { trace: TraceData; tz
           </button>
         </div>
       )}
+      {trace.user_id && (() => {
+        const { kind, peerId } = parsePeerId(trace.user_id);
+        const label = kind === "group" ? t("detail.groupId") : t("detail.userId");
+        return (
+          <div className="col-span-2 sm:col-span-4" title={trace.user_id}>
+            <span className="text-muted-foreground">{label}</span>{" "}
+            <span className="font-mono text-xs break-all">{peerId}</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }

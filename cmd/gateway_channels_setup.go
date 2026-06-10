@@ -13,6 +13,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/discord"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/feishu"
 	slackchannel "github.com/nextlevelbuilder/goclaw/internal/channels/slack"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/telegram"
@@ -21,6 +22,7 @@ import (
 	zalopersonal "github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/zalomethods"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway/methods"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -148,7 +150,7 @@ func registerConfigChannels(cfg *config.Config, channelMgr *channels.Manager, ms
 }
 
 // wireChannelRPCMethods registers WS RPC methods for channels, instances, agent links, and teams.
-func wireChannelRPCMethods(server *gateway.Server, pgStores *store.Stores, channelMgr *channels.Manager, agentRouter *agent.Router, msgBus *bus.MessageBus, dataDir string) {
+func wireChannelRPCMethods(server *gateway.Server, pgStores *store.Stores, channelMgr *channels.Manager, agentRouter *agent.Router, msgBus *bus.MessageBus, dataDir string, standbyRegistry *schedule.ScheduleRegistry, domainBus eventbus.DomainEventBus) {
 	// Register channels RPC methods (after channelMgr is initialized with all channels)
 	methods.NewChannelsMethods(channelMgr).Register(server.Router())
 
@@ -160,6 +162,20 @@ func wireChannelRPCMethods(server *gateway.Server, pgStores *store.Stores, chann
 		zalomethods.NewQRMethods(pgStores.ChannelInstances, msgBus).Register(server.Router())
 		zalomethods.NewContactsMethods(pgStores.ChannelInstances).Register(server.Router())
 		whatsapp.NewQRMethods(pgStores.ChannelInstances, channelMgr).Register(server.Router())
+	}
+
+	// Standby schedules RPC (Phase 4). Reload callback is nil-safe when registry isn't wired.
+	if pgStores.ChannelSchedules != nil && pgStores.ChannelInstances != nil {
+		var reload func(string)
+		if standbyRegistry != nil {
+			reload = standbyRegistry.Reload
+		}
+		methods.NewChannelSchedulesMethods(pgStores.ChannelSchedules, pgStores.ChannelInstances, reload).Register(server.Router())
+	}
+
+	// Team-reply evaluations RPC (Phase 6).
+	if pgStores.TeamReplyEvals != nil && pgStores.ChannelInstances != nil {
+		methods.NewTeamRepliesMethods(pgStores.TeamReplyEvals, pgStores.ChannelInstances, pgStores.Agents, domainBus).Register(server.Router())
 	}
 
 	// Register agent links WS RPC methods

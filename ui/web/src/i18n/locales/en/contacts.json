@@ -20,7 +20,7 @@
     "title": "Channel permissions for contact names",
     "telegram": "Telegram — Names and usernames available automatically.",
     "discord": "Discord — Display names and usernames available automatically.",
-    "zalo": "Zalo — Display names available automatically.",
+    "zalo": "Zalo — User and group names resolved automatically.",
     "slack": "Slack — Display names resolved via Slack API (bot must be in workspace).",
     "feishu": "Feishu/Lark — Requires contact:user.base:readonly permission. Without this, names will be empty."
   },

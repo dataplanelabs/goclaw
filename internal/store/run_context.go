@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -60,6 +61,16 @@ type RunContext struct {
 	LeaderAgentID      string   // leader's agent UUID for member memory read fallback
 	AgentToolKey       string   // tool-level agent key for registry routing
 	TenantAllowedPaths []string // tenant-specific allowed paths beyond workspace (from system_configs)
+
+	// UserTimezone is the resolved IANA tz for prompt rendering. Resolved once
+	// per turn in injectContext from channel-instance config + workspace default,
+	// then read by buildMessages on every loop iteration without re-querying.
+	UserTimezone string
+
+	// TurnStartedAt marks turn entry (≈ inbound arrival). Stamped once in
+	// injectContext so buildMessages renders a stable current-message time
+	// across loop iterations rather than drifting with time.Now().
+	TurnStartedAt time.Time
 }
 
 // WithRunContext stores a RunContext on the context.

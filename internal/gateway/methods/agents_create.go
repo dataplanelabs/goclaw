@@ -56,6 +56,10 @@ func (m *AgentsMethods) handleCreate(ctx context.Context, client *gateway.Client
 		ChatGPTOAuthRouting json.RawMessage `json:"chatgpt_oauth_routing,omitempty"`
 		ShellDenyGroups     json.RawMessage `json:"shell_deny_groups,omitempty"`
 		KGDedupConfig       json.RawMessage `json:"kg_dedup_config,omitempty"`
+		// WriteOnlyHash is an opaque hash supplied by external reconcilers
+		// (gcplane) to detect drift in write-only fields (contextFiles,
+		// toolsConfig, ...). Stored as-is.
+		WriteOnlyHash string `json:"writeOnlyHash,omitempty"`
 	}
 	if req.Params != nil {
 		json.Unmarshal(req.Params, &params)
@@ -159,6 +163,7 @@ func (m *AgentsMethods) handleCreate(ctx context.Context, client *gateway.Client
 			ChatGPTOAuthRouting: params.ChatGPTOAuthRouting,
 			ShellDenyGroups:     params.ShellDenyGroups,
 			KGDedupConfig:       params.KGDedupConfig,
+			WriteOnlyHash:       params.WriteOnlyHash,
 		}
 		if err := m.agentStore.Create(ctx, agentData); err != nil {
 			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, i18n.T(locale, i18n.MsgFailedToCreate, "agent", fmt.Sprintf("%v", err))))

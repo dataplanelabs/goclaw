@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +33,23 @@ func TestToolLoopDetection_Warning(t *testing.T) {
 	}
 	if lastLevel != "warning" {
 		t.Fatalf("expected warning after %d calls, got %q", toolLoopWarningThreshold, lastLevel)
+	}
+}
+
+func TestToolLoopDetection_WarningSuggestsMCPSearch(t *testing.T) {
+	var s toolLoopState
+
+	var msg string
+	for range toolLoopWarningThreshold {
+		h := s.record("mcp_truerace_mcp__truerace_get_results", map[string]any{"event_slug": "example"})
+		s.recordResult(h, "No results found")
+		_, msg = s.detect("mcp_truerace_mcp__truerace_get_results", h)
+	}
+
+	for _, want := range []string{"Do not call this same tool", "mcp_tool_search"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("warning message %q does not contain %q", msg, want)
+		}
 	}
 }
 

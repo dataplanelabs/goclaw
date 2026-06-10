@@ -57,6 +57,35 @@ func TestResolveRefImageIDs_EmptyIDsReturnsNil(t *testing.T) {
 	}
 }
 
+// TestResolveRefImageIDs_LookupByPathAndBasename covers the trace-019e5650
+// scenario where the LLM resolves a workspace path via `ls .uploads/` and
+// passes the filename or absolute path as the "ID".
+func TestResolveRefImageIDs_LookupByPathAndBasename(t *testing.T) {
+	dir := t.TempDir()
+	r := writeRef(t, dir, "uuid-1234-abcd.jpg", "image/jpeg", []byte{0xff, 0xd8})
+
+	cases := []struct {
+		name string
+		key  string
+	}{
+		{"by full path", r.Path},
+		{"by basename", filepath.Base(r.Path)},
+		{"by id", r.ID},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveRefImageIDs(context.Background(),
+				[]string{tc.key},
+				[]providers.MediaRef{r},
+				maxRefImages,
+			)
+			if len(got) != 1 {
+				t.Fatalf("len(got)=%d for key %q, want 1", len(got), tc.key)
+			}
+		})
+	}
+}
+
 func TestResolveRefImageIDs_IDNotInCtxDropped(t *testing.T) {
 	dir := t.TempDir()
 	r := writeRef(t, dir, "real", "image/jpeg", []byte{0xff, 0xd8})

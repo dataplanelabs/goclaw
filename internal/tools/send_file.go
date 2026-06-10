@@ -40,7 +40,8 @@ func (t *SendFileTool) Name() string { return "send_file" }
 func (t *SendFileTool) Description() string {
 	return "Send an existing workspace file as an attachment in the current chat. " +
 		"Use when the user asks to share or resend a file that already exists. " +
-		"Does NOT create or modify the file — use write_file(deliver=true) to create and send a new file."
+		"Temp/staging/scratch paths are rejected; send only final result files. " +
+		"Does NOT create or modify the file — use write_file(deliver=true) to create and send a new final file."
 }
 
 func (t *SendFileTool) Parameters() map[string]any {
@@ -93,6 +94,11 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *Result
 	}
 	if !fi.Mode().IsRegular() {
 		return ErrorResult(fmt.Sprintf("path is not a regular file: %s", path))
+	}
+	if IsScratchDeliveryPath(resolved) {
+		return ErrorResult(fmt.Sprintf(
+			"refusing to send temp/staging/scratch file %s. Send only the final result file.",
+			filepath.Base(resolved)))
 	}
 
 	// Duplicate-delivery guard: block if already delivered in this turn.

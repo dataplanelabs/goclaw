@@ -42,6 +42,7 @@ function getVoiceId(draft: TtsConfig): string {
     case "edge": return draft.edge.voice ?? "";
     case "minimax": return draft.minimax.voice_id ?? "";
     case "gemini": return draft.gemini.voice ?? "";
+    case "vieneu": return draft.vieneu.voice ?? "";
     default: return "";
   }
 }
@@ -52,11 +53,12 @@ function getModelId(draft: TtsConfig): string {
     case "elevenlabs": return draft.elevenlabs.model_id ?? "";
     case "minimax": return draft.minimax.model ?? "";
     case "gemini": return draft.gemini.model ?? "";
+    case "vieneu": return draft.vieneu.model ?? "";
     default: return "";
   }
 }
 
-type ProviderKey = keyof Pick<TtsConfig, "openai" | "elevenlabs" | "edge" | "minimax" | "gemini">;
+type ProviderKey = keyof Pick<TtsConfig, "openai" | "elevenlabs" | "edge" | "minimax" | "gemini" | "vieneu">;
 
 function voicePatch(provider: string, value: string): [ProviderKey, Partial<TtsProviderConfig>] | null {
   switch (provider) {
@@ -65,6 +67,7 @@ function voicePatch(provider: string, value: string): [ProviderKey, Partial<TtsP
     case "edge": return ["edge", { voice: value }];
     case "minimax": return ["minimax", { voice_id: value }];
     case "gemini": return ["gemini", { voice: value }];
+    case "vieneu": return ["vieneu", { voice: value }];
     default: return null;
   }
 }
@@ -75,12 +78,15 @@ function modelPatch(provider: string, value: string): [ProviderKey, Partial<TtsP
     case "elevenlabs": return ["elevenlabs", { model_id: value }];
     case "minimax": return ["minimax", { model: value }];
     case "gemini": return ["gemini", { model: value }];
+    case "vieneu": return ["vieneu", { model: value }];
     default: return null;
   }
 }
 
 function isCredentialsSaved(provider: string, tts: TtsConfig): boolean {
-  if (provider === "edge") return true;
+  // No-credential providers: edge ships an always-on CLI; vieneu's daemon is
+  // in-pod (no operator config needed).
+  if (provider === "edge" || provider === "vieneu") return true;
   const cfg = tts[provider as ProviderKey];
   return !!cfg?.api_key;
 }
@@ -102,18 +108,30 @@ export function TtsPage() {
   const [speakers, setSpeakers] = useState<SpeakerVoice[]>([]);
 
   useEffect(() => {
+    // Don't clobber in-progress edits when a background refetch lands.
+    if (dirty) return;
     setDraft(tts);
-    setDirty(false);
-    // Initialize params from saved blob when provider changes
     if (tts.provider) {
       const key = tts.provider as ProviderKey;
       const saved = tts[key]?.params ?? {};
       setParamsState(saved as Record<string, ParamValue>);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tts]);
 
   const update = (patch: Partial<TtsConfig>) => {
-    setDraft((prev) => ({ ...prev, ...patch }));
+    setDraft((prev) => {
+      const next = { ...prev, ...patch };
+      // Provider switch: reload paramsState from the new provider's saved blob
+      // so per-provider keys (e.g. edge "rate") don't bleed into a provider
+      // whose schema rejects them.
+      if (patch.provider !== undefined && patch.provider !== prev.provider) {
+        const newKey = patch.provider as ProviderKey;
+        const saved = next[newKey]?.params ?? {};
+        setParamsState(saved as Record<string, ParamValue>);
+      }
+      return next;
+    });
     setDirty(true);
   };
 

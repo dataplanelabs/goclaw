@@ -8,6 +8,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -42,5 +43,30 @@ func Factory(ciStore store.ChannelInstanceStore) channels.ChannelFactory {
 			ch.cursor.loadFromMap(seeded)
 		}
 		return ch, nil
+	}
+}
+
+// FactoryWithDeps mirrors Factory but threads team-reply-capture deps into
+// the channel so Phase 4's polling worker can be wired up at Start().
+// Tenant resolution: ciStore lookup by instanceID is set by the loader via
+// SetInstanceID; the worker reads tenantID lazily from credentials/loader.
+func FactoryWithDeps(ciStore store.ChannelInstanceStore, domainBus eventbus.DomainEventBus,
+	sessions store.SessionStore, evals store.TeamReplyEvalStore, atomic store.AtomicTeamReplyWriter,
+	contacts *store.ContactCollector, judgeResolver JudgeAgentResolver) channels.ChannelFactory {
+
+	base := Factory(ciStore)
+	return func(name string, credsRaw json.RawMessage, cfgRaw json.RawMessage,
+		msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
+
+		c, err := base(name, credsRaw, cfgRaw, msgBus, pairingSvc)
+		if err != nil {
+			return nil, err
+		}
+		oaCh, ok := c.(*Channel)
+		if !ok {
+			return c, nil
+		}
+		oaCh.SetTeamReplyDeps(domainBus, sessions, evals, atomic, contacts, "", judgeResolver)
+		return oaCh, nil
 	}
 }

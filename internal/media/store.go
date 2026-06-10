@@ -99,6 +99,8 @@ func ExtFromMime(mime string) string {
 		return ".gif"
 	case strings.HasPrefix(mime, "image/webp"):
 		return ".webp"
+	case strings.HasPrefix(mime, "image/jxl"):
+		return ".jxl"
 	case strings.HasPrefix(mime, "video/mp4"):
 		return ".mp4"
 	case strings.HasPrefix(mime, "audio/ogg"), strings.HasPrefix(mime, "audio/opus"):
@@ -109,6 +111,8 @@ func ExtFromMime(mime string) string {
 		return ".wav"
 	case strings.HasPrefix(mime, "application/pdf"):
 		return ".pdf"
+	case mime == "application/msword":
+		return ".doc"
 	case mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
 		return ".docx"
 	case mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":

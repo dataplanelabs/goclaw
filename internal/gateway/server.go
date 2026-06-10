@@ -472,6 +472,16 @@ func (s *Server) SetGatewayUpgradeHandler(h *httpapi.GatewayUpgradeHandler) {
 // SetOAuthHandler sets the OAuth handler (available in all modes).
 func (s *Server) SetOAuthHandler(h *httpapi.OAuthHandler) { s.handlers = append(s.handlers, h) }
 
+// SetIntegrationsHandler sets the per-operator integrations handler (B3-01 Google OAuth).
+func (s *Server) SetIntegrationsHandler(h *httpapi.IntegrationsHandler) {
+	s.handlers = append(s.handlers, h)
+}
+
+// SetOAuthRefreshHealthHandler sets the liveness probe for the OAuth refresh worker (B3-01 P4).
+func (s *Server) SetOAuthRefreshHealthHandler(h *httpapi.OAuthRefreshHealthHandler) {
+	s.handlers = append(s.handlers, h)
+}
+
 // SetAPIKeysHandler sets the API key management handler.
 func (s *Server) SetAPIKeysHandler(h *httpapi.APIKeysHandler) {
 	s.handlers = append(s.handlers, h)
@@ -540,6 +550,11 @@ func (s *Server) SetTTSHandler(h *httpapi.TTSHandler) { s.handlers = append(s.ha
 
 // SetTTSConfigHandler sets the per-tenant TTS config handler.
 func (s *Server) SetTTSConfigHandler(h *httpapi.TTSConfigHandler) { s.handlers = append(s.handlers, h) }
+
+// SetTTSVieneuVoicesHandler sets the VieNeu cloned-voice CRUD handler.
+func (s *Server) SetTTSVieneuVoicesHandler(h *httpapi.TTSVieneuVoicesHandler) {
+	s.handlers = append(s.handlers, h)
+}
 
 // SetVaultHandler sets the Knowledge Vault document handler.
 func (s *Server) SetVaultHandler(h *httpapi.VaultHandler) { s.handlers = append(s.handlers, h) }

@@ -26,12 +26,19 @@ type zaloInstanceConfig struct {
 	RequireMention      *bool    `json:"require_mention,omitempty"`
 	HistoryLimit        int      `json:"history_limit,omitempty"`
 	AllowFrom           []string `json:"allow_from,omitempty"`
-	BlockReply          *bool    `json:"block_reply,omitempty"`
-	QuoteUserMessage    *bool    `json:"quote_user_message,omitempty"`
+	BlockReply              *bool `json:"block_reply,omitempty"`
+	QuoteUserMessageInGroup *bool `json:"quote_user_message_in_group,omitempty"`
+	QuoteUserMessageInDM    *bool `json:"quote_user_message_in_dm,omitempty"`
+	EnableNativeStyles      *bool `json:"enable_native_styles,omitempty"`
 	DisablePolls        bool     `json:"disable_polls,omitempty"`
 	DisableReactions    bool     `json:"disable_reactions,omitempty"`
+	DisableVoiceSend    bool     `json:"disable_voice_send,omitempty"`
 	ListenSelfReactions bool     `json:"listen_self_reactions,omitempty"`
 	ReactionsMode       string   `json:"reactions_mode,omitempty"`
+
+	ReactionLevel              string `json:"reaction_level,omitempty"`
+	ReactionTerminalDelayMinMs int    `json:"reaction_terminal_delay_min_ms,omitempty"`
+	ReactionTerminalDelayMaxMs int    `json:"reaction_terminal_delay_max_ms,omitempty"`
 }
 
 // Factory creates a Zalo Personal channel from DB instance data.
@@ -66,12 +73,19 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 		GroupPolicy:         ic.GroupPolicy,
 		RequireMention:      ic.RequireMention,
 		HistoryLimit:        ic.HistoryLimit,
-		BlockReply:          ic.BlockReply,
-		QuoteUserMessage:    ic.QuoteUserMessage,
+		BlockReply:              ic.BlockReply,
+		QuoteUserMessageInGroup: ic.QuoteUserMessageInGroup,
+		QuoteUserMessageInDM:    ic.QuoteUserMessageInDM,
+		EnableNativeStyles:      ic.EnableNativeStyles,
 		DisablePolls:        ic.DisablePolls,
 		DisableReactions:    ic.DisableReactions,
+		DisableVoiceSend:    ic.DisableVoiceSend,
 		ListenSelfReactions: ic.ListenSelfReactions,
 		ReactionsMode:       ic.ReactionsMode,
+
+		ReactionLevel:              ic.ReactionLevel,
+		ReactionTerminalDelayMinMs: ic.ReactionTerminalDelayMinMs,
+		ReactionTerminalDelayMaxMs: ic.ReactionTerminalDelayMaxMs,
 	}
 
 	ch, err := New(zaloCfg, msgBus, pairingSvc, nil)
@@ -117,17 +131,24 @@ func FactoryWithPendingStore(pendingStore store.PendingMessageStore, episodicSto
 		}
 
 		zaloCfg := config.ZaloPersonalConfig{
-			Enabled:             true,
-			AllowFrom:           ic.AllowFrom,
-			DMPolicy:            ic.DMPolicy,
-			GroupPolicy:         ic.GroupPolicy,
-			RequireMention:      ic.RequireMention,
-			HistoryLimit:        ic.HistoryLimit,
-			BlockReply:          ic.BlockReply,
-			QuoteUserMessage:    ic.QuoteUserMessage,
-			DisablePolls:        ic.DisablePolls,
-			DisableReactions:    ic.DisableReactions,
-			ListenSelfReactions: ic.ListenSelfReactions,
+			Enabled:                    true,
+			AllowFrom:                  ic.AllowFrom,
+			DMPolicy:                   ic.DMPolicy,
+			GroupPolicy:                ic.GroupPolicy,
+			RequireMention:             ic.RequireMention,
+			HistoryLimit:               ic.HistoryLimit,
+			BlockReply:                 ic.BlockReply,
+			QuoteUserMessageInGroup:    ic.QuoteUserMessageInGroup,
+			QuoteUserMessageInDM:       ic.QuoteUserMessageInDM,
+			EnableNativeStyles:         ic.EnableNativeStyles,
+			DisablePolls:               ic.DisablePolls,
+			DisableReactions:           ic.DisableReactions,
+			DisableVoiceSend:           ic.DisableVoiceSend,
+			ListenSelfReactions:        ic.ListenSelfReactions,
+			ReactionsMode:              ic.ReactionsMode,
+			ReactionLevel:              ic.ReactionLevel,
+			ReactionTerminalDelayMinMs: ic.ReactionTerminalDelayMinMs,
+			ReactionTerminalDelayMaxMs: ic.ReactionTerminalDelayMaxMs,
 		}
 
 		ch, err := New(zaloCfg, msgBus, pairingSvc, pendingStore)

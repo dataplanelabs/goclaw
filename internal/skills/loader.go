@@ -133,6 +133,7 @@ func (l *Loader) ListSkills(_ context.Context) []Info {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	l.cache = make(map[string]*Info)
 	seen := make(map[string]bool)
 	var skills []Info
 
@@ -179,7 +180,7 @@ func (l *Loader) ListSkills(_ context.Context) []Info {
 			}
 			skills = append(skills, info)
 			seen[d.Name()] = true
-			l.cache[d.Name()] = &info
+			l.cacheSkillLocked(&info)
 		}
 	}
 
@@ -193,7 +194,7 @@ func (l *Loader) ListSkills(_ context.Context) []Info {
 			}
 			skills = append(skills, info)
 			seen[info.Slug] = true
-			l.cache[info.Slug] = &info
+			l.cacheSkillLocked(&info)
 		}
 	}
 
@@ -224,12 +225,30 @@ func (l *Loader) ListSkills(_ context.Context) []Info {
 				}
 				skills = append(skills, info)
 				seen[d.Name()] = true
-				l.cache[d.Name()] = &info
+				l.cacheSkillLocked(&info)
 			}
 		}
 	}
 
 	return skills
+}
+
+func (l *Loader) cacheSkillLocked(info *Info) {
+	for _, key := range []string{
+		info.Slug,
+		info.Name,
+		strings.ToLower(info.Name),
+		normalizeForSearch(info.Name),
+		Slugify(info.Name),
+	} {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, exists := l.cache[key]; !exists {
+			l.cache[key] = info
+		}
+	}
 }
 
 // listManagedSkills scans every configured managed dir for versioned skill directories.
@@ -444,6 +463,7 @@ func (l *Loader) BuildSummary(ctx context.Context, allowList []string) string {
 	for _, s := range filtered {
 		lines = append(lines, "  <skill>")
 		lines = append(lines, fmt.Sprintf("    <name>%s</name>", escapeXML(s.Name)))
+		lines = append(lines, fmt.Sprintf("    <slug>%s</slug>", escapeXML(s.Slug)))
 		desc := s.Description
 		if len([]rune(desc)) > skillDescMaxLen {
 			desc = string([]rune(desc)[:skillDescMaxLen]) + "…"
@@ -520,8 +540,99 @@ func (l *Loader) GetSkill(ctx context.Context, name string) (*Info, bool) {
 
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	info, ok := l.cache[name]
-	return info, ok
+	for _, key := range []string{name, strings.ToLower(name), normalizeForSearch(name), Slugify(name)} {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if info, ok := l.cache[key]; ok {
+			return info, true
+		}
+	}
+	return nil, false
+}
+
+// ActivationPayload is the full skill bundle returned by use_skill activation.
+// Inlines SKILL.md content when under SkillMDByteBudget; otherwise returns
+// paths-only and sets SkillMDTruncatedReason so the agent reads chunks manually.
+// AssetPaths and ScriptPaths are flat — files in `assets/` and `scripts/`
+// directly, not recursive. Skills bundling nested directories should list
+// them in SKILL.md prose.
+type ActivationPayload struct {
+	Slug                   string    `json:"slug"`
+	Name                   string    `json:"name"`
+	Source                 string    `json:"source"`
+	BaseDir                string    `json:"base_dir"`
+	SkillMDPath            string    `json:"skill_md_path"`
+	AssetPaths             []string  `json:"asset_paths,omitempty"`
+	ScriptPaths            []string  `json:"script_paths,omitempty"`
+	SkillMDContent         string    `json:"skill_md_content,omitempty"`
+	SkillMDTruncatedReason string    `json:"skill_md_truncated_reason,omitempty"`
+	ActivatedAt            time.Time `json:"activated_at"`
+}
+
+// SkillMDByteBudget caps inline SKILL.md content. Byte-based (provider-agnostic)
+// to avoid tokenizer drift across GLM / Anthropic / OpenAI.
+const SkillMDByteBudget = 200 * 1024
+
+// LoadActivationPayload resolves the skill by slug/name and returns the full
+// activation bundle: structured paths + inline SKILL.md when under the byte budget.
+// Returns an error wrapping "skill_not_found" when the slug isn't in the loader cache.
+// Caller is responsible for grant validation (via SkillAccessStore on managed skills).
+func (l *Loader) LoadActivationPayload(ctx context.Context, slug string) (*ActivationPayload, error) {
+	info, ok := l.GetSkill(ctx, slug)
+	if !ok {
+		return nil, fmt.Errorf("skill_not_found: %q", slug)
+	}
+	return BuildActivationPayload(info.Slug, info.Name, info.Source, info.BaseDir, info.Path)
+}
+
+// BuildActivationPayload assembles the activation bundle (structured paths +
+// inline SKILL.md under the byte budget) for an already-resolved skill. Callers
+// that hold an authoritative path — e.g. use_skill resolving a managed skill
+// from the DB to avoid stale duplicate filesystem roots (#218) — use this to
+// bypass the loader's global filesystem slug scan.
+func BuildActivationPayload(slug, name, source, baseDir, skillMDPath string) (*ActivationPayload, error) {
+	payload := &ActivationPayload{
+		Slug:        slug,
+		Name:        name,
+		Source:      source,
+		BaseDir:     baseDir,
+		SkillMDPath: skillMDPath,
+		AssetPaths:  listFilesInSubdir(baseDir, "assets"),
+		ScriptPaths: listFilesInSubdir(baseDir, "scripts"),
+		ActivatedAt: time.Now().UTC(),
+	}
+
+	data, err := os.ReadFile(skillMDPath)
+	if err != nil {
+		return nil, fmt.Errorf("read SKILL.md: %w", err)
+	}
+	if len(data) > SkillMDByteBudget {
+		payload.SkillMDTruncatedReason = "exceeds_200kb_budget"
+	} else {
+		payload.SkillMDContent = string(data)
+	}
+	return payload, nil
+}
+
+func listFilesInSubdir(baseDir, sub string) []string {
+	dir := filepath.Join(baseDir, sub)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	paths := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		paths = append(paths, filepath.Join(dir, e.Name()))
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	return paths
 }
 
 // --- Frontmatter parsing ---

@@ -7,9 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
+	"github.com/nextlevelbuilder/goclaw/internal/tracing"
 )
 
 // isTextMime returns true for MIME types representing human-readable text content.
@@ -45,6 +48,29 @@ func collectRefsByKind(messages []providers.Message, currentRefs []providers.Med
 	return refs
 }
 
+// collectUserUploadedRefs gathers MediaRefs from USER-role messages only —
+// excludes assistant-generated outputs. Used for create_image refs where the
+// LLM must reference user-attached photos, never its own prior outputs.
+func collectUserUploadedRefs(messages []providers.Message, currentRefs []providers.MediaRef, kind string) []providers.MediaRef {
+	var refs []providers.MediaRef
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != "user" {
+			continue
+		}
+		for _, ref := range messages[i].MediaRefs {
+			if ref.Kind == kind {
+				refs = append(refs, ref)
+			}
+		}
+	}
+	for _, ref := range currentRefs {
+		if ref.Kind == kind {
+			refs = append(refs, ref)
+		}
+	}
+	return refs
+}
+
 // enrichInputMedia processes incoming media (images, documents, audio, video),
 // persists them, enriches messages with media tags, and populates context
 // with refs for tool access. Returns updated context, modified messages, and current-turn media refs.
@@ -63,7 +89,7 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 	// 2. Process media: sanitize images, persist to media store.
 	var mediaRefs []providers.MediaRef
 	if len(req.Media) > 0 {
-		mediaRefs = l.persistMedia(req.SessionKey, req.Media, tools.ToolWorkspaceFromCtx(ctx))
+		mediaRefs = l.persistMedia(req.SessionKey, req.Media, tools.ToolWorkspaceFromCtx(ctx), req.SenderName)
 
 		// Register persisted text uploads in vault (async, non-blocking).
 		if l.onTextUploaded != nil {
@@ -85,11 +111,10 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 				imageRefs = append(imageRefs, ref)
 			}
 		}
-		// Expose current-turn image refs to create_image (id-indexed lookup).
-		// Parallel to WithMediaImages (loaded bytes for vision); refs let
-		// create_image load bytes on demand when LLM passes reference_image_ids.
+		// Expose current-turn user image refs for create_image auto-inject:
+		// when LLM omits reference_image_ids despite a fresh user upload.
 		if len(imageRefs) > 0 {
-			ctx = tools.WithMediaImageRefs(ctx, imageRefs)
+			ctx = tools.WithCurrentTurnUserImageRefs(ctx, imageRefs)
 		}
 		if deferToReadImageTool {
 			// File-ref mode: images primarily accessed via read_image(path=...).
@@ -116,6 +141,13 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 		ctx = l.loadHistoricalImagesForTool(ctx, mediaRefs, messages)
 	}
 
+	// Image refs for create_image: user-uploaded only across history + current.
+	// Excludes assistant-generated outputs so the bot can't accidentally use its
+	// own prior generations as reference material.
+	if imgRefs := collectUserUploadedRefs(messages, mediaRefs, "image"); len(imgRefs) > 0 {
+		ctx = tools.WithMediaImageRefs(ctx, imgRefs)
+	}
+
 	// 2b. Collect document MediaRefs (historical + current) for read_document tool.
 	if docRefs := collectRefsByKind(messages, mediaRefs, "document"); len(docRefs) > 0 {
 		ctx = tools.WithMediaDocRefs(ctx, docRefs)
@@ -139,6 +171,28 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 	// 2e. Enrich <media:image> tags with persisted media IDs so the LLM
 	// knows images were received and stored (consistent with audio/video enrichment).
 	l.enrichImageIDs(messages, mediaRefs)
+
+	// 2e-i. Attach current-turn mediaRefs to the last user message struct so
+	// the persisted history (sessions.messages JSONB) carries refs across turns.
+	// Without this, future turns reload history with empty MediaRefs and
+	// collectUserUploadedRefs returns nothing — create_image then has no
+	// historical refs to resolve against. See trace 019e5650.
+	if len(mediaRefs) > 0 {
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == "user" {
+				messages[i].MediaRefs = append(messages[i].MediaRefs, mediaRefs...)
+				break
+			}
+		}
+	}
+
+	// 2e-iii. Smart-quote hint: when the user quote-replies their own previous
+	// request that produced bot-generated images, surface those generation
+	// paths so the LLM can call read_image(path=...) to inspect them. Without
+	// this hint the LLM only sees the current-turn media (selfie from quote)
+	// and may miss that an earlier reply rendered a result the user is now
+	// referencing — trace 019e5666.
+	appendSelfQuoteGenerationHint(messages)
 
 	// 2e-ii. In file-ref mode, enrich ALL user messages' image tags with file paths.
 	// This enables read_image(path=...) for both current and historical images.
@@ -166,6 +220,30 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 			if lastMsg := messages[len(messages)-1]; lastMsg.Role == "user" {
 				if nameMap := tools.ExtractMediaNameMap(lastMsg.Content); len(nameMap) > 0 {
 					ctx = tools.WithRunMediaNames(ctx, nameMap)
+				}
+			}
+		}
+	}
+
+	// Refresh trace input_preview with the post-enrichment user content so the
+	// dashboard shows what the LLM actually saw (e.g. <media:image id="..."
+	// path="...">) instead of the raw inbound text (bare <media:image>).
+	// Without this, debugging tool-call inputs is misleading: trace input
+	// shows bare tag while LLM input had ids attached. See trace 019e5799.
+	if collector := tracing.CollectorFromContext(ctx); collector != nil {
+		if traceID := tracing.TraceIDFromContext(ctx); traceID != uuid.Nil {
+			for i := len(messages) - 1; i >= 0; i-- {
+				if messages[i].Role == "user" {
+					enriched := messages[i].Content
+					if enriched != "" {
+						update := map[string]any{
+							"input_preview": tracing.TruncateMid(enriched, collector.PreviewMaxLen()),
+						}
+						if err := collector.UpdateTrace(ctx, traceID, update); err != nil {
+							slog.Debug("tracing: failed to refresh input_preview", "err", err)
+						}
+					}
+					break
 				}
 			}
 		}

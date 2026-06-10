@@ -56,6 +56,11 @@ func (m *AgentsMethods) handleUpdate(ctx context.Context, client *gateway.Client
 		ChatGPTOAuthRouting json.RawMessage `json:"chatgpt_oauth_routing,omitempty"`
 		ShellDenyGroups     json.RawMessage `json:"shell_deny_groups,omitempty"`
 		KGDedupConfig       json.RawMessage `json:"kg_dedup_config,omitempty"`
+		// WriteOnlyHash is an opaque hash supplied by external reconcilers
+		// (gcplane) to detect drift in write-only fields. Stored as-is.
+		// Empty string is allowed but skipped (no UPDATE) — only non-empty
+		// values are persisted to avoid clobbering an existing hash with "".
+		WriteOnlyHash string `json:"writeOnlyHash,omitempty"`
 	}
 	if req.Params != nil {
 		json.Unmarshal(req.Params, &params)
@@ -186,6 +191,9 @@ func (m *AgentsMethods) handleUpdate(ctx context.Context, client *gateway.Client
 		}
 		if len(params.KGDedupConfig) > 0 {
 			updates["kg_dedup_config"] = []byte(params.KGDedupConfig)
+		}
+		if params.WriteOnlyHash != "" {
+			updates["write_only_hash"] = params.WriteOnlyHash
 		}
 
 		if len(updates) > 0 {

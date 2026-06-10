@@ -56,9 +56,9 @@ describe("TTS provider catalog parity (web ↔ desktop) — reduced shape", () =
     expect(idsWeb).toEqual(idsDesktop);
   });
 
-  it("both catalogs include the 5 expected providers", () => {
+  it("both catalogs include the 6 expected providers", () => {
     const idsWeb = extractProviderIds(webCatalog).sort();
-    expect(idsWeb).toEqual(["edge", "elevenlabs", "gemini", "minimax", "openai"]);
+    expect(idsWeb).toEqual(["edge", "elevenlabs", "gemini", "minimax", "openai", "vieneu"]);
   });
 
   it("both catalogs use reduced shape (no models/voices/dynamic fields)", () => {

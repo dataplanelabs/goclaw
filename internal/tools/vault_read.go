@@ -12,7 +12,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/vault"
 )
 
 // VaultReadTool reads full content of a vault document by doc_id.
@@ -146,7 +148,7 @@ func (t *VaultReadTool) Execute(ctx context.Context, args map[string]any) *Resul
 	}
 
 	// Resolve path under tenant workspace root.
-	fullPath, err := t.resolvePath(doc.Path)
+	fullPath, err := t.resolvePath(ctx, doc.Path)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -349,9 +351,13 @@ func (t *VaultReadTool) allowed(ctx context.Context, doc *store.VaultDocument) b
 // Symlinks are resolved via EvalSymlinks for defence-in-depth; if the file is
 // missing EvalSymlinks will fail and we fall back to the cleaned join (the
 // subsequent os.Open will surface the not-found error naturally).
-func (t *VaultReadTool) resolvePath(relPath string) (string, error) {
-	wsClean := filepath.Clean(t.workspace)
-	joined := filepath.Join(wsClean, filepath.FromSlash(relPath))
+func (t *VaultReadTool) resolvePath(ctx context.Context, relPath string) (string, error) {
+	// Resolve against the per-tenant workspace root (paths are tenant-root-relative).
+	// Strip any legacy "tenants/<slug>/" prefix so pre-migration rows resolve to the
+	// same file — and stay bounded to THIS tenant's root (no cross-tenant escape).
+	base := config.TenantWorkspace(t.workspace, store.TenantIDFromContext(ctx), store.TenantSlugFromContext(ctx))
+	wsClean := filepath.Clean(base)
+	joined := filepath.Join(wsClean, filepath.FromSlash(vault.StripTenantPrefix(filepath.ToSlash(relPath))))
 
 	// Resolve symlinks where possible; on error (e.g. file missing) keep the
 	// cleaned join — downstream open will surface the true error.

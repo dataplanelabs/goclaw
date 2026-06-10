@@ -81,6 +81,7 @@ func (p *CodexProvider) Capabilities() ProviderCapabilities {
 		Vision:           true,
 		CacheControl:     false,
 		ImageGeneration:  true, // Codex (OpenAI Responses API) supports native image_generation tool
+		ImageRefs:        true, // Responses API emits input_image parts (codex_native_image.go)
 		MaxContextWindow: 1_050_000,
 		TokenizerID:      "o200k_base",
 	}

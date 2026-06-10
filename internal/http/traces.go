@@ -17,14 +17,47 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
-// TracesHandler handles LLM trace listing and detail endpoints.
+// TracesHandler handles LLM trace listing, detail, and retry endpoints.
 type TracesHandler struct {
-	tracing store.TracingStore
+	tracing    store.TracingStore
+	agents     store.AgentStore
+	replay     store.ReplayPayloadStore
+	retryLocks store.RetryLockStore
+	tenants    store.TenantStore
+	router     RetryAgentRunner
+	channels   store.ChannelInstanceStore
+	contacts   store.ContactStore
+}
+
+func (h *TracesHandler) SetEnrichmentDeps(channels store.ChannelInstanceStore, contacts store.ContactStore) {
+	h.channels = channels
+	h.contacts = contacts
+}
+
+// RetryAgentRunner is the subset of agent.Router needed to invoke a retry run.
+type RetryAgentRunner interface {
+	GetAgent(ctx context.Context, agentID string) (RetryAgent, error)
+}
+
+// RetryAgent is the subset of agent.Agent the retry handler depends on.
+type RetryAgent interface {
+	UUID() uuid.UUID
+	ProviderName() string
 }
 
 // NewTracesHandler creates a handler for trace management endpoints.
 func NewTracesHandler(tracing store.TracingStore) *TracesHandler {
 	return &TracesHandler{tracing: tracing}
+}
+
+// SetRetryDeps wires the dependencies required by POST /v1/traces/{id}/retry.
+// Retry route is registered only when all are non-nil.
+func (h *TracesHandler) SetRetryDeps(agents store.AgentStore, replay store.ReplayPayloadStore, retryLocks store.RetryLockStore, tenants store.TenantStore, router RetryAgentRunner) {
+	h.agents = agents
+	h.replay = replay
+	h.retryLocks = retryLocks
+	h.tenants = tenants
+	h.router = router
 }
 
 // RegisterRoutes registers trace routes on the given mux.
@@ -33,6 +66,13 @@ func (h *TracesHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/traces/{traceID}/export", h.authMiddleware(h.handleExport))
 	mux.HandleFunc("GET /v1/traces/{traceID}", h.authMiddleware(h.handleGet))
 	mux.HandleFunc("GET /v1/costs/summary", h.authMiddleware(h.handleCostSummary))
+	if h.canRetry() {
+		mux.HandleFunc("POST /v1/traces/{traceID}/retry", h.authMiddleware(h.handleRetry))
+	}
+}
+
+func (h *TracesHandler) canRetry() bool {
+	return h.agents != nil && h.replay != nil && h.retryLocks != nil && h.tenants != nil && h.router != nil
 }
 
 func (h *TracesHandler) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -87,6 +127,8 @@ func (h *TracesHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.enrichChatTitles(r.Context(), traces)
+
 	total, _ := h.tracing.CountTraces(r.Context(), opts)
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -95,6 +137,82 @@ func (h *TracesHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		"limit":  opts.Limit,
 		"offset": opts.Offset,
 	})
+}
+
+// enrichChatTitles fills TraceData.ChatTitle for the given page by joining
+// (trace.channel → channel_instance.channel_type) × (sender_id from session_key)
+// against channel_contacts.display_name. Best-effort: silent on any lookup miss.
+func (h *TracesHandler) enrichChatTitles(ctx context.Context, traces []store.TraceData) {
+	if len(traces) == 0 || h.channels == nil || h.contacts == nil {
+		return
+	}
+	channelTypes := make(map[string]string, 4)
+	senderIDs := make([]string, 0, len(traces))
+	keys := make([]string, len(traces))
+	for i := range traces {
+		t := &traces[i]
+		sid := chatIDFromSessionKey(t.SessionKey)
+		if sid == "" || t.Channel == "" {
+			continue
+		}
+		if _, ok := channelTypes[t.Channel]; !ok {
+			inst, err := h.channels.GetByName(ctx, t.Channel)
+			if err != nil || inst == nil {
+				channelTypes[t.Channel] = ""
+				continue
+			}
+			channelTypes[t.Channel] = inst.ChannelType
+		}
+		ct := channelTypes[t.Channel]
+		if ct == "" {
+			continue
+		}
+		keys[i] = ct + ":" + sid
+		senderIDs = append(senderIDs, sid)
+	}
+	if len(senderIDs) == 0 {
+		return
+	}
+	byID, err := h.contacts.GetContactsBySenderIDs(ctx, senderIDs)
+	if err != nil {
+		return
+	}
+	for i := range traces {
+		t := &traces[i]
+		sid := chatIDFromSessionKey(t.SessionKey)
+		if sid == "" {
+			continue
+		}
+		c, ok := byID[sid]
+		if !ok {
+			continue
+		}
+		if c.ChannelType != channelTypes[t.Channel] {
+			continue
+		}
+		if c.DisplayName != nil && *c.DisplayName != "" {
+			t.ChatTitle = *c.DisplayName
+		}
+	}
+}
+
+// chatIDFromSessionKey returns the last colon-separated segment, the typical
+// shape being "agent:<agent>:<channel>:<direct|group>:<chat_id>".
+func chatIDFromSessionKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	idx := -1
+	for i := len(key) - 1; i >= 0; i-- {
+		if key[i] == ':' {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return ""
+	}
+	return key[idx+1:]
 }
 
 func (h *TracesHandler) handleGet(w http.ResponseWriter, r *http.Request) {

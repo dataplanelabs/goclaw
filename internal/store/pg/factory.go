@@ -32,9 +32,12 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Skills:    NewPGSkillStore(db, skillsDir),
 		Agents:    NewPGAgentStore(db),
 		Providers: NewPGProviderStore(db, cfg.EncryptionKey),
-		Tracing:   NewPGTracingStore(db),
+		Tracing:        NewPGTracingStore(db),
+		ReplayPayloads: NewPGReplayPayloadStore(db),
+		RetryLocks:     NewPGRetryLockStore(db),
 		MCP:              NewPGMCPServerStore(db, cfg.EncryptionKey),
 		ChannelInstances: NewPGChannelInstanceStore(db, cfg.EncryptionKey),
+		ChannelSchedules: NewPGChannelScheduleStore(db),
 		ConfigSecrets:    NewPGConfigSecretsStore(db, cfg.EncryptionKey),
 		AgentLinks:       NewPGAgentLinkStore(db),
 		Teams:            NewPGTeamStore(db),
@@ -58,6 +61,8 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Episodic:              NewPGEpisodicStore(db),
 		EvolutionMetrics:      NewPGEvolutionMetricsStore(db),
 		EvolutionSuggestions:  NewPGEvolutionSuggestionStore(db),
+		TeamReplyEvals:        NewPGTeamReplyEvalStore(db),
+		VieneuClonedVoices:    NewPGVieneuClonedVoicesStore(db),
 		Hooks:                 NewPGHookStore(db),
 		Webhooks:               NewPGWebhookStore(db),
 		WebhookCalls:           NewPGWebhookCallStore(db),
@@ -66,6 +71,7 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		WorkstationPermissions: NewPGWorkstationPermissionStore(db),
 		WorkstationActivity:    NewPGWorkstationActivityStore(db),
 	}
+	pgStores.TeamReplyAtomicWriter = NewPGTeamReplyAtomicWriter(db, pgStores.Sessions.(*PGSessionStore))
 	// Wire permStore into WorkstationStore so Create seeds allowlist atomically (H5 fix).
 	// Must happen after both stores are constructed.
 	pgStores.Workstations.(*PGWorkstationStore).SetPermStore(pgStores.WorkstationPermissions)

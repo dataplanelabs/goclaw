@@ -7,10 +7,16 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 	"github.com/nextlevelbuilder/goclaw/internal/tracing"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
+)
+
+const (
+	loopKilledFailureClass = "tool_loop"
+	loopKilledErrorMessage = "loop detector killed run: repeated tool calls without progress"
 )
 
 // Run processes a single message through the agent loop.
@@ -18,6 +24,10 @@ import (
 func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	l.activeRuns.Add(1)
 	defer l.activeRuns.Add(-1)
+
+	// Session-scoped skill activation context: every inbound message gets a
+	// fresh one so filesystem tools see exactly the skills this run activated.
+	ctx = skills.WithSkillContext(ctx, skills.NewSkillContext())
 
 	// Per-run emit wrapper: enriches every AgentEvent with delegation + routing context.
 	emitRun := func(event AgentEvent) {
@@ -203,21 +213,33 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		elapsed := time.Since(runStart)
 		logAttrs := []any{
 			"agent", l.id, "duration_ms", elapsed.Milliseconds(),
-			"iterations", result.Iterations,
 		}
-		if result.Usage != nil {
-			logAttrs = append(logAttrs, "total_tokens", result.Usage.TotalTokens)
+		if result != nil {
+			logAttrs = append(logAttrs, "iterations", result.Iterations)
+			if result.LoopKilled {
+				logAttrs = append(logAttrs,
+					"loop_killed", true,
+					"failure_class", loopKilledFailureClass,
+				)
+			}
+			if result.Usage != nil {
+				logAttrs = append(logAttrs, "total_tokens", result.Usage.TotalTokens)
+			}
 		}
 		slog.Info("v3.run.completed", logAttrs...)
 
 		if agentSpanID != uuid.Nil {
 			l.emitAgentSpanEnd(ctx, agentSpanID, runStart, result, nil)
 		}
-		if isChildTrace && l.traceCollector != nil && traceID != uuid.Nil {
-			l.traceCollector.SetTraceStatus(ctx, traceID, store.TraceStatusCompleted)
+		if result != nil && !isChildTrace && traceID != uuid.Nil {
+			result.TraceID = traceID
 		}
-		completedPayload := map[string]any{"content": result.Content}
-		if result.Thinking != "" {
+		if isChildTrace && l.traceCollector != nil && traceID != uuid.Nil {
+			status, _, _ := traceCompletionForRunResult(result, l.traceCollector.PreviewMaxLen())
+			l.traceCollector.SetTraceStatus(ctx, traceID, status)
+		}
+		completedPayload := runCompletedPayload(result, elapsed)
+		if result != nil && result.Thinking != "" {
 			completedPayload["thinking"] = result.Thinking
 		}
 		if result != nil && result.Usage != nil {
@@ -235,12 +257,49 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		emitRun(AgentEvent{Type: protocol.AgentEventRunCompleted, AgentID: l.id, RunID: req.RunID, Payload: completedPayload})
 		if !isChildTrace && l.traceCollector != nil && traceID != uuid.Nil {
 			traceFinalized = true
-			if result != nil {
-				l.traceCollector.FinishTrace(ctx, traceID, store.TraceStatusCompleted, "", truncateStr(result.Content, l.traceCollector.PreviewMaxLen()))
-			} else {
-				l.traceCollector.FinishTrace(ctx, traceID, store.TraceStatusCompleted, "", "")
+			status, errMsg, outputPreview := traceCompletionForRunResult(result, l.traceCollector.PreviewMaxLen())
+			l.traceCollector.FinishTrace(ctx, traceID, status, errMsg, outputPreview)
+		}
+		if !isChildTrace && l.replayStore != nil && req.SessionKey != "" {
+			cutoff := runStart
+			if l.replayRetention > 0 {
+				cutoff = time.Now().Add(-l.replayRetention)
+			}
+			if dropped, err := l.replayStore.DropForSession(ctx, req.SessionKey, cutoff); err != nil {
+				slog.Warn("replay_payload: drop sweep failed", "err", err, "session_key", req.SessionKey)
+			} else if dropped > 0 {
+				slog.Debug("replay_payload: dropped stale captures", "count", dropped, "session_key", req.SessionKey)
 			}
 		}
 		return result, nil
 	}
+}
+
+func runCompletedPayload(result *RunResult, elapsed time.Duration) map[string]any {
+	payload := map[string]any{
+		"duration_ms": int(elapsed.Milliseconds()),
+	}
+	if result == nil {
+		payload["content"] = ""
+		return payload
+	}
+	payload["content"] = result.Content
+	payload["iterations"] = result.Iterations
+	payload["tool_calls"] = result.ToolCalls
+	if result.LoopKilled {
+		payload["loop_killed"] = true
+		payload["failure_class"] = loopKilledFailureClass
+	}
+	return payload
+}
+
+func traceCompletionForRunResult(result *RunResult, previewMaxLen int) (status, errMsg, outputPreview string) {
+	if result == nil {
+		return store.TraceStatusCompleted, "", ""
+	}
+	outputPreview = truncateStr(result.Content, previewMaxLen)
+	if result.LoopKilled {
+		return store.TraceStatusError, loopKilledErrorMessage, outputPreview
+	}
+	return store.TraceStatusCompleted, "", outputPreview
 }

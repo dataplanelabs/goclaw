@@ -63,7 +63,11 @@ type TraceData struct {
 	Metadata          json.RawMessage `json:"metadata,omitempty" db:"metadata"`
 	Tags              []string        `json:"tags,omitempty" db:"tags"`
 	TeamID            *uuid.UUID      `json:"team_id,omitempty" db:"team_id"`
+	OutboundEmitted   bool            `json:"outbound_emitted" db:"outbound_emitted"`
 	CreatedAt         time.Time       `json:"created_at" db:"created_at"`
+
+	// Resolved at HTTP handler time; not persisted.
+	ChatTitle string `json:"chat_title,omitempty" db:"-"`
 }
 
 // SpanData represents a single operation within a trace.
@@ -143,6 +147,8 @@ type TracingStore interface {
 	GetTrace(ctx context.Context, traceID uuid.UUID) (*TraceData, error)
 	ListTraces(ctx context.Context, opts TraceListOpts) ([]TraceData, error)
 	CountTraces(ctx context.Context, opts TraceListOpts) (int, error)
+	// SetOutboundEmitted is idempotent: only flips false→true.
+	SetOutboundEmitted(ctx context.Context, traceID uuid.UUID) error
 
 	CreateSpan(ctx context.Context, span *SpanData) error
 	UpdateSpan(ctx context.Context, spanID uuid.UUID, updates map[string]any) error
@@ -162,6 +168,12 @@ type TracingStore interface {
 	// RecoverStaleRunningTraces marks traces stuck in "running" since before cutoff as "error".
 	// Returns count of recovered traces. Called on startup to fix orphans from crashes.
 	RecoverStaleRunningTraces(ctx context.Context, cutoff time.Time) (int64, error)
+
+	// GetTraceByRunID returns the most-recent trace's ID + status for the given
+	// run_id, scoped to tenantID. Returns (uuid.Nil, "", sql.ErrNoRows) when no
+	// row matches. Used by the abort handler to detect orphans (run_id present
+	// in DB at status='running' but process gone from in-memory map).
+	GetTraceByRunID(ctx context.Context, runID string, tenantID uuid.UUID) (uuid.UUID, string, error)
 
 	// ListCodexPoolSpans returns recent LLM call spans for agents using Codex OAuth pool providers.
 	ListCodexPoolSpans(ctx context.Context, agentID, tenantID uuid.UUID, poolProviders []string, limit int) ([]CodexPoolSpan, error)

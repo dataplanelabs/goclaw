@@ -17,20 +17,31 @@ type fakeZaloPersonalAction struct {
 		options          []string
 		settings         ZaloPollSettings
 	}
-	getPollID    int64
-	voteCall     struct{ pollID int64; ids []int64 }
-	lockCall     int64
-	addCall      struct{ pollID int64; opts []string; voted []int64 }
-	reactCall    struct{ chatID, msgID, cliMsgID, reaction, hint string }
-	createReturn string
-	createErr    error
-	getReturn    ZaloPollState
-	voteReturn   ZaloPollState
-	addReturn    ZaloPollState
-	reactErr     error
-	isGroup      bool
-	isRunning    bool
+	getPollID            int64
+	voteCall             struct{ pollID int64; ids []int64 }
+	lockCall             int64
+	addCall              struct{ pollID int64; opts []string; voted []int64 }
+	reactCall            struct{ chatID, msgID, cliMsgID, reaction, hint string }
+	createReminderCall   struct {
+		threadID string
+		isGroup  bool
+		settings ZaloReminderSettings
+	}
+	removeReminderCall   struct{ reminderID, groupID string }
+	createReturn         string
+	createErr            error
+	getReturn            ZaloPollState
+	voteReturn           ZaloPollState
+	addReturn            ZaloPollState
+	reactErr             error
+	createReminderReturn string
+	createReminderErr    error
+	removeReminderErr    error
+	isGroup              bool
+	isRunning            bool
 }
+
+var _ ZaloPersonalAction = (*fakeZaloPersonalAction)(nil)
 
 func (f *fakeZaloPersonalAction) CreatePoll(_ context.Context, chatID, q string, opts []string, s ZaloPollSettings) (string, error) {
 	f.createPollCall.chatID = chatID
@@ -65,6 +76,17 @@ func (f *fakeZaloPersonalAction) React(_ context.Context, chatID, msgID, cliMsgI
 	f.reactCall.reaction = reaction
 	f.reactCall.hint = hint
 	return f.reactErr
+}
+func (f *fakeZaloPersonalAction) CreateReminder(_ context.Context, threadID string, isGroup bool, s ZaloReminderSettings) (string, error) {
+	f.createReminderCall.threadID = threadID
+	f.createReminderCall.isGroup = isGroup
+	f.createReminderCall.settings = s
+	return f.createReminderReturn, f.createReminderErr
+}
+func (f *fakeZaloPersonalAction) RemoveReminder(_ context.Context, reminderID, groupID string) error {
+	f.removeReminderCall.reminderID = reminderID
+	f.removeReminderCall.groupID = groupID
+	return f.removeReminderErr
 }
 func (f *fakeZaloPersonalAction) IsRunning() bool          { return f.isRunning }
 func (f *fakeZaloPersonalAction) IsGroup(_ string) bool    { return f.isGroup }
@@ -225,7 +247,6 @@ func TestParametersAreValidJSONSchema(t *testing.T) {
 		NewZaloPersonalVotePollTool(),
 		NewZaloPersonalLockPollTool(),
 		NewZaloPersonalAddPollOptionsTool(),
-		NewZaloPersonalReactTool(),
 	}
 	for _, tl := range tools {
 		p := tl.Parameters()
@@ -253,7 +274,6 @@ func TestToolNamesMatchExpected(t *testing.T) {
 		NewZaloPersonalVotePollTool().Name():       "zalo_personal_vote_poll",
 		NewZaloPersonalLockPollTool().Name():       "zalo_personal_lock_poll",
 		NewZaloPersonalAddPollOptionsTool().Name(): "zalo_personal_add_poll_options",
-		NewZaloPersonalReactTool().Name():          "zalo_personal_react",
 	}
 	for name, want := range got {
 		if name != want {
@@ -271,13 +291,11 @@ var _ = func() bool {
 	var _ ZaloPersonalActionAware = (*ZaloPersonalVotePollTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalLockPollTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalAddPollOptionsTool)(nil)
-	var _ ZaloPersonalActionAware = (*ZaloPersonalReactTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalCreatePollTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalGetPollTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalVotePollTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalLockPollTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalAddPollOptionsTool)(nil)
-	var _ ChannelAware = (*ZaloPersonalReactTool)(nil)
 	return true
 }()
 
@@ -289,7 +307,6 @@ func TestAllToolsDeclareZaloPersonalChannelType(t *testing.T) {
 		NewZaloPersonalVotePollTool(),
 		NewZaloPersonalLockPollTool(),
 		NewZaloPersonalAddPollOptionsTool(),
-		NewZaloPersonalReactTool(),
 	}
 	for _, tl := range tools {
 		types := tl.RequiredChannelTypes()

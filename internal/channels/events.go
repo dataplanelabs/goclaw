@@ -301,12 +301,16 @@ func (m *Manager) HandleAgentEvent(eventType, runID string, payload any) {
 			}
 		}
 
+		rc.mu.Lock()
+		traceID := rc.TraceID
+		rc.mu.Unlock()
 		m.bus.PublishOutbound(bus.OutboundMessage{
 			Channel:  rc.ChannelName,
 			ChatID:   rc.ChatID,
 			Content:  content,
 			Metadata: outMeta,
 			TenantID: rc.TenantID,
+			TraceID:  traceID,
 		})
 		return
 	}
@@ -346,7 +350,11 @@ func (m *Manager) HandleAgentEvent(eventType, runID string, payload any) {
 			status = "done"
 		}
 		if status != "" {
-			if err := reactionCh.OnReactionEvent(ctx, rc.ChatID, rc.MessageID, status); err != nil {
+			reactionCtx := ctx
+			if status == "done" || status == "error" {
+				reactionCtx = WithReactionExtras(ctx, extractReactionExtras(payload))
+			}
+			if err := reactionCh.OnReactionEvent(reactionCtx, rc.ChatID, rc.MessageID, status); err != nil {
 				slog.Debug("reaction event failed", "channel", rc.ChannelName, "status", status, "error", err)
 			}
 		}
@@ -356,6 +364,36 @@ func (m *Manager) HandleAgentEvent(eventType, runID string, payload any) {
 	if eventType == protocol.AgentEventRunCompleted || eventType == protocol.AgentEventRunFailed || eventType == protocol.AgentEventRunCancelled {
 		m.runs.Delete(runID)
 	}
+}
+
+// extractReactionExtras pulls run metrics from a run.completed / run.failed
+// payload so reaction channels can gate trivial acks.
+func extractReactionExtras(payload any) ReactionExtras {
+	m, ok := payload.(map[string]any)
+	if !ok {
+		return ReactionExtras{}
+	}
+	out := ReactionExtras{
+		DurationMs: payloadInt(m["duration_ms"]),
+		Iterations: payloadInt(m["iterations"]),
+		ToolCalls:  payloadInt(m["tool_calls"]),
+	}
+	if c, ok := m["content"].(string); ok {
+		out.OutputChars = len(c)
+	}
+	return out
+}
+
+func payloadInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return 0
 }
 
 // extractPayloadString extracts a string field from a payload (map[string]string or map[string]interface{}).

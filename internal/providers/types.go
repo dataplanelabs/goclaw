@@ -155,6 +155,29 @@ type Message struct {
 	// Pointer type so that older messages (stored before this field existed) deserialize as nil,
 	// allowing the frontend to fall back to synthetic timestamps.
 	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// Metadata carries provenance / synthetic-source tags
+	// (e.g. metadata.source="team" for captured human-team replies).
+	// omitempty for backward-compat with rows persisted before this field existed.
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+// Synthetic-source tags for Message.Metadata["source"].
+// Use ValidMessageSource to gate writes — typo drift is hard to debug later.
+const (
+	MessageSourceBot    = "bot"
+	MessageSourceTeam   = "team"
+	MessageSourceSystem = "system"
+	MessageSourceCron   = "cron"
+)
+
+// ValidMessageSource is the writer-side validation helper for Metadata["source"].
+func ValidMessageSource(s string) bool {
+	switch s {
+	case MessageSourceBot, MessageSourceTeam, MessageSourceSystem, MessageSourceCron:
+		return true
+	}
+	return false
 }
 
 // ToolCall represents a tool invocation requested by the LLM.

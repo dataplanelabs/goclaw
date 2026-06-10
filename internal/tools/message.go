@@ -200,10 +200,14 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *Result 
 			outMsg.Metadata = map[string]string{"group_id": target}
 		}
 		t.msgBus.PublishOutbound(outMsg)
-		// Mark each embedded media path as delivered.
-		if dm := DeliveredMediaFromCtx(ctx); dm != nil {
-			for _, att := range embeddedMedia {
+		dm := DeliveredMediaFromCtx(ctx)
+		pm := PublishedMediaFromCtx(ctx)
+		for _, att := range embeddedMedia {
+			if dm != nil {
 				dm.Mark(att.URL)
+			}
+			if pm != nil {
+				pm.Mark(att.URL)
 			}
 		}
 		return noticeOnSuccess(SilentResult(fmt.Sprintf(`{"status":"sent","channel":"%s","target":"%s"}`, channel, target)))
@@ -274,6 +278,11 @@ func (t *MessageTool) validateChannelTenant(ctx context.Context, channel, target
 
 // sendMedia sends a file as a media attachment via the outbound message bus.
 func (t *MessageTool) sendMedia(ctx context.Context, channel, target, filePath string) *Result {
+	if IsScratchDeliveryPath(filePath) {
+		return ErrorResult(fmt.Sprintf(
+			"refusing to send temp/staging/scratch file %s. Send only the final result file.",
+			filepath.Base(filePath)))
+	}
 	if _, err := os.Stat(filePath); err != nil {
 		return ErrorResult(fmt.Sprintf("file not found: %s", filePath))
 	}
@@ -293,9 +302,11 @@ func (t *MessageTool) sendMedia(ctx context.Context, channel, target, filePath s
 		Media:    []bus.MediaAttachment{{URL: filePath, ContentType: mimeFromPath(filePath)}},
 		Metadata: meta,
 	})
-	// Mark delivered so subsequent send_file or message(MEDIA:) calls detect the duplicate.
 	if dm := DeliveredMediaFromCtx(ctx); dm != nil {
 		dm.Mark(filePath)
+	}
+	if pm := PublishedMediaFromCtx(ctx); pm != nil {
+		pm.Mark(filePath)
 	}
 	out, _ := json.Marshal(map[string]string{
 		"status":  "sent",
@@ -334,6 +345,9 @@ func (t *MessageTool) extractEmbeddedMedia(ctx context.Context, message string) 
 		// Extract each MEDIA: path and resolve via security-checked path resolution.
 		for _, raw := range matches {
 			if resolved, ok := t.resolveMediaPath(ctx, raw); ok {
+				if IsScratchDeliveryPath(resolved) {
+					continue
+				}
 				media = append(media, bus.MediaAttachment{
 					URL:         resolved,
 					ContentType: mimeFromPath(resolved),

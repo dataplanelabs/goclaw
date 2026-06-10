@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"context"
+	"net"
 	"strings"
 	"testing"
 )
@@ -220,5 +222,34 @@ func TestBuildFormBody(t *testing.T) {
 	}
 	if !strings.Contains(str, "foo=bar") {
 		t.Error("missing foo=bar")
+	}
+}
+
+// Trace 019e601a — force tcp4 even when caller asks for tcp/tcp6.
+func TestDialIPv4_ForcesTCPv4(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"tcp_promoted", "tcp", "tcp4"},
+		{"tcp6_promoted", "tcp6", "tcp4"},
+		{"tcp4_unchanged", "tcp4", "tcp4"},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			got := normalizeNetworkForIPv4(c.in)
+			if got != c.want {
+				t.Errorf("normalize(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+	_, err := dialIPv4(context.Background(), "tcp6", "[::1]:1")
+	if err == nil {
+		t.Fatal("expected dial to fail; got nil error")
+	}
+	if ne, ok := err.(*net.OpError); ok && ne.Net == "tcp6" {
+		t.Errorf("dial network was still tcp6: %v", err)
 	}
 }

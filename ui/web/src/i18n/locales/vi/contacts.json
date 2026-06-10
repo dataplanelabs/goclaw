@@ -20,7 +20,7 @@
     "title": "Quyền truy cập tên liên hệ theo channel",
     "telegram": "Telegram — Tên và username có sẵn tự động.",
     "discord": "Discord — Tên hiển thị và username có sẵn tự động.",
-    "zalo": "Zalo — Tên hiển thị có sẵn tự động.",
+    "zalo": "Zalo — Tên người dùng và nhóm được lấy tự động.",
     "slack": "Slack — Tên được lấy qua Slack API (bot phải trong workspace).",
     "feishu": "Feishu/Lark — Cần quyền contact:user.base:readonly. Nếu không có, tên sẽ trống."
   },

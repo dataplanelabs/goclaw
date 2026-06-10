@@ -1,0 +1,40 @@
+{
+  "section": {
+    "title": "User Integrations",
+    "description": "Connect your personal accounts (Google Workspace, more coming). Each operator connects their own account — credentials are stored per-user, encrypted at rest."
+  },
+  "google": {
+    "name": "Google Workspace",
+    "description": "Required for: gws-calendar-read. Reads calendar + gmail metadata only; no write access.",
+    "connectButton": "Connect Google Account",
+    "connecting": "Connecting…",
+    "connectedAs": "Connected as {{email}}",
+    "disconnectButton": "Disconnect",
+    "disconnectConfirmTitle": "Disconnect Google account?",
+    "disconnectConfirmDescription": "This removes {{email}} from this account. You can reconnect any time.",
+    "disconnectConfirmAction": "Disconnect",
+    "errorPopupBlocked": "Popup was blocked — please allow popups for this site and try again.",
+    "errorTimeout": "OAuth timed out — please try again.",
+    "errorGeneric": "Could not connect Google. Please try again."
+  },
+  "admin": {
+    "googleConfigTitle": "Google OAuth Configuration",
+    "googleConfigDescription": "Admin-only. Paste the OAuth client credentials from your Google Cloud Console project. Stored encrypted, per-tenant.",
+    "clientIdLabel": "Client ID",
+    "clientSecretLabel": "Client Secret",
+    "clientSecretPlaceholderExisting": "Leave blank to keep existing secret",
+    "clientSecretPlaceholderNew": "From Google Cloud Console",
+    "redirectUrlLabel": "Authorized Redirect URI",
+    "redirectUrlHint": "Must match a URI configured on the OAuth client in Google Cloud Console. Typically: https://<your-host>/v1/auth/google/callback",
+    "statusConfigured": "Configured",
+    "statusInheritsFromEnv": "Inheriting from environment variables",
+    "statusNotConfigured": "Not configured",
+    "saveButton": "Save",
+    "clearButton": "Clear (revert to env)",
+    "clearConfirmTitle": "Clear Google OAuth Configuration?",
+    "clearConfirmDescription": "This removes the per-tenant Google OAuth client credentials. If env-var fallbacks are set, those will be used; otherwise no operator can connect Google until you reconfigure.",
+    "saveSuccess": "Google OAuth configuration saved",
+    "clearSuccess": "Google OAuth configuration cleared",
+    "saveError": "Could not save configuration"
+  }
+}

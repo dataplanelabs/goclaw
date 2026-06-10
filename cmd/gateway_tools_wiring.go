@@ -72,8 +72,15 @@ func wireExtraTools(
 	toolsReg.Register(tools.NewZaloPersonalVotePollTool())
 	toolsReg.Register(tools.NewZaloPersonalLockPollTool())
 	toolsReg.Register(tools.NewZaloPersonalAddPollOptionsTool())
-	toolsReg.Register(tools.NewZaloPersonalReactTool())
-	slog.Info("zalo_personal poll + react tools registered", "count", 6)
+	toolsReg.Register(tools.NewZaloPersonalCreateReminderTool())
+	toolsReg.Register(tools.NewZaloPersonalRemoveReminderTool())
+	slog.Info("zalo_personal poll + reminder tools registered", "count", 7)
+
+	// enter_standby — agent self-pause. Reload callback set later via wireExtras (nil-safe).
+	if pgStores.ChannelSchedules != nil {
+		toolsReg.Register(tools.NewEnterStandbyTool(pgStores.ChannelSchedules, nil))
+		slog.Info("enter_standby tool registered")
+	}
 
 	// Register legacy tool aliases (backward-compat names from policy.go).
 	for alias, canonical := range tools.LegacyToolAliases() {
@@ -124,6 +131,18 @@ func wireExtraTools(
 	}
 	if listTool, ok := toolsReg.Get("list_files"); ok {
 		if pa, ok := listTool.(tools.PathAllowable); ok {
+			pa.AllowPaths(skillsAllowPaths...)
+			pa.AllowPaths(userAllowPaths...)
+		}
+	}
+	if readImgTool, ok := toolsReg.Get("read_image"); ok {
+		if pa, ok := readImgTool.(tools.PathAllowable); ok {
+			pa.AllowPaths(skillsAllowPaths...)
+			pa.AllowPaths(userAllowPaths...)
+		}
+	}
+	if createImgTool, ok := toolsReg.Get("create_image"); ok {
+		if pa, ok := createImgTool.(tools.PathAllowable); ok {
 			pa.AllowPaths(skillsAllowPaths...)
 			pa.AllowPaths(userAllowPaths...)
 		}
