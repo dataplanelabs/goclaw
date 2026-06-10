@@ -59,7 +59,7 @@ func pollCaptureServer(t *testing.T, responseJSON string, errorCode int) (*httpt
 	return srv, &cap
 }
 
-func jsonNum(i int) string { return string(mustJSON(i)) }
+func jsonNum(i int) string  { return string(mustJSON(i)) }
 func mustJSON(v any) []byte { b, _ := json.Marshal(v); return b }
 
 // decryptCapturedFormParams reverses postEncryptedJSON's body shape.
@@ -205,6 +205,46 @@ func TestGetPollDetail_ZeroID(t *testing.T) {
 	_, err := GetPollDetail(context.Background(), sess, 0)
 	if err == nil {
 		t.Errorf("want error for zero pollID")
+	}
+}
+
+// --- ListPolls ---
+
+func TestListPolls_FiltersPollBoardItems(t *testing.T) {
+	t.Parallel()
+	srv, cap := pollCaptureServer(t,
+		`{"items":[`+
+			`{"boardType":1,"data":{"id":"note-1","params":"{}"}},`+
+			`{"boardType":3,"data":{"poll_id":42,"question":"q","options":[{"option_id":1,"content":"a","votes":2},{"option_id":2,"content":"b","votes":1}],"group_id":"g","created_time":1700000000,"updated_time":1700000100,"expired_time":1700600000,"closed":false,"num_vote":3}}`+
+			`],"count":2}`, 0)
+	sess := newQuoteTestSession(t, srv)
+
+	list, err := ListPolls(context.Background(), sess, "g", ListPollsOptions{Page: 2, Count: 99})
+	if err != nil {
+		t.Fatalf("ListPolls: %v", err)
+	}
+	if (*cap)[0].method != http.MethodGet {
+		t.Errorf("method=%s, want GET", (*cap)[0].method)
+	}
+	if !strings.HasSuffix((*cap)[0].path, apiPathBoardList) {
+		t.Errorf("path=%s, want suffix %s", (*cap)[0].path, apiPathBoardList)
+	}
+	payload := decryptCapturedQueryParams(t, (*cap)[0].query)
+	if payload["group_id"] != "g" || payload["page"].(float64) != 2 {
+		t.Fatalf("payload mismatch: %+v", payload)
+	}
+	if payload["count"].(float64) != maxBoardListCount {
+		t.Fatalf("count should be clamped to %d, got %+v", maxBoardListCount, payload["count"])
+	}
+	if len(list.Polls) != 1 {
+		t.Fatalf("polls=%d, want 1: %+v", len(list.Polls), list)
+	}
+	poll := list.Polls[0]
+	if poll.PollID.String() != "42" || poll.Question != "q" || poll.TotalVotes != 3 {
+		t.Fatalf("unexpected poll: %+v", poll)
+	}
+	if poll.Options[0].CountVotes() != 2 {
+		t.Fatalf("votes not parsed from board payload: %+v", poll.Options[0])
 	}
 }
 

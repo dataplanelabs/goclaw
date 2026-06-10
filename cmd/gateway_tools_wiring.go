@@ -68,13 +68,14 @@ func wireExtraTools(
 	// Zalo Personal channel-specific tools (polls + reactions). DI for the
 	// action function happens later in gateway.go once channelMgr exists.
 	toolsReg.Register(tools.NewZaloPersonalCreatePollTool())
+	toolsReg.Register(tools.NewZaloPersonalListPollsTool())
 	toolsReg.Register(tools.NewZaloPersonalGetPollTool())
 	toolsReg.Register(tools.NewZaloPersonalVotePollTool())
 	toolsReg.Register(tools.NewZaloPersonalLockPollTool())
 	toolsReg.Register(tools.NewZaloPersonalAddPollOptionsTool())
 	toolsReg.Register(tools.NewZaloPersonalCreateReminderTool())
 	toolsReg.Register(tools.NewZaloPersonalRemoveReminderTool())
-	slog.Info("zalo_personal poll + reminder tools registered", "count", 7)
+	slog.Info("zalo_personal poll + reminder tools registered", "count", 8)
 
 	// enter_standby — agent self-pause. Reload callback set later via wireExtras (nil-safe).
 	if pgStores.ChannelSchedules != nil {

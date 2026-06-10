@@ -38,6 +38,32 @@ func (c *Channel) CreatePoll(ctx context.Context, chatID, question string, optio
 	return detail.PollID.String(), nil
 }
 
+func (c *Channel) ListPolls(ctx context.Context, chatID string, page, count int) (tools.ZaloPollList, error) {
+	sess, err := c.guardPoll()
+	if err != nil {
+		return tools.ZaloPollList{}, err
+	}
+	if !c.IsGroupApproved(chatID) {
+		return tools.ZaloPollList{}, fmt.Errorf("zalo_personal: polls only work in group chats")
+	}
+	list, err := protocol.ListPolls(ctx, sess, chatID, protocol.ListPollsOptions{
+		Page:  page,
+		Count: count,
+	})
+	if err != nil {
+		return tools.ZaloPollList{}, err
+	}
+	out := tools.ZaloPollList{
+		Polls: make([]tools.ZaloPollState, 0, len(list.Polls)),
+		Count: list.Count,
+		Page:  page,
+	}
+	for _, p := range list.Polls {
+		out.Polls = append(out.Polls, pollDetailToState(&p))
+	}
+	return out, nil
+}
+
 func (c *Channel) GetPoll(ctx context.Context, pollID int64) (tools.ZaloPollState, error) {
 	sess, err := c.guardPoll()
 	if err != nil {
@@ -153,10 +179,16 @@ func (c *Channel) guardPoll() (*protocol.Session, error) {
 
 func pollDetailToState(d *protocol.PollDetail) tools.ZaloPollState {
 	return tools.ZaloPollState{
-		PollID:   d.PollID.String(),
-		Question: d.Question,
-		Locked:   d.Locked,
-		Options:  optionsToState(d.Options),
+		PollID:      d.PollID.String(),
+		Question:    d.Question,
+		Locked:      d.Locked,
+		Closed:      d.Closed,
+		GroupID:     d.GroupID,
+		CreatedTime: d.CreatedTime,
+		UpdatedTime: d.UpdatedTime,
+		ExpiredTime: d.ExpiredTime,
+		TotalVotes:  d.TotalVotes,
+		Options:     optionsToState(d.Options),
 	}
 }
 
@@ -166,7 +198,7 @@ func optionsToState(opts []protocol.PollOption) []tools.ZaloPollStateOption {
 		out = append(out, tools.ZaloPollStateOption{
 			OptionID:  o.OptionID,
 			Content:   o.Content,
-			VoteCount: o.VoteCount,
+			VoteCount: o.CountVotes(),
 			Voted:     o.Voted,
 		})
 	}

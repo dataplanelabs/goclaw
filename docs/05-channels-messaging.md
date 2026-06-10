@@ -786,7 +786,7 @@ cleared.
 
 Polls and reactions are first-class for Zalo Personal:
 
-- **6 agent tools:** `zalo_personal_create_poll`, `_get_poll`, `_vote_poll`, `_lock_poll`, `_add_poll_options`, `_react`. Each gates on `ToolChannelTypeFromCtx(ctx) == "zalo_personal"`.
+- **7 poll/reaction tools:** `zalo_personal_create_poll`, `_list_polls`, `_get_poll`, `_vote_poll`, `_lock_poll`, `_add_poll_options`, `_react`. Each gates on `ToolChannelTypeFromCtx(ctx) == "zalo_personal"`. Use `_list_polls` when a user asks for poll results but the poll ID is outside the current context window; use `_get_poll` to refresh a specific returned `poll_id`.
 - **Inbound reactions** arrive on WS `cmd=612` (real-time) and `cmd=610/611` (historical replay on reconnect). They are coalesced over a 30s sliding window per `(thread_id, sender_uid, target_msg_id)` and synthesized as `[reaction] Name reacted ❤️ to message X` lines with metadata keys `zalo_event`, `reaction_code`, `target_msg_id`, `target_cli_msg_id`, `synthetic="true"`.
 - **Self-reactions suppressed** by default (opt in via per-instance `listen_self_reactions: true`).
 - **Kill switches:** per-instance `disable_polls` and `disable_reactions` block both the outbound tools and inbound synthesis.

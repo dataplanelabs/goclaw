@@ -17,12 +17,23 @@ type fakeZaloPersonalAction struct {
 		options          []string
 		settings         ZaloPollSettings
 	}
-	getPollID            int64
-	voteCall             struct{ pollID int64; ids []int64 }
-	lockCall             int64
-	addCall              struct{ pollID int64; opts []string; voted []int64 }
-	reactCall            struct{ chatID, msgID, cliMsgID, reaction, hint string }
-	createReminderCall   struct {
+	listCall struct {
+		chatID      string
+		page, count int
+	}
+	getPollID int64
+	voteCall  struct {
+		pollID int64
+		ids    []int64
+	}
+	lockCall int64
+	addCall  struct {
+		pollID int64
+		opts   []string
+		voted  []int64
+	}
+	reactCall          struct{ chatID, msgID, cliMsgID, reaction, hint string }
+	createReminderCall struct {
 		threadID string
 		isGroup  bool
 		settings ZaloReminderSettings
@@ -30,6 +41,7 @@ type fakeZaloPersonalAction struct {
 	removeReminderCall   struct{ reminderID, groupID string }
 	createReturn         string
 	createErr            error
+	listReturn           ZaloPollList
 	getReturn            ZaloPollState
 	voteReturn           ZaloPollState
 	addReturn            ZaloPollState
@@ -49,6 +61,12 @@ func (f *fakeZaloPersonalAction) CreatePoll(_ context.Context, chatID, q string,
 	f.createPollCall.options = opts
 	f.createPollCall.settings = s
 	return f.createReturn, f.createErr
+}
+func (f *fakeZaloPersonalAction) ListPolls(_ context.Context, chatID string, page, count int) (ZaloPollList, error) {
+	f.listCall.chatID = chatID
+	f.listCall.page = page
+	f.listCall.count = count
+	return f.listReturn, nil
 }
 func (f *fakeZaloPersonalAction) GetPoll(_ context.Context, id int64) (ZaloPollState, error) {
 	f.getPollID = id
@@ -88,8 +106,8 @@ func (f *fakeZaloPersonalAction) RemoveReminder(_ context.Context, reminderID, g
 	f.removeReminderCall.groupID = groupID
 	return f.removeReminderErr
 }
-func (f *fakeZaloPersonalAction) IsRunning() bool          { return f.isRunning }
-func (f *fakeZaloPersonalAction) IsGroup(_ string) bool    { return f.isGroup }
+func (f *fakeZaloPersonalAction) IsRunning() bool       { return f.isRunning }
+func (f *fakeZaloPersonalAction) IsGroup(_ string) bool { return f.isGroup }
 
 func zpFakeFn(fake *fakeZaloPersonalAction) ZaloPersonalActionFn {
 	return func(_ context.Context, _ string) (ZaloPersonalAction, error) { return fake, nil }
@@ -142,6 +160,46 @@ func TestCreatePoll_MissingOptions(t *testing.T) {
 	}
 }
 
+func TestCreatePoll_RejectsTimestampExpiry(t *testing.T) {
+	t.Parallel()
+	fake := &fakeZaloPersonalAction{}
+	tool := NewZaloPersonalCreatePollTool()
+	tool.SetZaloPersonalActionFn(zpFakeFn(fake))
+
+	res := tool.Execute(zpCtx(t), map[string]any{
+		"question":             "Q",
+		"options":              []any{"a", "b"},
+		"expired_time_seconds": float64(1770000000000),
+	})
+	if !res.IsError || !strings.Contains(res.ForLLM, "duration in seconds") {
+		t.Fatalf("want duration validation error, got: %+v", res)
+	}
+	if fake.createPollCall.question != "" {
+		t.Fatalf("CreatePoll should not be called after validation failure: %+v", fake.createPollCall)
+	}
+}
+
+func TestCreatePoll_Error114AddsFieldGuidance(t *testing.T) {
+	t.Parallel()
+	fake := &fakeZaloPersonalAction{createErr: fmt.Errorf("zalo_personal: inner error code 114: Tham số không hợp lệ")}
+	tool := NewZaloPersonalCreatePollTool()
+	tool.SetZaloPersonalActionFn(zpFakeFn(fake))
+
+	res := tool.Execute(zpCtx(t), map[string]any{
+		"question":             "Q",
+		"options":              []any{"a", "b"},
+		"expired_time_seconds": float64(3600),
+	})
+	if !res.IsError {
+		t.Fatal("want error")
+	}
+	for _, want := range []string{"expired_time_seconds", "duration in seconds", "options_count=2", "Do not retry with placeholder options"} {
+		if !strings.Contains(res.ForLLM, want) {
+			t.Fatalf("error missing %q: %s", want, res.ForLLM)
+		}
+	}
+}
+
 func TestCreatePoll_WrongChannelType(t *testing.T) {
 	t.Parallel()
 	tool := NewZaloPersonalCreatePollTool()
@@ -166,6 +224,40 @@ func TestCreatePoll_NoActionFn(t *testing.T) {
 	})
 	if !res.IsError || !strings.Contains(res.ForLLM, "not wired") {
 		t.Errorf("want not-wired error: %+v", res)
+	}
+}
+
+func TestListPolls_HappyPath(t *testing.T) {
+	t.Parallel()
+	fake := &fakeZaloPersonalAction{listReturn: ZaloPollList{
+		Page:  2,
+		Count: 1,
+		Polls: []ZaloPollState{{
+			PollID:     "42",
+			Question:   "Lunch?",
+			TotalVotes: 3,
+			Options: []ZaloPollStateOption{
+				{OptionID: 1, Content: "pizza", VoteCount: 2},
+				{OptionID: 2, Content: "sushi", VoteCount: 1},
+			},
+		}},
+	}}
+	tool := NewZaloPersonalListPollsTool()
+	tool.SetZaloPersonalActionFn(zpFakeFn(fake))
+
+	res := tool.Execute(zpCtx(t), map[string]any{"page": float64(2), "count": float64(99)})
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", res.ForLLM)
+	}
+	if fake.listCall.chatID != "group-1" || fake.listCall.page != 2 || fake.listCall.count != maxZaloPollListCount {
+		t.Fatalf("list call mismatch: %+v", fake.listCall)
+	}
+	var out ZaloPollList
+	if err := json.Unmarshal([]byte(res.ForLLM), &out); err != nil {
+		t.Fatalf("decode list result: %v", err)
+	}
+	if len(out.Polls) != 1 || out.Polls[0].PollID != "42" {
+		t.Fatalf("unexpected list result: %+v", out)
 	}
 }
 
@@ -243,6 +335,7 @@ func TestParametersAreValidJSONSchema(t *testing.T) {
 		Parameters() map[string]any
 	}{
 		NewZaloPersonalCreatePollTool(),
+		NewZaloPersonalListPollsTool(),
 		NewZaloPersonalGetPollTool(),
 		NewZaloPersonalVotePollTool(),
 		NewZaloPersonalLockPollTool(),
@@ -270,6 +363,7 @@ func TestToolNamesMatchExpected(t *testing.T) {
 	t.Parallel()
 	got := map[string]string{
 		NewZaloPersonalCreatePollTool().Name():     "zalo_personal_create_poll",
+		NewZaloPersonalListPollsTool().Name():      "zalo_personal_list_polls",
 		NewZaloPersonalGetPollTool().Name():        "zalo_personal_get_poll",
 		NewZaloPersonalVotePollTool().Name():       "zalo_personal_vote_poll",
 		NewZaloPersonalLockPollTool().Name():       "zalo_personal_lock_poll",
@@ -287,11 +381,13 @@ func TestToolNamesMatchExpected(t *testing.T) {
 // tool list (loop_tool_filter.go uses it to filter per-request).
 var _ = func() bool {
 	var _ ZaloPersonalActionAware = (*ZaloPersonalCreatePollTool)(nil)
+	var _ ZaloPersonalActionAware = (*ZaloPersonalListPollsTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalGetPollTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalVotePollTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalLockPollTool)(nil)
 	var _ ZaloPersonalActionAware = (*ZaloPersonalAddPollOptionsTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalCreatePollTool)(nil)
+	var _ ChannelAware = (*ZaloPersonalListPollsTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalGetPollTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalVotePollTool)(nil)
 	var _ ChannelAware = (*ZaloPersonalLockPollTool)(nil)
@@ -303,6 +399,7 @@ func TestAllToolsDeclareZaloPersonalChannelType(t *testing.T) {
 	t.Parallel()
 	tools := []ChannelAware{
 		NewZaloPersonalCreatePollTool(),
+		NewZaloPersonalListPollsTool(),
 		NewZaloPersonalGetPollTool(),
 		NewZaloPersonalVotePollTool(),
 		NewZaloPersonalLockPollTool(),

@@ -9,6 +9,12 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 )
 
+const (
+	maxZaloPollExpirationSeconds = int64(10 * 365 * 24 * 60 * 60)
+	defaultZaloPollListCount     = 20
+	maxZaloPollListCount         = 20
+)
+
 func isZaloPersonalChannel(ctx context.Context) bool {
 	return ToolChannelTypeFromCtx(ctx) == channels.TypeZaloPersonal
 }
@@ -42,9 +48,13 @@ type ZaloPersonalCreatePollTool struct {
 	actionFn ZaloPersonalActionFn
 }
 
-func NewZaloPersonalCreatePollTool() *ZaloPersonalCreatePollTool { return &ZaloPersonalCreatePollTool{} }
+func NewZaloPersonalCreatePollTool() *ZaloPersonalCreatePollTool {
+	return &ZaloPersonalCreatePollTool{}
+}
 
-func (t *ZaloPersonalCreatePollTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) { t.actionFn = fn }
+func (t *ZaloPersonalCreatePollTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) {
+	t.actionFn = fn
+}
 
 func (t *ZaloPersonalCreatePollTool) RequiredChannelTypes() []string {
 	return []string{channels.TypeZaloPersonal}
@@ -53,7 +63,7 @@ func (t *ZaloPersonalCreatePollTool) RequiredChannelTypes() []string {
 func (t *ZaloPersonalCreatePollTool) Name() string { return "zalo_personal_create_poll" }
 
 func (t *ZaloPersonalCreatePollTool) Description() string {
-	return "Create a poll in a Zalo Personal group chat. Returns the poll ID. Only works in groups, not DMs."
+	return "Create a poll in the current Zalo Personal group chat. Returns the poll ID. Only works in groups, not DMs. Pass expired_time_seconds as a duration in seconds, not a Unix timestamp; do not retry with placeholder options after a validation error."
 }
 
 func (t *ZaloPersonalCreatePollTool) Parameters() map[string]any {
@@ -71,7 +81,7 @@ func (t *ZaloPersonalCreatePollTool) Parameters() map[string]any {
 			},
 			"expired_time_seconds": map[string]any{
 				"type":        "integer",
-				"description": "Optional poll lifetime in seconds (0 or omitted = no expiration)",
+				"description": "Optional poll lifetime as a positive duration in seconds (0 or omitted = no expiration). Do not pass Unix timestamps or milliseconds.",
 			},
 			"allow_multi_choices":  map[string]any{"type": "boolean", "description": "Allow voters to pick multiple options"},
 			"is_anonymous":         map[string]any{"type": "boolean", "description": "Hide voter identities"},
@@ -99,8 +109,13 @@ func (t *ZaloPersonalCreatePollTool) Execute(ctx context.Context, args map[strin
 	if len(options) < 2 {
 		return ErrorResult("at least 2 options required")
 	}
+	expirySeconds := argInt64(args, "expired_time_seconds")
+	expiryMillis, expiryErr := normalizeZaloPollExpiryMillis(expirySeconds)
+	if expiryErr != nil {
+		return expiryErr
+	}
 	settings := ZaloPollSettings{
-		ExpiredTimeMillis: argInt64(args, "expired_time_seconds") * 1000,
+		ExpiredTimeMillis: expiryMillis,
 		AllowMultiChoices: argBool(args, "allow_multi_choices"),
 		AllowAddNewOption: argBool(args, "allow_add_new_option"),
 		HideVotePreview:   argBool(args, "hide_vote_preview"),
@@ -108,16 +123,106 @@ func (t *ZaloPersonalCreatePollTool) Execute(ctx context.Context, args map[strin
 	}
 	pollID, err := handle.CreatePoll(ctx, chatID, question, options, settings)
 	if err != nil {
-		return ErrorResult(fmt.Sprintf("create poll: %v", err))
+		return ErrorResult(formatCreatePollError(err, question, options, expirySeconds, settings))
 	}
 	return jsonResult(map[string]any{"poll_id": pollID, "status": "created"})
+}
+
+func normalizeZaloPollExpiryMillis(seconds int64) (int64, *Result) {
+	switch {
+	case seconds < 0:
+		return 0, ErrorResult("expired_time_seconds must be 0 or a positive duration in seconds")
+	case seconds == 0:
+		return 0, nil
+	case seconds > maxZaloPollExpirationSeconds:
+		return 0, ErrorResult(fmt.Sprintf(
+			"expired_time_seconds=%d is out of range or looks like a timestamp. Pass a duration in seconds, for example 604800 for 7 days. Maximum accepted by this tool is %d seconds.",
+			seconds, maxZaloPollExpirationSeconds,
+		))
+	default:
+		return seconds * 1000, nil
+	}
+}
+
+func formatCreatePollError(err error, question string, options []string, expirySeconds int64, settings ZaloPollSettings) string {
+	msg := fmt.Sprintf("create poll: %v", err)
+	lower := strings.ToLower(err.Error())
+	if !strings.Contains(lower, "114") && !strings.Contains(lower, "tham số") && !strings.Contains(lower, "invalid") {
+		return msg
+	}
+	return fmt.Sprintf(
+		"%s. Zalo rejected one or more poll parameters. Check expired_time_seconds first: it must be a duration in seconds, not a Unix timestamp or milliseconds. Sent shape: question_chars=%d, options_count=%d, expired_time_seconds=%d, allow_multi_choices=%t, allow_add_new_option=%t, hide_vote_preview=%t, is_anonymous=%t. Do not retry with placeholder options; correct the invalid field or ask the user.",
+		msg,
+		len([]rune(question)),
+		len(options),
+		expirySeconds,
+		settings.AllowMultiChoices,
+		settings.AllowAddNewOption,
+		settings.HideVotePreview,
+		settings.IsAnonymous,
+	)
+}
+
+// --- list_polls ---
+
+type ZaloPersonalListPollsTool struct{ actionFn ZaloPersonalActionFn }
+
+func NewZaloPersonalListPollsTool() *ZaloPersonalListPollsTool { return &ZaloPersonalListPollsTool{} }
+func (t *ZaloPersonalListPollsTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) {
+	t.actionFn = fn
+}
+func (t *ZaloPersonalListPollsTool) RequiredChannelTypes() []string {
+	return []string{channels.TypeZaloPersonal}
+}
+func (t *ZaloPersonalListPollsTool) Name() string { return "zalo_personal_list_polls" }
+func (t *ZaloPersonalListPollsTool) Description() string {
+	return "List recent polls from the current Zalo Personal group board with vote counts. Use this before answering questions like 'show the poll result' when the poll was created outside the current context window; call zalo_personal_get_poll with a returned poll_id to refresh one poll exactly."
+}
+func (t *ZaloPersonalListPollsTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"page":  map[string]any{"type": "integer", "description": "Board page to read, default 1"},
+			"count": map[string]any{"type": "integer", "description": "Number of board items to inspect, default 20, max 20"},
+		},
+		"required": []string{},
+	}
+}
+func (t *ZaloPersonalListPollsTool) Execute(ctx context.Context, args map[string]any) *Result {
+	handle, errRes := resolveZaloPersonalAction(ctx, t.actionFn)
+	if errRes != nil {
+		return errRes
+	}
+	chatID := ToolChatIDFromCtx(ctx)
+	if chatID == "" {
+		return ErrorResult("missing chat ID in context")
+	}
+	page, count := normalizedPollListPageCount(args)
+	list, err := handle.ListPolls(ctx, chatID, page, count)
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("list polls: %v", err))
+	}
+	blob, _ := json.Marshal(list)
+	return NewResult(string(blob))
+}
+
+func normalizedPollListPageCount(args map[string]any) (int, int) {
+	page := max(int(argInt64(args, "page")), 1)
+	count := int(argInt64(args, "count"))
+	switch {
+	case count <= 0:
+		count = defaultZaloPollListCount
+	case count > maxZaloPollListCount:
+		count = maxZaloPollListCount
+	}
+	return page, count
 }
 
 // --- get_poll ---
 
 type ZaloPersonalGetPollTool struct{ actionFn ZaloPersonalActionFn }
 
-func NewZaloPersonalGetPollTool() *ZaloPersonalGetPollTool { return &ZaloPersonalGetPollTool{} }
+func NewZaloPersonalGetPollTool() *ZaloPersonalGetPollTool                         { return &ZaloPersonalGetPollTool{} }
 func (t *ZaloPersonalGetPollTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) { t.actionFn = fn }
 func (t *ZaloPersonalGetPollTool) RequiredChannelTypes() []string {
 	return []string{channels.TypeZaloPersonal}
@@ -156,7 +261,7 @@ func (t *ZaloPersonalGetPollTool) Execute(ctx context.Context, args map[string]a
 
 type ZaloPersonalVotePollTool struct{ actionFn ZaloPersonalActionFn }
 
-func NewZaloPersonalVotePollTool() *ZaloPersonalVotePollTool { return &ZaloPersonalVotePollTool{} }
+func NewZaloPersonalVotePollTool() *ZaloPersonalVotePollTool                        { return &ZaloPersonalVotePollTool{} }
 func (t *ZaloPersonalVotePollTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) { t.actionFn = fn }
 func (t *ZaloPersonalVotePollTool) RequiredChannelTypes() []string {
 	return []string{channels.TypeZaloPersonal}
@@ -196,7 +301,7 @@ func (t *ZaloPersonalVotePollTool) Execute(ctx context.Context, args map[string]
 
 type ZaloPersonalLockPollTool struct{ actionFn ZaloPersonalActionFn }
 
-func NewZaloPersonalLockPollTool() *ZaloPersonalLockPollTool { return &ZaloPersonalLockPollTool{} }
+func NewZaloPersonalLockPollTool() *ZaloPersonalLockPollTool                        { return &ZaloPersonalLockPollTool{} }
 func (t *ZaloPersonalLockPollTool) SetZaloPersonalActionFn(fn ZaloPersonalActionFn) { t.actionFn = fn }
 func (t *ZaloPersonalLockPollTool) RequiredChannelTypes() []string {
 	return []string{channels.TypeZaloPersonal}
