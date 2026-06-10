@@ -160,19 +160,10 @@ func pickInboundImageURL(raw []byte, fallback string, order []string) string {
 		return fallback
 	}
 	var urls []string
+	params := inboundParamsObject(obj["params"])
 	for _, key := range order {
-		val, ok := obj[key]
-		if !ok {
-			continue
-		}
-		var s string
-		if json.Unmarshal(val, &s) != nil {
-			continue
-		}
-		if s = strings.TrimSpace(s); s == "" {
-			continue
-		}
-		urls = append(urls, s)
+		urls = appendInboundURL(urls, obj[key])
+		urls = appendInboundURL(urls, params[key])
 	}
 	for _, u := range urls {
 		if !urlIsJXL(u) {
@@ -185,6 +176,38 @@ func pickInboundImageURL(raw []byte, fallback string, order []string) string {
 		return urls[0]
 	}
 	return fallback
+}
+
+func inboundParamsObject(raw json.RawMessage) map[string]json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) == nil {
+		return obj
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil || s == "" {
+		return nil
+	}
+	if json.Unmarshal([]byte(s), &obj) != nil {
+		return nil
+	}
+	return obj
+}
+
+func appendInboundURL(urls []string, raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return urls
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		return urls
+	}
+	if s = strings.TrimSpace(s); s == "" {
+		return urls
+	}
+	return append(urls, s)
 }
 
 // extractQuoteMedia downloads the media file referenced inside TQuote.Attach
@@ -639,18 +662,21 @@ func (c *Channel) startTyping(threadID string, threadType protocol.ThreadType) {
 	ctrl.Start()
 }
 
-// Ordering: any href attachment (image/video/audio/file) must beat the title-text
-// probe — Zalo's media-with-caption shape `{title, href}` collides with quote-reply
-// shape `{title, params}` on `title`.
+// Ordering: any reachable attachment (image/video/audio/file) must beat the
+// title-text probe — Zalo's media-with-caption shape `{title, href}` collides
+// with quote-reply shape `{title, params}` on `title`. HD photos arrive with
+// href="" and the URL nested in params.hdUrl — BestMediaURL() resolves it.
 func extractContentAndMedia(content protocol.Content) (string, []string) {
 	if text := content.Text(); text != "" {
 		return text, nil
 	}
-	if att := content.ParseAttachment(); att != nil && att.Href != "" {
-		if better := pickInboundImageURL(content.Raw, att.Href, attachMediaURLFields); better != "" {
+	if att := content.ParseAttachment(); att != nil {
+		if better := pickInboundImageURL(content.Raw, att.BestMediaURL(), attachMediaURLFields); better != "" {
 			att.Href = better
 		}
-		return extractAttachment(content, att)
+		if att.BestMediaURL() != "" {
+			return extractAttachment(content, att)
+		}
 	}
 	if text := extractTextFromRawContent(content.Raw); text != "" {
 		return text, nil
@@ -663,9 +689,10 @@ func extractContentAndMedia(content protocol.Content) (string, []string) {
 }
 
 func extractAttachment(content protocol.Content, att *protocol.Attachment) (string, []string) {
-	filePath, err := downloadFile(context.Background(), att.Href)
+	url := att.BestMediaURL()
+	filePath, err := downloadFile(context.Background(), url)
 	if err != nil {
-		slog.Warn("zalo_personal: failed to download attachment", "url", att.Href, "error", err)
+		slog.Warn("zalo_personal: failed to download attachment", "url", url, "type", att.Type, "error", err)
 		// Surface the real reason so the agent can tell the user (e.g. "too large")
 		// instead of silently rendering a generic placeholder and guessing.
 		return attachmentUnavailableText(att, err), nil
@@ -673,6 +700,8 @@ func extractAttachment(content protocol.Content, att *protocol.Attachment) (stri
 
 	mimeType := media.DetectMIMEType(filePath)
 	mediaKind := media.MediaKindFromMime(mimeType)
+	// att.Type from zca-js (e.g. "photo") is a more reliable kind hint than
+	// MIME sniffing on tokenized CDN paths.
 	if mediaKind != media.TypeImage && att.IsImage() {
 		mediaKind = media.TypeImage
 	}
@@ -710,7 +739,7 @@ func attachmentUnavailableText(att *protocol.Attachment, err error) string {
 		"Ask the user to resend it or share it via a download link.]", kind)
 }
 
-const maxMediaBytes = 100 * 1024 * 1024 // 100MB inbound media cap
+const maxMediaBytes = 100 * 1024 * 1024   // 100MB inbound media cap
 const downloadTimeout = 120 * time.Second // generous for large files on slow CDN shards
 
 // errFileTooLarge marks a download that exceeded maxMediaBytes (vs a transient

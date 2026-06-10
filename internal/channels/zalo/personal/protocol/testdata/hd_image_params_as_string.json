@@ -1,0 +1,10 @@
+{
+  "title": "another HD photo",
+  "href": "",
+  "thumb": "https://f20-zpc.zdn.vn/jpg/thumb_xyz.jpg",
+  "type": "photo",
+  "action": "recv.photo",
+  "childnumber": 0,
+  "description": "",
+  "params": "{\"hdUrl\":\"https://f20-zpc.zdn.vn/jpg/hd_xyz.jpg\",\"normalUrl\":\"https://f20-zpc.zdn.vn/jpg/normal_xyz.jpg\",\"width\":2048,\"height\":2048}"
+}

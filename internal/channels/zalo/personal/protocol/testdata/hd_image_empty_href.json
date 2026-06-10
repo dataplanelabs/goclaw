@@ -1,0 +1,16 @@
+{
+  "title": "tao poster voi buc hinh nay",
+  "href": "",
+  "thumb": "https://f20-zpc.zdn.vn/jpg/thumb_abc.jpg",
+  "type": "photo",
+  "action": "recv.photo",
+  "childnumber": 0,
+  "description": "",
+  "params": {
+    "hdUrl": "https://f20-zpc.zdn.vn/jpg/hd_abc123.jpg",
+    "oriUrl": "https://f20-zpc.zdn.vn/jpg/ori_abc123.jpg",
+    "normalUrl": "https://f20-zpc.zdn.vn/jpg/normal_abc123.jpg",
+    "width": 2048,
+    "height": 2048
+  }
+}

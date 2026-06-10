@@ -192,6 +192,18 @@ func TestPickInboundImageURL(t *testing.T) {
 			"",
 			"https://x/t.jpg",
 		},
+		{
+			"params object prefers normalUrl JPEG over hdUrl JXL",
+			`{"params":{"hdUrl":"https://x/a.jxl","normalUrl":"https://x/n.jpg"}}`,
+			"",
+			"https://x/n.jpg",
+		},
+		{
+			"params string fallback",
+			`{"params":"{\"hdUrl\":\"https://x/a.jxl\",\"oriUrl\":\"https://x/o.jpg\"}"}`,
+			"",
+			"https://x/o.jpg",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
