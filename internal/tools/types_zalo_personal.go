@@ -11,6 +11,7 @@ type ZaloPersonalActionFn func(ctx context.Context, channelName string) (ZaloPer
 // here to avoid a circular import between tools and channels/zalo/personal.
 type ZaloPersonalAction interface {
 	CreatePoll(ctx context.Context, chatID, question string, options []string, settings ZaloPollSettings) (pollID string, err error)
+	ListPolls(ctx context.Context, chatID string, page, count int) (ZaloPollList, error)
 	GetPoll(ctx context.Context, pollID int64) (ZaloPollState, error)
 	VotePoll(ctx context.Context, pollID int64, optionIDs []int64) (ZaloPollState, error)
 	LockPoll(ctx context.Context, pollID int64) error
@@ -30,10 +31,22 @@ type ZaloPollSettings struct {
 }
 
 type ZaloPollState struct {
-	PollID   string                `json:"poll_id"`
-	Question string                `json:"question,omitempty"`
-	Options  []ZaloPollStateOption `json:"options"`
-	Locked   bool                  `json:"locked,omitempty"`
+	PollID      string                `json:"poll_id"`
+	Question    string                `json:"question,omitempty"`
+	Options     []ZaloPollStateOption `json:"options"`
+	Locked      bool                  `json:"locked,omitempty"`
+	Closed      bool                  `json:"closed,omitempty"`
+	GroupID     string                `json:"group_id,omitempty"`
+	CreatedTime int64                 `json:"created_time,omitempty"`
+	UpdatedTime int64                 `json:"updated_time,omitempty"`
+	ExpiredTime int64                 `json:"expired_time,omitempty"`
+	TotalVotes  int                   `json:"total_votes,omitempty"`
+}
+
+type ZaloPollList struct {
+	Polls []ZaloPollState `json:"polls"`
+	Count int             `json:"count,omitempty"`
+	Page  int             `json:"page,omitempty"`
 }
 
 // ZaloReminderSettings is the channel-neutral DTO. Repeat is a human-friendly

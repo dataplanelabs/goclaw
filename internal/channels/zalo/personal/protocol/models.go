@@ -145,7 +145,7 @@ type UserInfo struct {
 type CreatePollOptions struct {
 	Question          string   `json:"question"`
 	Options           []string `json:"options"`
-	ExpiredTime       int64    `json:"expired_time,omitempty"`       // ms; 0 = no expiration
+	ExpiredTime       int64    `json:"expired_time,omitempty"` // ms; 0 = no expiration
 	AllowMultiChoices bool     `json:"allow_multi_choices,omitempty"`
 	AllowAddNewOption bool     `json:"allow_add_new_option,omitempty"`
 	HideVotePreview   bool     `json:"is_hide_vote_preview,omitempty"`
@@ -157,14 +157,24 @@ type PollOption struct {
 	OptionID   int64    `json:"option_id"`
 	Content    string   `json:"content"`
 	VotedUsers []string `json:"voted_users,omitempty"`
+	Voters     []string `json:"voters,omitempty"`
 	VoteCount  int      `json:"vote_count"`
+	Votes      int      `json:"votes,omitempty"`
 	Voted      bool     `json:"voted,omitempty"`
+}
+
+func (o PollOption) CountVotes() int {
+	if o.VoteCount != 0 {
+		return o.VoteCount
+	}
+	return o.Votes
 }
 
 // PollDetail is the full poll-state response. Verify against a live response
 // when first hitting production — Locked may instead arrive as `state: 1`.
 type PollDetail struct {
 	PollID            json.Number  `json:"poll_id"`
+	Creator           string       `json:"creator,omitempty"`
 	Question          string       `json:"question"`
 	Options           []PollOption `json:"options"`
 	ExpiredTime       int64        `json:"expired_time"`
@@ -176,6 +186,9 @@ type PollDetail struct {
 	GroupID           string       `json:"group_id"`
 	CreatorID         string       `json:"creator_id"`
 	CreatedTime       int64        `json:"created_time"`
+	UpdatedTime       int64        `json:"updated_time,omitempty"`
+	TotalVotes        int          `json:"num_vote,omitempty"`
+	Closed            bool         `json:"closed,omitempty"`
 	Locked            bool         `json:"locked,omitempty"`
 }
 

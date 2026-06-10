@@ -17,7 +17,13 @@ const (
 	apiPathPollVote       = "/api/poll/vote"
 	apiPathPollEnd        = "/api/poll/end"
 	apiPathPollOptionAdd  = "/api/poll/option/add"
+	apiPathBoardList      = "/api/board/list"
 	pollServiceKey        = "group"
+	boardServiceKey       = "group_board"
+	boardTypePoll         = 3
+	defaultBoardListPage  = 1
+	defaultBoardListCount = 20
+	maxBoardListCount     = 20
 )
 
 // CreatePoll creates a new poll inside a Zalo group. Returns the parsed
@@ -67,6 +73,71 @@ func GetPollDetail(ctx context.Context, sess *Session, pollID int64) (*PollDetai
 		return nil, err
 	}
 	return &out, nil
+}
+
+type ListPollsOptions struct {
+	Page  int
+	Count int
+}
+
+type PollList struct {
+	Polls []PollDetail
+	Count int
+}
+
+type boardListResponse struct {
+	Items []boardListItem `json:"items"`
+	Count int             `json:"count"`
+}
+
+type boardListItem struct {
+	BoardType int             `json:"boardType"`
+	Data      json.RawMessage `json:"data"`
+}
+
+// ListPolls reads group board items and returns only poll board entries. Zalo
+// does not expose a dedicated poll-list endpoint; the web client gets this
+// through /api/board/list on the group_board service.
+func ListPolls(ctx context.Context, sess *Session, groupID string, opts ListPollsOptions) (*PollList, error) {
+	if groupID == "" {
+		return nil, fmt.Errorf("zalo_personal: listPolls requires groupID")
+	}
+	page := opts.Page
+	if page < 1 {
+		page = defaultBoardListPage
+	}
+	count := opts.Count
+	switch {
+	case count <= 0:
+		count = defaultBoardListCount
+	case count > maxBoardListCount:
+		count = maxBoardListCount
+	}
+	payload := map[string]any{
+		"group_id":   groupID,
+		"board_type": 0,
+		"page":       page,
+		"count":      count,
+		"last_id":    0,
+		"last_type":  0,
+		"imei":       sess.IMEI,
+	}
+	var out boardListResponse
+	if err := getEncryptedJSONForService(ctx, sess, boardServiceKey, apiPathBoardList, payload, &out); err != nil {
+		return nil, err
+	}
+	polls := make([]PollDetail, 0, len(out.Items))
+	for _, item := range out.Items {
+		if item.BoardType != boardTypePoll {
+			continue
+		}
+		var poll PollDetail
+		if err := json.Unmarshal(item.Data, &poll); err != nil {
+			return nil, fmt.Errorf("zalo_personal: parse poll board item: %w", err)
+		}
+		polls = append(polls, poll)
+	}
+	return &PollList{Polls: polls, Count: out.Count}, nil
 }
 
 // votePollResponse and addPollOptionsResponse share the {"options": [...]}
@@ -166,9 +237,13 @@ func postEncryptedJSON(ctx context.Context, sess *Session, apiPath string, paylo
 // getEncryptedJSON is the GET variant — payload encrypted into the `params`
 // query string rather than the body. Used by VotePoll + AddPollOptions.
 func getEncryptedJSON(ctx context.Context, sess *Session, apiPath string, payload map[string]any, out any) error {
-	baseURL := getServiceURL(sess, pollServiceKey)
+	return getEncryptedJSONForService(ctx, sess, pollServiceKey, apiPath, payload, out)
+}
+
+func getEncryptedJSONForService(ctx context.Context, sess *Session, serviceKey, apiPath string, payload map[string]any, out any) error {
+	baseURL := getServiceURL(sess, serviceKey)
 	if baseURL == "" {
-		return fmt.Errorf("zalo_personal: no service URL for %s", pollServiceKey)
+		return fmt.Errorf("zalo_personal: no service URL for %s", serviceKey)
 	}
 	encData, err := encryptPayload(sess, payload)
 	if err != nil {

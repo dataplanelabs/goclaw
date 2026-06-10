@@ -542,6 +542,7 @@ func runGateway() {
 	}
 	for _, name := range []string{
 		"zalo_personal_create_poll",
+		"zalo_personal_list_polls",
 		"zalo_personal_get_poll",
 		"zalo_personal_vote_poll",
 		"zalo_personal_lock_poll",
