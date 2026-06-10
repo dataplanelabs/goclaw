@@ -13,28 +13,29 @@ import (
 
 // zaloCreds maps the credentials JSON from the channel_instances table.
 type zaloCreds struct {
-	IMEI      string               `json:"imei"`
+	IMEI      string                `json:"imei"`
 	Cookie    *protocol.CookieUnion `json:"cookie"`
-	UserAgent string               `json:"userAgent"`
-	Language  *string              `json:"language,omitempty"`
+	UserAgent string                `json:"userAgent"`
+	Language  *string               `json:"language,omitempty"`
 }
 
 // zaloInstanceConfig maps the config JSONB from the channel_instances table.
 type zaloInstanceConfig struct {
-	DMPolicy            string   `json:"dm_policy,omitempty"`
-	GroupPolicy         string   `json:"group_policy,omitempty"`
-	RequireMention      *bool    `json:"require_mention,omitempty"`
-	HistoryLimit        int      `json:"history_limit,omitempty"`
-	AllowFrom           []string `json:"allow_from,omitempty"`
-	BlockReply              *bool `json:"block_reply,omitempty"`
-	QuoteUserMessageInGroup *bool `json:"quote_user_message_in_group,omitempty"`
-	QuoteUserMessageInDM    *bool `json:"quote_user_message_in_dm,omitempty"`
-	EnableNativeStyles      *bool `json:"enable_native_styles,omitempty"`
-	DisablePolls        bool     `json:"disable_polls,omitempty"`
-	DisableReactions    bool     `json:"disable_reactions,omitempty"`
-	DisableVoiceSend    bool     `json:"disable_voice_send,omitempty"`
-	ListenSelfReactions bool     `json:"listen_self_reactions,omitempty"`
-	ReactionsMode       string   `json:"reactions_mode,omitempty"`
+	DMPolicy                string   `json:"dm_policy,omitempty"`
+	GroupPolicy             string   `json:"group_policy,omitempty"`
+	RequireMention          *bool    `json:"require_mention,omitempty"`
+	HistoryLimit            int      `json:"history_limit,omitempty"`
+	TurnGraceMs             int      `json:"turn_grace_ms,omitempty"`
+	AllowFrom               []string `json:"allow_from,omitempty"`
+	BlockReply              *bool    `json:"block_reply,omitempty"`
+	QuoteUserMessageInGroup *bool    `json:"quote_user_message_in_group,omitempty"`
+	QuoteUserMessageInDM    *bool    `json:"quote_user_message_in_dm,omitempty"`
+	EnableNativeStyles      *bool    `json:"enable_native_styles,omitempty"`
+	DisablePolls            bool     `json:"disable_polls,omitempty"`
+	DisableReactions        bool     `json:"disable_reactions,omitempty"`
+	DisableVoiceSend        bool     `json:"disable_voice_send,omitempty"`
+	ListenSelfReactions     bool     `json:"listen_self_reactions,omitempty"`
+	ReactionsMode           string   `json:"reactions_mode,omitempty"`
 
 	ReactionLevel              string `json:"reaction_level,omitempty"`
 	ReactionTerminalDelayMinMs int    `json:"reaction_terminal_delay_min_ms,omitempty"`
@@ -67,21 +68,22 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 	}
 
 	zaloCfg := config.ZaloPersonalConfig{
-		Enabled:             true,
-		AllowFrom:           ic.AllowFrom,
-		DMPolicy:            ic.DMPolicy,
-		GroupPolicy:         ic.GroupPolicy,
-		RequireMention:      ic.RequireMention,
-		HistoryLimit:        ic.HistoryLimit,
+		Enabled:                 true,
+		AllowFrom:               ic.AllowFrom,
+		DMPolicy:                ic.DMPolicy,
+		GroupPolicy:             ic.GroupPolicy,
+		RequireMention:          ic.RequireMention,
+		HistoryLimit:            ic.HistoryLimit,
+		TurnGraceMs:             ic.TurnGraceMs,
 		BlockReply:              ic.BlockReply,
 		QuoteUserMessageInGroup: ic.QuoteUserMessageInGroup,
 		QuoteUserMessageInDM:    ic.QuoteUserMessageInDM,
 		EnableNativeStyles:      ic.EnableNativeStyles,
-		DisablePolls:        ic.DisablePolls,
-		DisableReactions:    ic.DisableReactions,
-		DisableVoiceSend:    ic.DisableVoiceSend,
-		ListenSelfReactions: ic.ListenSelfReactions,
-		ReactionsMode:       ic.ReactionsMode,
+		DisablePolls:            ic.DisablePolls,
+		DisableReactions:        ic.DisableReactions,
+		DisableVoiceSend:        ic.DisableVoiceSend,
+		ListenSelfReactions:     ic.ListenSelfReactions,
+		ReactionsMode:           ic.ReactionsMode,
 
 		ReactionLevel:              ic.ReactionLevel,
 		ReactionTerminalDelayMinMs: ic.ReactionTerminalDelayMinMs,
@@ -137,6 +139,7 @@ func FactoryWithPendingStore(pendingStore store.PendingMessageStore, episodicSto
 			GroupPolicy:                ic.GroupPolicy,
 			RequireMention:             ic.RequireMention,
 			HistoryLimit:               ic.HistoryLimit,
+			TurnGraceMs:                ic.TurnGraceMs,
 			BlockReply:                 ic.BlockReply,
 			QuoteUserMessageInGroup:    ic.QuoteUserMessageInGroup,
 			QuoteUserMessageInDM:       ic.QuoteUserMessageInDM,

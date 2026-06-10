@@ -519,7 +519,15 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 			maps.Copy(metadata, qm)
 		}
 	}
-	c.HandleMessage(senderID, threadID, content, media, metadata, "direct")
+	c.enqueueInboundTurn(inboundTurn{
+		senderID:   senderID,
+		threadID:   threadID,
+		content:    content,
+		media:      media,
+		metadata:   metadata,
+		peerKind:   "direct",
+		threadType: protocol.ThreadTypeUser,
+	})
 }
 
 func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
@@ -592,17 +600,6 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 		media = append(media, quotedPath)
 	}
 	annotated := fmt.Sprintf("[From: %s (uid:%s)]\n%s", senderName, senderID, content)
-	finalContent := annotated
-	if c.HistoryLimit() > 0 {
-		finalContent = c.GroupHistory().BuildContext(threadID, annotated, c.HistoryLimit())
-	}
-
-	c.startTyping(threadID, protocol.ThreadTypeGroup)
-
-	// Collect media from pending history entries (images sent before this @mention).
-	// Must come after BuildContext — CollectMedia nulls out Media fields to prevent double-cleanup.
-	histMedia := c.GroupHistory().CollectMedia(threadID)
-	allMedia := append(histMedia, media...)
 
 	// Collect contact for group-mentioned messages.
 	if cc := c.ContactCollector(); cc != nil {
@@ -627,10 +624,17 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 	if len(msg.Data.Mentions) > 0 {
 		stampMentionsMetadata(metadata, msg.Data.Mentions, c.groupNameResolver(threadID))
 	}
-	c.HandleMessage(senderID, threadID, finalContent, allMedia, metadata, "group")
 
-	// Clear pending history after sending to agent (matches Telegram/Discord/Slack/Feishu pattern).
-	c.GroupHistory().Clear(threadID)
+	turn := inboundTurn{
+		senderID:   senderID,
+		threadID:   threadID,
+		content:    annotated,
+		media:      media,
+		metadata:   metadata,
+		peerKind:   "group",
+		threadType: protocol.ThreadTypeGroup,
+	}
+	c.enqueueInboundTurn(turn)
 }
 
 // startTyping starts a typing indicator with keepalive for the given thread.

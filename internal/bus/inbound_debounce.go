@@ -38,7 +38,7 @@ func NewInboundDebouncer(debounceMs time.Duration, flushFn func(InboundMessage))
 }
 
 // Push adds a message to the debounce buffer.
-// If debouncing is disabled or the message should bypass (media), it is flushed immediately.
+// If debouncing is disabled, it is flushed immediately.
 func (d *InboundDebouncer) Push(msg InboundMessage) {
 	// Disabled: pass through immediately.
 	if d.debounceMs <= 0 {
@@ -47,13 +47,6 @@ func (d *InboundDebouncer) Push(msg InboundMessage) {
 	}
 
 	key := debounceKey(msg)
-
-	// Media messages bypass debounce — flush any buffered text first, then process media.
-	if len(msg.Media) > 0 {
-		d.flushKey(key)
-		d.flushFn(msg)
-		return
-	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()

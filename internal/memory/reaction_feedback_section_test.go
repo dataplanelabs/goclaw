@@ -35,6 +35,9 @@ func TestBuildReactionFeedbackSection_GroupsByMessage(t *testing.T) {
 	mustContain(t, got, `"sorry about that"`)
 	mustContain(t, got, "❤×2")
 	mustContain(t, got, "😂")
+	mustContain(t, got, "total 3")
+	mustContain(t, got, "reactors: alice, bob")
+	mustContain(t, got, "at 2026-05-24 09:57 UTC")
 	mustContain(t, got, "1h ago")
 	mustContain(t, got, "3m ago")
 }
@@ -102,6 +105,16 @@ func TestExtractReactionFields(t *testing.T) {
 	}
 	if got := extractReactionPreview(s); got != "Hi anh" {
 		t.Errorf("preview=%q, want Hi anh", got)
+	}
+
+	messageSummary := `Nguyen Van A reacted 👍 (positive) on message: "File uploaded" at 2026-06-03T09:53:00+07:00`
+	if got := extractReactionPreview(messageSummary); got != "File uploaded" {
+		t.Errorf("message preview=%q, want File uploaded", got)
+	}
+
+	removedSummary := `Nguyen Van A removed their reaction on your reply: "Hi anh"`
+	if got := extractReactionReactor(removedSummary); got != "Nguyen Van A" {
+		t.Errorf("removed reactor=%q, want Nguyen Van A", got)
 	}
 }
 

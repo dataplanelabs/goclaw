@@ -239,6 +239,28 @@ func TestRecordReactionFeedback_PersistsToEpisodicStore(t *testing.T) {
 	}
 }
 
+func TestRecordReactionFeedback_GroupUsesConversationMemoryScope(t *testing.T) {
+	t.Parallel()
+	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{})
+	ch.SetAgentID("test-agent")
+	ch.SetAgentUUID(uuid.New())
+	fake := &fakeEpisodicStore{}
+	ch.SetEpisodicStore(fake)
+
+	ev := makeEvent("group-1", "user-x", "msg-100", protocol.ReactionHeart, func(e *ReactionEvent) {
+		e.ThreadType = protocol.ThreadTypeGroup
+		e.DName = "Nguyen Van A"
+	})
+	ch.onReactionEvent(ev)
+
+	if got := len(fake.created); got != 1 {
+		t.Fatalf("created=%d, want 1", got)
+	}
+	if got, want := fake.created[0].UserID, "group:zalo_personal:group-1"; got != want {
+		t.Errorf("user_id=%q, want %q", got, want)
+	}
+}
+
 func TestRecordReactionFeedback_NoStoreNoCrash(t *testing.T) {
 	t.Parallel()
 	ch, _, _ := newTestChannel(t, config.ZaloPersonalConfig{})

@@ -552,6 +552,10 @@ The WhatsApp channel connects directly to the WhatsApp network via the multi-dev
 - **Auto-reconnect**: Built-in reconnection with exponential backoff
 - **DM and group support**: Full group messaging with mention detection via JID format
 - **Media handling**: Direct media download/upload to WhatsApp servers with type detection
+- **Reaction feedback**: Inbound reactions are stored as memory feedback with the
+  reactor, emoji, timestamp, target message id, and a short preview of the
+  reacted message/file. Set `disable_reactions: true` on a WhatsApp instance to
+  disable this feedback path.
 - **Typing indicators**: Typing state managed per chat with auto-refresh
 - **Group mention gating**: Detects when bot is mentioned via LID (Local ID) and JID (standard format)
 
@@ -767,6 +771,16 @@ Zalo Personal uses an unofficial, reverse-engineered protocol. The account used 
 - Exponential backoff up to 60 seconds
 - Special handling for error code 3000: 60-second initial delay
 - Typing controller per thread
+
+### Turn Assembly
+
+Zalo may deliver text and media as separate nearby events. Zalo Personal buffers
+addressed DM and group turns for `turn_grace_ms` before dispatching to the agent
+so follow-up media can join the same turn. The default is 2000ms; set
+`turn_grace_ms: -1` on the channel instance to disable the grace window. For
+mention-gated groups, pending group history is rebuilt at flush time so
+unmentioned follow-up media sent during the window is included before history is
+cleared.
 
 ### Polls + Reactions
 

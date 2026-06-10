@@ -66,6 +66,10 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 		return
 	}
 
+	if c.handleReactionMessage(ctx, evt, senderID, chatID, peerKind) {
+		return
+	}
+
 	content := extractTextContent(evt.Message)
 
 	var mediaList []media.MediaInfo
@@ -150,6 +154,8 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 	if senderName := metadata["user_name"]; senderName != "" {
 		content = fmt.Sprintf("[From: %s]\n%s", senderName, content)
 	}
+
+	c.recordMessagePreview(ctx, string(evt.Info.ID), content, evt.Info.Timestamp)
 
 	// Collect contact.
 	if cc := c.ContactCollector(); cc != nil {

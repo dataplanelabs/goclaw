@@ -34,7 +34,12 @@ func (s *SQLiteEpisodicStore) Close() error { return nil }
 func (s *SQLiteEpisodicStore) Create(ctx context.Context, ep *store.EpisodicSummary) error {
 	id := uuid.Must(uuid.NewV7())
 	ep.ID = id
-	now := time.Now().UTC()
+	now := ep.CreatedAt
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
 
 	topics := jsonStringArray(ep.KeyTopics)
 

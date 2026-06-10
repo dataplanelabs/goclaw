@@ -113,10 +113,11 @@ func (a *pgAutoInjector) Inject(ctx context.Context, params InjectParams) (*Inje
 }
 
 const (
-	reactionFeedbackLookback   = 24 * time.Hour
-	reactionFeedbackFetchLimit = 100
-	reactionFeedbackTopReplies = 5
-	reactionFeedbackPreviewMax = 80
+	reactionFeedbackLookback    = 24 * time.Hour
+	reactionFeedbackFetchLimit  = 100
+	reactionFeedbackTopReplies  = 5
+	reactionFeedbackPreviewMax  = 80
+	reactionFeedbackMaxReactors = 4
 )
 
 func (a *pgAutoInjector) reactionFeedbackSection(ctx context.Context, params InjectParams) string {
@@ -132,6 +133,7 @@ type reactionMsgAgg struct {
 	preview  string
 	emojis   map[string]int
 	reactors map[string]struct{}
+	total    int
 	latest   time.Time
 }
 
@@ -168,6 +170,7 @@ func buildReactionFeedbackSection(rows []store.EpisodicSummary, now time.Time, p
 		if icon := extractReactionIcon(r.Summary); icon != "" {
 			agg.emojis[icon]++
 		}
+		agg.total++
 		if reactor := extractReactionReactor(r.Summary); reactor != "" {
 			agg.reactors[reactor] = struct{}{}
 			allReactors[reactor] = struct{}{}
@@ -201,7 +204,12 @@ func buildReactionFeedbackSection(rows []store.EpisodicSummary, now time.Time, p
 		sb.WriteString("- ")
 		sb.WriteString(relTimeAgo(now.Sub(m.latest)))
 		sb.WriteString(" · ")
+		fmt.Fprintf(&sb, "at %s · total %d · ", formatReactionTimestamp(m.latest, now), m.total)
 		sb.WriteString(formatEmojiCluster(m.emojis))
+		if len(m.reactors) > 0 {
+			sb.WriteString(" · reactors: ")
+			sb.WriteString(formatReactors(m.reactors, reactionFeedbackMaxReactors))
+		}
 		if m.preview != "" {
 			sb.WriteString(" on ")
 			sb.WriteString(strconv.Quote(truncateRunes(m.preview, reactionFeedbackPreviewMax)))
@@ -226,6 +234,7 @@ var (
 	reactionSentimentRe = regexp.MustCompile(`\(([a-z]+)\)`)
 	reactionIconRe      = regexp.MustCompile(`reacted (\S+?) \(`)
 	reactionReactorRe   = regexp.MustCompile(`^(.+?) reacted `)
+	reactionRemovedRe   = regexp.MustCompile(`^(.+?) removed their reaction`)
 )
 
 func parseReactionSourceID(sourceID string) string {
@@ -258,20 +267,25 @@ func extractReactionReactor(summary string) string {
 	if m := reactionReactorRe.FindStringSubmatch(summary); len(m) == 2 {
 		return m[1]
 	}
+	if m := reactionRemovedRe.FindStringSubmatch(summary); len(m) == 2 {
+		return m[1]
+	}
 	return ""
 }
 
 func extractReactionPreview(summary string) string {
-	const sep = `on your reply: "`
-	_, after, ok := strings.Cut(summary, sep)
-	if !ok {
-		return ""
+	for _, sep := range []string{`on your reply: "`, `on message: "`} {
+		_, after, ok := strings.Cut(summary, sep)
+		if !ok {
+			continue
+		}
+		rest := after
+		if end := strings.LastIndex(rest, `"`); end >= 0 {
+			return rest[:end]
+		}
+		return rest
 	}
-	rest := after
-	if end := strings.LastIndex(rest, `"`); end >= 0 {
-		return rest[:end]
-	}
-	return rest
+	return ""
 }
 
 func formatEmojiCluster(emojis map[string]int) string {
@@ -300,6 +314,33 @@ func formatEmojiCluster(emojis map[string]int) string {
 		}
 	}
 	return sb.String()
+}
+
+func formatReactors(reactors map[string]struct{}, max int) string {
+	if len(reactors) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(reactors))
+	for name := range reactors {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if max <= 0 || len(names) <= max {
+		return strings.Join(names, ", ")
+	}
+	hidden := len(names) - max
+	return fmt.Sprintf("%s +%d more", strings.Join(names[:max], ", "), hidden)
+}
+
+func formatReactionTimestamp(t, now time.Time) string {
+	if t.IsZero() {
+		return "unknown time"
+	}
+	loc := now.Location()
+	if loc == nil {
+		loc = time.UTC
+	}
+	return t.In(loc).Format("2006-01-02 15:04 MST")
 }
 
 func relTimeAgo(d time.Duration) string {

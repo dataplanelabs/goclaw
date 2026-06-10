@@ -211,13 +211,13 @@ func (c *Channel) recordReactionFeedback(ev ReactionEvent) {
 	)
 	summary := buildReactionSummary(reactorName, icon, sentiment, ev.MsgID, preview, ev.Code == protocol.ReactionNone)
 
-	sessionKey := sessions.BuildSessionKey(c.AgentID(), c.Type(), sessions.PeerKindFromGroup(ev.ThreadType == protocol.ThreadTypeGroup), ev.ThreadID)
+	sessionKey := sessions.BuildSessionKey(c.AgentID(), c.Name(), sessions.PeerKindFromGroup(ev.ThreadType == protocol.ThreadTypeGroup), ev.ThreadID)
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
 
 	ep := &store.EpisodicSummary{
 		TenantID:   c.TenantID(),
 		AgentID:    agentUUID,
-		UserID:     ev.UIDFrom,
+		UserID:     c.reactionMemoryUserID(ev),
 		SessionKey: sessionKey,
 		Summary:    summary,
 		L0Abstract: summary,
@@ -230,6 +230,13 @@ func (c *Channel) recordReactionFeedback(ev ReactionEvent) {
 	if err := c.episodicStore.Create(ctx, ep); err != nil {
 		slog.Warn("zalo_personal.reaction.persist_failed", "err", err, "target_msg_id", ev.MsgID)
 	}
+}
+
+func (c *Channel) reactionMemoryUserID(ev ReactionEvent) string {
+	if ev.ThreadType == protocol.ThreadTypeGroup && ev.ThreadID != "" {
+		return fmt.Sprintf("group:%s:%s", c.Name(), ev.ThreadID)
+	}
+	return ev.UIDFrom
 }
 
 func reactionThreadTypeName(t protocol.ThreadType) string {
