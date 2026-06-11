@@ -96,8 +96,17 @@ func (p *Pipeline) Run(ctx context.Context, state *RunState) (*RunResult, error)
 		}
 		if ctx.Err() != nil {
 			state.ExitCode = AbortRun
+			state.Cancelled = true
 			break
 		}
+	}
+
+	// Max-iteration exhaustion: the loop ran to MaxIterations without any stage
+	// signalling BreakLoop/AbortRun (a runaway that never produced a final answer).
+	// Treat it as an abort so FinalizeStage delivers the no-silence fallback instead
+	// of dropping the turn silently. Not a cancellation (don't suppress).
+	if state.ExitCode != BreakLoop && state.ExitCode != AbortRun {
+		state.ExitCode = AbortRun
 	}
 
 	// 3. Finalize (once, errors logged not fatal).

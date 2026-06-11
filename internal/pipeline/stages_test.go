@@ -669,14 +669,24 @@ func TestPruneStage_HardTruncate_PreservesToolPairing(t *testing.T) {
 	stage := NewPruneStage(deps, NewMemoryFlushStage(deps))
 	state := defaultState()
 
-	// Tail is an assistant(tool_call) → tool(result) pair. The boundary walk must
-	// not strand the tool result if its assistant turn gets dropped.
+	// 12 msgs × 100 tokens = 1200 > budget 900, so PruneStage reaches Phase-2 and
+	// (since compaction yields no reduction) MUST hard-truncate. With KeepLastMessages=2
+	// the naive split lands on the tool result (idx 10) — the boundary walk must back up
+	// past tool(tc1) AND its assistant(tool_call) so the kept window never starts on an
+	// orphaned tool result.
 	history := []providers.Message{
 		{Role: "user", Content: "q1"},
 		{Role: "assistant", Content: "a1"},
 		{Role: "user", Content: "q2"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "tc1", Name: "read"}}},
-		{Role: "tool", ToolCallID: "tc1", Content: "result"},
+		{Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"},
+		{Role: "assistant", Content: "a3"},
+		{Role: "user", Content: "q4"},
+		{Role: "assistant", Content: "a4"},
+		{Role: "user", Content: "q5"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "tc1", Name: "read"}}}, // idx 9
+		{Role: "tool", ToolCallID: "tc1", Content: "result"},                            // idx 10
+		{Role: "user", Content: "followup"},                                             // idx 11 (current turn)
 	}
 	state.Messages.SetHistory(history)
 
@@ -687,8 +697,25 @@ func TestPruneStage_HardTruncate_PreservesToolPairing(t *testing.T) {
 		t.Fatalf("Result() = AbortRun, want recovery")
 	}
 	kept := state.Messages.History()
-	if len(kept) > 0 && kept[0].Role == "tool" {
-		t.Errorf("kept window starts on orphaned tool result: %+v", kept)
+	if len(kept) >= len(history) {
+		t.Fatalf("history not truncated: kept %d of %d", len(kept), len(history))
+	}
+	if kept[0].Role == "tool" {
+		t.Errorf("kept window starts on orphaned tool result: %+v", kept[0])
+	}
+	if got := deps.TokenCounter.CountMessages("", kept); got > 900 {
+		t.Errorf("history tokens = %d, want <= budget 900 after hard truncation", got)
+	}
+	// The kept tail must retain the tool_use→tool_result pair intact (assistant(tc1)
+	// appears before its tool result).
+	var sawToolCall bool
+	for _, m := range kept {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			sawToolCall = true
+		}
+		if m.Role == "tool" && !sawToolCall {
+			t.Errorf("tool result kept without its tool_use: %+v", kept)
+		}
 	}
 }
 

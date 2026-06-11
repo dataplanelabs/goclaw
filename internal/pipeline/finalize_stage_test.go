@@ -16,6 +16,8 @@ func TestFinalizeStage_EmptyContent_DeliveryDecision(t *testing.T) {
 		exitCode     StageResult
 		standby      bool
 		silentReply  bool // IsSilentReply wired to always-true
+		loopKilled   bool
+		cancelled    bool
 		fallbackDeps string
 		wantContent  string
 		wantSilent   bool // expected to be suppressed (delivered content == "")
@@ -25,6 +27,19 @@ func TestFinalizeStage_EmptyContent_DeliveryDecision(t *testing.T) {
 			exitCode:    AbortRun,
 			wantContent: defaultAbortFallbackMessage,
 			wantSilent:  false,
+		},
+		{
+			name:        "loop-detector kill (BreakLoop + LoopKilled) delivers fallback — never silent",
+			exitCode:    BreakLoop,
+			loopKilled:  true,
+			wantContent: defaultAbortFallbackMessage,
+			wantSilent:  false,
+		},
+		{
+			name:       "user-cancelled run (AbortRun + Cancelled) is suppressed — no 'please resend'",
+			exitCode:   AbortRun,
+			cancelled:  true,
+			wantSilent: true,
 		},
 		{
 			name:         "aborted run delivers custom fallback from deps",
@@ -63,6 +78,8 @@ func TestFinalizeStage_EmptyContent_DeliveryDecision(t *testing.T) {
 			state := defaultState()
 			state.ExitCode = tt.exitCode
 			state.StandbyMode = tt.standby
+			state.Cancelled = tt.cancelled
+			state.Tool.LoopKilled = tt.loopKilled
 			// FinalContent left empty — the abort-with-empty-content scenario.
 
 			if err := stage.Execute(context.Background(), state); err != nil {

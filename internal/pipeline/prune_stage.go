@@ -226,7 +226,7 @@ func (s *PruneStage) hardTruncateToFit(state *RunState, budget int) {
 		return
 	}
 
-	keepCount := 6
+	keepCount := 4 // matches compactMessagesInPlace + Compaction.KeepLastMessages default
 	if s.deps.Config.Compaction != nil && s.deps.Config.Compaction.KeepLastMessages > 0 {
 		keepCount = s.deps.Config.Compaction.KeepLastMessages
 	}
