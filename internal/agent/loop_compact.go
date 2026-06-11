@@ -10,6 +10,10 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 )
 
+// midLoopCompactionTimeout bounds the summarization Chat that compacts ~140k tokens
+// via the main model. 120s was too short and timed out, cascading into a silent abort.
+const midLoopCompactionTimeout = 300 * time.Second
+
 // compactionSummaryPrompt is the structured summarization instruction used by both
 // mid-loop compaction and background summarization. Matching OpenClaw TS compaction.ts
 // MERGE_SUMMARIES_INSTRUCTIONS + IDENTIFIER_PRESERVATION_INSTRUCTIONS.
@@ -84,7 +88,7 @@ func (l *Loop) compactMessagesInPlace(ctx context.Context, messages []providers.
 		}
 	}
 
-	sctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	sctx, cancel := context.WithTimeout(ctx, midLoopCompactionTimeout)
 	defer cancel()
 
 	inTokens := l.estimateSummaryInputTokens(toSummarize)

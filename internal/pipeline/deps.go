@@ -119,6 +119,10 @@ type PipelineDeps struct {
 	BootstrapCleanup       func(ctx context.Context, state *RunState) error
 	MaybeSummarize         func(ctx context.Context, sessionKey string)
 
+	// AbortFallbackMessage is delivered (instead of going silent) when a run aborts
+	// with empty final content. Empty = use defaultAbortFallbackMessage.
+	AbortFallbackMessage string
+
 	// ResolveStandbyMode (StandbyGate): given (tenantID, channelName, threadKey, now),
 	// returns the effective Mode (Active or Standby). nil = standby disabled
 	// (gate is a no-op).

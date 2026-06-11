@@ -565,12 +565,16 @@ func TestPruneStage_Over100Percent_CallsCompact(t *testing.T) {
 	}
 }
 
-func TestPruneStage_StillOverAfterCompaction_ReturnsAbortRun(t *testing.T) {
+// Durable no-silence: when compaction leaves history over budget, PruneStage must
+// hard-truncate to recover and NEVER set AbortRun (a silent NO_REPLY is worse than
+// a truncated context). Regression gate for fix/durable-no-silence.
+func TestPruneStage_StillOverAfterCompaction_HardTruncatesNotAbort(t *testing.T) {
 	t.Parallel()
 	deps := &PipelineDeps{
 		Config: PipelineConfig{
 			ContextWindow: 1000,
 			MaxTokens:     100,
+			Compaction:    &config.CompactionConfig{KeepLastMessages: 6},
 		},
 		TokenCounter: &mockTokenCounter{countPerMessage: 100},
 		PruneMessages: func(msgs []providers.Message, _ int) ([]providers.Message, PruneStats) {
@@ -584,6 +588,7 @@ func TestPruneStage_StillOverAfterCompaction_ReturnsAbortRun(t *testing.T) {
 	stage := NewPruneStage(deps, NewMemoryFlushStage(deps))
 	state := defaultState()
 
+	// budget = 1000 - 0 - 100 = 900 → 9 msgs fit at 100 tokens each.
 	history := make([]providers.Message, 50)
 	for i := range history {
 		history[i] = providers.Message{Role: "user", Content: "msg"}
@@ -594,8 +599,96 @@ func TestPruneStage_StillOverAfterCompaction_ReturnsAbortRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error: %v", err)
 	}
-	if stage.Result() != AbortRun {
-		t.Errorf("Result() = %v, want AbortRun after compaction still over budget", stage.Result())
+	if stage.Result() == AbortRun {
+		t.Errorf("Result() = AbortRun, want recovery (Continue/Break) — must never silence")
+	}
+	if got := state.Prune.HistoryTokens; got > 900 {
+		t.Errorf("history tokens = %d, want <= budget 900 after hard truncation", got)
+	}
+	if hl := state.Messages.HistoryLen(); hl >= 50 {
+		t.Errorf("history len = %d, want truncated below original 50", hl)
+	}
+}
+
+// Durable no-silence: a compaction error must NOT abort the run. PruneStage falls
+// through to hard-truncate and proceeds. Regression gate for fix/durable-no-silence.
+func TestPruneStage_CompactionError_RecoversNoAbort(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{
+		Config: PipelineConfig{
+			ContextWindow: 1000,
+			MaxTokens:     100,
+			Compaction:    &config.CompactionConfig{KeepLastMessages: 6},
+		},
+		TokenCounter: &mockTokenCounter{countPerMessage: 100},
+		PruneMessages: func(msgs []providers.Message, _ int) ([]providers.Message, PruneStats) {
+			return msgs, PruneStats{} // no reduction
+		},
+		CompactMessages: func(_ context.Context, _ []providers.Message, _ string) ([]providers.Message, error) {
+			return nil, errors.New("compaction timed out")
+		},
+	}
+	stage := NewPruneStage(deps, NewMemoryFlushStage(deps))
+	state := defaultState()
+
+	history := make([]providers.Message, 50)
+	for i := range history {
+		history[i] = providers.Message{Role: "user", Content: "msg"}
+	}
+	state.Messages.SetHistory(history)
+
+	err := stage.Execute(context.Background(), state)
+	if err != nil {
+		t.Fatalf("Execute() should recover, got error: %v", err)
+	}
+	if stage.Result() == AbortRun {
+		t.Errorf("Result() = AbortRun after compaction error, want recovery")
+	}
+	if got := state.Prune.HistoryTokens; got > 900 {
+		t.Errorf("history tokens = %d, want <= budget 900 after hard truncation", got)
+	}
+}
+
+// hardTruncateToFit must never start the kept window on an orphaned tool result.
+func TestPruneStage_HardTruncate_PreservesToolPairing(t *testing.T) {
+	t.Parallel()
+	deps := &PipelineDeps{
+		Config: PipelineConfig{
+			ContextWindow: 1000,
+			MaxTokens:     100,
+			Compaction:    &config.CompactionConfig{KeepLastMessages: 2},
+		},
+		TokenCounter: &mockTokenCounter{countPerMessage: 100},
+		PruneMessages: func(msgs []providers.Message, _ int) ([]providers.Message, PruneStats) {
+			return msgs, PruneStats{}
+		},
+		CompactMessages: func(_ context.Context, msgs []providers.Message, _ string) ([]providers.Message, error) {
+			return msgs, nil // no reduction → forces hard-truncate
+		},
+	}
+	stage := NewPruneStage(deps, NewMemoryFlushStage(deps))
+	state := defaultState()
+
+	// Tail is an assistant(tool_call) → tool(result) pair. The boundary walk must
+	// not strand the tool result if its assistant turn gets dropped.
+	history := []providers.Message{
+		{Role: "user", Content: "q1"},
+		{Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "tc1", Name: "read"}}},
+		{Role: "tool", ToolCallID: "tc1", Content: "result"},
+	}
+	state.Messages.SetHistory(history)
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if stage.Result() == AbortRun {
+		t.Fatalf("Result() = AbortRun, want recovery")
+	}
+	kept := state.Messages.History()
+	if len(kept) > 0 && kept[0].Role == "tool" {
+		t.Errorf("kept window starts on orphaned tool result: %+v", kept)
 	}
 }
 

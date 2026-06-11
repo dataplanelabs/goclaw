@@ -13,6 +13,10 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
+// defaultAbortFallbackMessage is delivered when a run aborts with empty content,
+// so the user never sees silence on an internal error.
+const defaultAbortFallbackMessage = "⚠️ Sorry — I hit an internal limit and couldn't finish that. Please send it again."
+
 // FinalizeStage runs once after the iteration loop exits. Sanitizes content,
 // deduplicates media, flushes messages, cleans up bootstrap, triggers summarization.
 // Errors are logged, not fatal (pipeline.Run uses context.WithoutCancel for finalize).
@@ -67,15 +71,34 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 			thinkingLen = len(state.Think.LastResponse.Thinking)
 			toolCallsLen = len(state.Think.LastResponse.ToolCalls)
 		}
-		slog.Warn("finalize: empty final content — suppressing delivery",
-			"session", state.Input.SessionKey,
-			"iteration", state.Iteration,
-			"exit_code", state.ExitCode,
-			"thinking_len", thinkingLen,
-			"think_tool_calls", toolCallsLen,
-			"total_tool_calls", state.Tool.TotalToolCalls,
-		)
-		isSilent = true
+		if state.ExitCode == AbortRun {
+			// Aborted/errored run with no content: DELIVER a fallback instead of
+			// going silent. StandbyMode and IsSilentReply already returned above.
+			fallback := s.deps.AbortFallbackMessage
+			if fallback == "" {
+				fallback = defaultAbortFallbackMessage
+			}
+			state.Observe.FinalContent = fallback
+			slog.Warn("finalize: aborted run with empty content — delivering fallback",
+				"session", state.Input.SessionKey,
+				"iteration", state.Iteration,
+				"exit_code", state.ExitCode,
+				"thinking_len", thinkingLen,
+				"think_tool_calls", toolCallsLen,
+				"total_tool_calls", state.Tool.TotalToolCalls,
+			)
+		} else {
+			// Normal completion (BreakLoop) with empty content = legit NO_REPLY.
+			slog.Warn("finalize: empty final content — suppressing delivery",
+				"session", state.Input.SessionKey,
+				"iteration", state.Iteration,
+				"exit_code", state.ExitCode,
+				"thinking_len", thinkingLen,
+				"think_tool_calls", toolCallsLen,
+				"total_tool_calls", state.Tool.TotalToolCalls,
+			)
+			isSilent = true
+		}
 	}
 
 	// 2c. Append content suffix (e.g. image markdown for WS) with dedup.

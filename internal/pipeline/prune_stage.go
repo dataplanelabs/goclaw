@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -14,7 +13,8 @@ import (
 //   - Phase 1 (70% budget): soft trim via PruneMessages callback
 //   - Phase 2 (100% budget): memory flush + LLM compaction
 //
-// Implements StageWithResult — returns AbortRun if still over budget after compaction.
+// Implements StageWithResult. NEVER returns AbortRun for the over-budget case —
+// it recovers (compaction → hard-truncate → proceed) so the run is never silenced.
 type PruneStage struct {
 	deps        *PipelineDeps
 	memoryFlush *MemoryFlushStage
@@ -186,23 +186,90 @@ func (s *PruneStage) Execute(ctx context.Context, state *RunState) error {
 
 	compacted, err := s.deps.CompactMessages(ctx, state.Messages.History(), state.Model)
 	if err != nil {
-		return fmt.Errorf("compact messages: %w", err)
-	}
-	state.Messages.ReplaceHistory(compacted)
-	state.Prune.MidLoopCompacted = true
-	state.Compact.CompactionCount++
-	state.Compact.MemoryFlushedThisCycle = false // reset for next cycle
+		// Never abort the run on a compaction failure — recover by hard-truncating
+		// oldest history. A silent NO_REPLY is worse than a truncated context.
+		slog.Warn("compaction failed — hard-truncating to recover", "err", err, "budget", budget)
+	} else {
+		state.Messages.ReplaceHistory(compacted)
+		state.Prune.MidLoopCompacted = true
+		state.Compact.CompactionCount++
+		state.Compact.MemoryFlushedThisCycle = false // reset for next cycle
 
-	// Recount after compaction
-	historyTokens = s.countHistory(state)
-	state.Prune.HistoryTokens = historyTokens
+		// Recount after compaction
+		historyTokens = s.countHistory(state)
+		state.Prune.HistoryTokens = historyTokens
+	}
 
 	if historyTokens > budget {
-		slog.Warn("still over budget after compaction", "tokens", historyTokens, "budget", budget)
-		s.result = AbortRun
+		s.hardTruncateToFit(state, budget)
+		historyTokens = s.countHistory(state)
+		state.Prune.HistoryTokens = historyTokens
+		if historyTokens > budget {
+			// Pathological single huge message — proceed anyway. The model's hard
+			// context window exceeds this soft budget, so the next LLM call usually
+			// succeeds; a genuine failure surfaces as a real provider error, not silence.
+			slog.Warn("still over budget after hard truncation — proceeding",
+				"tokens", historyTokens, "budget", budget)
+		}
 	}
 
 	return nil
+}
+
+// hardTruncateToFit drops the OLDEST history messages until under budget, keeping
+// the last keepCount turns. Preserves tool_use→tool_result pairing exactly like
+// compactMessagesInPlace's boundary walk (never starts the kept window on an
+// orphaned tool result). Never AbortRun — recovery, not failure.
+func (s *PruneStage) hardTruncateToFit(state *RunState, budget int) {
+	history := state.Messages.History()
+	if len(history) == 0 {
+		return
+	}
+
+	keepCount := 6
+	if s.deps.Config.Compaction != nil && s.deps.Config.Compaction.KeepLastMessages > 0 {
+		keepCount = s.deps.Config.Compaction.KeepLastMessages
+	}
+	if keepCount >= len(history) {
+		return // nothing older to drop
+	}
+
+	// Drop from the front, growing the kept window until under budget or exhausted.
+	for keepCount < len(history) {
+		splitIdx := len(history) - keepCount
+		// Walk backward to a clean boundary so we never start the kept window on a
+		// tool result whose tool_use was dropped.
+		for splitIdx > 0 {
+			m := history[splitIdx]
+			if m.Role == "tool" || (m.Role == "assistant" && len(m.ToolCalls) > 0) {
+				splitIdx--
+				continue
+			}
+			break
+		}
+		if splitIdx <= 0 {
+			return // can't drop further without orphaning — keep everything
+		}
+
+		truncated := history[splitIdx:]
+		state.Messages.ReplaceHistory(truncated)
+		state.Prune.MidLoopCompacted = true
+
+		tokens := s.countHistory(state)
+		state.Prune.HistoryTokens = tokens
+		slog.Warn("hard-truncated history to recover",
+			"dropped", splitIdx, "kept", len(truncated), "tokens", tokens, "budget", budget)
+		if tokens <= budget {
+			return
+		}
+		// Still over — keep more of the tail dropped (grow keepCount target relative
+		// to the now-shorter history) by retrying against the truncated slice.
+		history = truncated
+		keepCount = max(keepCount-1, 1)
+		if keepCount >= len(history) {
+			return
+		}
+	}
 }
 
 // countHistory counts history + pending tokens via TokenCounter.
