@@ -75,8 +75,17 @@ func (c *Channel) dispatchInboundTurn(turn inboundTurn) {
 	finalContent := turn.content
 	var histMedia []string
 	if turn.peerKind == "group" {
-		if gh := c.GroupHistory(); gh != nil && c.HistoryLimit() > 0 {
-			finalContent, histMedia = gh.BuildContextAndCollectMedia(turn.threadID, turn.content, c.HistoryLimit())
+		if gh := c.GroupHistory(); gh != nil {
+			if c.HistoryLimit() > 0 {
+				finalContent, histMedia = gh.BuildContextAndCollectMedia(turn.threadID, turn.content, c.HistoryLimit())
+			}
+			// Clear the consumed history BEFORE delivery. HandleMessage never touches
+			// GroupHistory, so the net result is identical, but: (1) followups recorded
+			// DURING the agent run (which can take seconds) now survive for the next turn
+			// instead of being wiped by a late post-delivery Clear, and (2) it removes the
+			// race where the dispatch goroutine's Clear lagged the bus publish that
+			// unblocks waiters.
+			gh.Clear(turn.threadID)
 		}
 	}
 
@@ -86,12 +95,6 @@ func (c *Channel) dispatchInboundTurn(turn inboundTurn) {
 
 	c.startTyping(turn.threadID, turn.threadType)
 	c.HandleMessage(turn.senderID, turn.threadID, finalContent, allMedia, turn.metadata, turn.peerKind)
-
-	if turn.peerKind == "group" {
-		if gh := c.GroupHistory(); gh != nil {
-			gh.Clear(turn.threadID)
-		}
-	}
 
 	waitMs := int64(0)
 	if !turn.firstQueuedAt.IsZero() {
