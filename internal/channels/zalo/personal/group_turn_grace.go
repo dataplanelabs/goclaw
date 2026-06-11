@@ -1,12 +1,15 @@
 package personal
 
 import (
+	"context"
 	"log/slog"
 	"maps"
 	"strings"
 	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 type inboundTurn struct {
@@ -53,6 +56,22 @@ func (c *Channel) flushPendingInboundTurns() {
 }
 
 func (c *Channel) dispatchInboundTurn(turn inboundTurn) {
+	// #255: re-check policy at dequeue. A turn accepted under an old policy may have
+	// sat in the coalesce/grace window while the sender was blocked. Re-evaluate just
+	// before running so a now-disallowed sender's queued turn is dropped, not processed.
+	if !c.policyAllowsAtDequeue(turn) {
+		slog.Warn("inbound: dropped — sender no longer allowed by policy at dequeue",
+			"thread_id", turn.threadID,
+			"sender_id", turn.senderID,
+			"peer_kind", turn.peerKind)
+		if turn.peerKind == "group" {
+			if gh := c.GroupHistory(); gh != nil {
+				gh.Clear(turn.threadID)
+			}
+		}
+		return
+	}
+
 	finalContent := turn.content
 	var histMedia []string
 	if turn.peerKind == "group" {
@@ -85,6 +104,22 @@ func (c *Channel) dispatchInboundTurn(turn inboundTurn) {
 		"message_count", max(turn.messageCount, 1),
 		"history_media_count", len(histMedia),
 		"current_media_count", len(turn.media))
+}
+
+// policyAllowsAtDequeue re-evaluates the sender's access policy at the moment a
+// queued turn is about to run. Returns false only on an explicit PolicyDeny (sender
+// removed from allowlist / channel disabled). PolicyNeedsPairing is treated as
+// still-allowed here — pairing was already handled at enqueue and we must not
+// re-trigger a pairing reply from the dequeue path.
+func (c *Channel) policyAllowsAtDequeue(turn inboundTurn) bool {
+	ctx := store.WithTenantID(context.Background(), c.TenantID())
+	var result channels.PolicyResult
+	if turn.peerKind == "group" {
+		result = c.CheckGroupPolicy(ctx, turn.senderID, turn.threadID, c.config.GroupPolicy)
+	} else {
+		result = c.CheckDMPolicy(ctx, turn.senderID, c.config.DMPolicy)
+	}
+	return result != channels.PolicyDeny
 }
 
 func cloneInboundTurn(turn inboundTurn) inboundTurn {
