@@ -80,6 +80,32 @@ func TestPipeline_SetupRunsOnce(t *testing.T) {
 	}
 }
 
+// Durable no-silence: a loop that exhausts MaxIterations without ever signalling
+// BreakLoop/AbortRun (runaway, no final answer) must be marked AbortRun so finalize
+// delivers the fallback instead of dropping the turn silently. It is NOT a cancel.
+func TestPipeline_MaxIterExhaustion_SetsAbortRun(t *testing.T) {
+	t.Parallel()
+	iter := newMockStageNoResult("iter") // never returns BreakLoop/AbortRun
+
+	p := NewPipeline(
+		nil,
+		[]Stage{iter},
+		nil,
+		PipelineDeps{Config: PipelineConfig{MaxIterations: 3}},
+	)
+
+	state := buildMinimalRunState()
+	if _, err := p.Run(context.Background(), state); err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if state.ExitCode != AbortRun {
+		t.Errorf("ExitCode = %v, want AbortRun (max-iter exhaustion → no-silence fallback)", state.ExitCode)
+	}
+	if state.Cancelled {
+		t.Error("Cancelled = true, want false (exhaustion is not a user cancel)")
+	}
+}
+
 func TestPipeline_FinalizeRunsOnce(t *testing.T) {
 	t.Parallel()
 	finalize := newMockStageNoResult("finalize")

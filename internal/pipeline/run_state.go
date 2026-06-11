@@ -41,6 +41,12 @@ type RunState struct {
 	// StandbyMode is set by StandbyGate when a matching schedule window resolves
 	// to ModeStandby — pipeline aborts iteration but finalize still writes memory.
 	StandbyMode bool
+
+	// Cancelled is set when the run context is cancelled at a loop boundary
+	// (user abort / superseding message / shutdown). Finalize uses it to stay
+	// silent instead of delivering the internal-error fallback to a user who
+	// intentionally aborted.
+	Cancelled bool
 }
 
 // NewRunState creates a RunState with identity fields set.

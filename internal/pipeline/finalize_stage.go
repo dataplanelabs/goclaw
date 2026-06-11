@@ -13,6 +13,12 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
+// defaultAbortFallbackMessage is delivered when a run ends empty due to an
+// internal error/limit (not a user cancel), so the user never sees silence.
+// Vietnamese: all current tenants are Vietnamese-only (no English in user-facing
+// text). Per-agent override via PipelineDeps.AbortFallbackMessage.
+const defaultAbortFallbackMessage = "Xin lỗi, mình gặp giới hạn nội bộ nên chưa xử lý xong tin này. Bạn gửi lại giúp mình nhé."
+
 // FinalizeStage runs once after the iteration loop exits. Sanitizes content,
 // deduplicates media, flushes messages, cleans up bootstrap, triggers summarization.
 // Errors are logged, not fatal (pipeline.Run uses context.WithoutCancel for finalize).
@@ -67,15 +73,43 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 			thinkingLen = len(state.Think.LastResponse.Thinking)
 			toolCallsLen = len(state.Think.LastResponse.ToolCalls)
 		}
-		slog.Warn("finalize: empty final content — suppressing delivery",
-			"session", state.Input.SessionKey,
-			"iteration", state.Iteration,
-			"exit_code", state.ExitCode,
-			"thinking_len", thinkingLen,
-			"think_tool_calls", toolCallsLen,
-			"total_tool_calls", state.Tool.TotalToolCalls,
-		)
-		isSilent = true
+		// A run ended with no user-facing content. Deliver a fallback (NEVER go
+		// silent) when this is an internal error/limit:
+		//   - AbortRun  → compaction/truncation/tool-abort, OR max-iteration
+		//     exhaustion (pipeline.go converts a runaway no-break loop to AbortRun).
+		//   - LoopKilled → loop detector killed a tool-spam run (sets BreakLoop).
+		// Stay silent (suppress) for genuine no-reply: normal BreakLoop empty
+		// completion, StandbyMode/IsSilentReply (handled above), and user-cancelled
+		// runs (state.Cancelled — the user aborted/superseded, don't tell them to resend).
+		abnormalExit := state.ExitCode == AbortRun || state.Tool.LoopKilled
+		if abnormalExit && !state.Cancelled {
+			fallback := s.deps.AbortFallbackMessage
+			if fallback == "" {
+				fallback = defaultAbortFallbackMessage
+			}
+			state.Observe.FinalContent = fallback
+			slog.Warn("finalize: run ended empty (abort/exhaustion/loop-kill) — delivering fallback (no silent drop)",
+				"session", state.Input.SessionKey,
+				"iteration", state.Iteration,
+				"exit_code", state.ExitCode,
+				"loop_killed", state.Tool.LoopKilled,
+				"thinking_len", thinkingLen,
+				"think_tool_calls", toolCallsLen,
+				"total_tool_calls", state.Tool.TotalToolCalls,
+			)
+		} else {
+			// Legit no-reply: normal empty completion or user-cancelled run.
+			slog.Warn("finalize: empty final content — suppressing delivery",
+				"session", state.Input.SessionKey,
+				"iteration", state.Iteration,
+				"exit_code", state.ExitCode,
+				"cancelled", state.Cancelled,
+				"thinking_len", thinkingLen,
+				"think_tool_calls", toolCallsLen,
+				"total_tool_calls", state.Tool.TotalToolCalls,
+			)
+			isSilent = true
+		}
 	}
 
 	// 2c. Append content suffix (e.g. image markdown for WS) with dedup.

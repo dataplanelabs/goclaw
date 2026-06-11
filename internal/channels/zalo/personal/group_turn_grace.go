@@ -1,12 +1,15 @@
 package personal
 
 import (
+	"context"
 	"log/slog"
 	"maps"
 	"strings"
 	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 type inboundTurn struct {
@@ -53,11 +56,36 @@ func (c *Channel) flushPendingInboundTurns() {
 }
 
 func (c *Channel) dispatchInboundTurn(turn inboundTurn) {
+	// #255: re-check policy at dequeue. A turn accepted under an old policy may have
+	// sat in the coalesce/grace window while the sender was blocked. Re-evaluate just
+	// before running so a now-disallowed sender's queued turn is dropped, not processed.
+	if !c.policyAllowsAtDequeue(turn) {
+		slog.Warn("inbound: dropped — sender no longer allowed by policy at dequeue",
+			"thread_id", turn.threadID,
+			"sender_id", turn.senderID,
+			"peer_kind", turn.peerKind)
+		if turn.peerKind == "group" {
+			if gh := c.GroupHistory(); gh != nil {
+				gh.Clear(turn.threadID)
+			}
+		}
+		return
+	}
+
 	finalContent := turn.content
 	var histMedia []string
 	if turn.peerKind == "group" {
-		if gh := c.GroupHistory(); gh != nil && c.HistoryLimit() > 0 {
-			finalContent, histMedia = gh.BuildContextAndCollectMedia(turn.threadID, turn.content, c.HistoryLimit())
+		if gh := c.GroupHistory(); gh != nil {
+			if c.HistoryLimit() > 0 {
+				finalContent, histMedia = gh.BuildContextAndCollectMedia(turn.threadID, turn.content, c.HistoryLimit())
+			}
+			// Clear the consumed history BEFORE delivery. HandleMessage never touches
+			// GroupHistory, so the net result is identical, but: (1) followups recorded
+			// DURING the agent run (which can take seconds) now survive for the next turn
+			// instead of being wiped by a late post-delivery Clear, and (2) it removes the
+			// race where the dispatch goroutine's Clear lagged the bus publish that
+			// unblocks waiters.
+			gh.Clear(turn.threadID)
 		}
 	}
 
@@ -67,12 +95,6 @@ func (c *Channel) dispatchInboundTurn(turn inboundTurn) {
 
 	c.startTyping(turn.threadID, turn.threadType)
 	c.HandleMessage(turn.senderID, turn.threadID, finalContent, allMedia, turn.metadata, turn.peerKind)
-
-	if turn.peerKind == "group" {
-		if gh := c.GroupHistory(); gh != nil {
-			gh.Clear(turn.threadID)
-		}
-	}
 
 	waitMs := int64(0)
 	if !turn.firstQueuedAt.IsZero() {
@@ -85,6 +107,22 @@ func (c *Channel) dispatchInboundTurn(turn inboundTurn) {
 		"message_count", max(turn.messageCount, 1),
 		"history_media_count", len(histMedia),
 		"current_media_count", len(turn.media))
+}
+
+// policyAllowsAtDequeue re-evaluates the sender's access policy at the moment a
+// queued turn is about to run. Returns false only on an explicit PolicyDeny (sender
+// removed from allowlist / channel disabled). PolicyNeedsPairing is treated as
+// still-allowed here — pairing was already handled at enqueue and we must not
+// re-trigger a pairing reply from the dequeue path.
+func (c *Channel) policyAllowsAtDequeue(turn inboundTurn) bool {
+	ctx := store.WithTenantID(context.Background(), c.TenantID())
+	var result channels.PolicyResult
+	if turn.peerKind == "group" {
+		result = c.CheckGroupPolicy(ctx, turn.senderID, turn.threadID, c.config.GroupPolicy)
+	} else {
+		result = c.CheckDMPolicy(ctx, turn.senderID, c.config.DMPolicy)
+	}
+	return result != channels.PolicyDeny
 }
 
 func cloneInboundTurn(turn inboundTurn) inboundTurn {
