@@ -417,6 +417,12 @@ func (t *CreateImageTool) callProvider(ctx context.Context, cp credentialProvide
 					"provider", providerName, "provided", len(refs), "cap", codexImageRefCap)
 				refs = refs[:codexImageRefCap]
 			}
+			// Collapse the provider's inner retry: the media chain (ExecuteWithChain)
+			// is the single retry authority. Without this, the provider's
+			// DefaultRetryConfig (3 attempts) multiplies the chain's MaxRetries into
+			// 3×N amplification against a slow/flaky image backend (#254). Scoped to
+			// ctx — does not mutate the shared provider singleton (Chat path keeps retries).
+			ctx = providers.WithSingleAttempt(ctx)
 			result, err := np.GenerateImage(ctx, providers.NativeImageRequest{
 				Model:           parentModel,
 				ImageModel:      imageModel,

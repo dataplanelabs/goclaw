@@ -27,6 +27,8 @@ type RetryHookFunc func(attempt, maxAttempts int, err error)
 
 type retryHookKey struct{}
 
+type singleAttemptKey struct{}
+
 // WithRetryHook injects a retry notification callback into the context.
 // RetryDo will call this hook before each retry attempt.
 func WithRetryHook(ctx context.Context, fn RetryHookFunc) context.Context {
@@ -37,6 +39,34 @@ func WithRetryHook(ctx context.Context, fn RetryHookFunc) context.Context {
 func retryHookFromContext(ctx context.Context) RetryHookFunc {
 	fn, _ := ctx.Value(retryHookKey{}).(RetryHookFunc)
 	return fn
+}
+
+// WithSingleAttempt forces RetryDo to a single attempt regardless of the
+// provider's RetryConfig. Used when a higher layer (e.g. the media provider
+// chain) is the single retry authority, so per-provider retries don't multiply
+// into N×M amplification. Non-mutating — scoped to this ctx only, so the shared
+// provider singleton's RetryConfig (used by the Chat path) is untouched.
+func WithSingleAttempt(ctx context.Context) context.Context {
+	return context.WithValue(ctx, singleAttemptKey{}, true)
+}
+
+// singleAttemptFromContext reports whether RetryDo must collapse to one attempt.
+func singleAttemptFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(singleAttemptKey{}).(bool)
+	return v
+}
+
+// RetryAttemptsForCtx returns the effective attempt count RetryDo would use:
+// configured if the ctx carries no override, else 1. Exported for callers/tests
+// that need to observe the single-attempt override without driving a full RetryDo.
+func RetryAttemptsForCtx(ctx context.Context, configured int) int {
+	if singleAttemptFromContext(ctx) {
+		return 1
+	}
+	if configured <= 0 {
+		return 1
+	}
+	return configured
 }
 
 // DefaultRetryConfig returns sensible defaults matching TS provider retry behavior.
@@ -98,6 +128,9 @@ func IsRetryableError(err error) bool {
 // RetryDo executes fn with retry logic using exponential backoff and jitter.
 func RetryDo[T any](ctx context.Context, cfg RetryConfig, fn func() (T, error)) (T, error) {
 	if cfg.Attempts <= 0 {
+		cfg.Attempts = 1
+	}
+	if singleAttemptFromContext(ctx) {
 		cfg.Attempts = 1
 	}
 

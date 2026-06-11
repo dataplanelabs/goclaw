@@ -318,6 +318,36 @@ func TestRetryDo_ZeroAttempts_DefaultsToOne(t *testing.T) {
 	}
 }
 
+// WithSingleAttempt collapses RetryDo to one attempt regardless of RetryConfig —
+// the media chain relies on this to avoid 3×N retry amplification (#254).
+func TestRetryDo_WithSingleAttempt_CollapsesToOne(t *testing.T) {
+	cfg := RetryConfig{Attempts: 3, MinDelay: time.Millisecond}
+	var calls int
+	ctx := WithSingleAttempt(context.Background())
+	_, err := RetryDo(ctx, cfg, func() (string, error) {
+		calls++
+		return "", &HTTPError{Status: 500} // retryable — would retry 3x without override
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if calls != 1 {
+		t.Fatalf("WithSingleAttempt must collapse to 1 attempt, got %d", calls)
+	}
+}
+
+func TestRetryAttemptsForCtx(t *testing.T) {
+	if got := RetryAttemptsForCtx(context.Background(), 3); got != 3 {
+		t.Errorf("no override: got %d, want 3", got)
+	}
+	if got := RetryAttemptsForCtx(WithSingleAttempt(context.Background()), 3); got != 1 {
+		t.Errorf("with override: got %d, want 1", got)
+	}
+	if got := RetryAttemptsForCtx(context.Background(), 0); got != 1 {
+		t.Errorf("zero configured: got %d, want 1", got)
+	}
+}
+
 // --- HTTPError ---
 
 func TestHTTPError_ErrorString(t *testing.T) {
