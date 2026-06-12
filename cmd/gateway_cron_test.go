@@ -95,6 +95,82 @@ func TestResolveCronPeerKind_NilContactStore_FailsSafeDirect(t *testing.T) {
 	}
 }
 
+// fakeCronSession simulates an isolated cron session that accumulates messages
+// across runs. Reset clears it; Save snapshots the (possibly empty) state to the
+// "DB" so a simulated restart can't reload stale history.
+type fakeCronSession struct {
+	messages []string
+	saved    []string
+	resets   int
+	saves    int
+}
+
+func (f *fakeCronSession) appendRunMessages(n int) {
+	for i := 0; i < n; i++ {
+		f.messages = append(f.messages, "msg")
+	}
+}
+
+func (f *fakeCronSession) Reset(_ context.Context, _ string) {
+	f.messages = nil
+	f.resets++
+}
+
+func (f *fakeCronSession) Save(_ context.Context, _ string) error {
+	f.saved = append([]string(nil), f.messages...)
+	f.saves++
+	return nil
+}
+
+func TestResetCronSessionIfStateless_StatelessDoesNotGrowAcrossRuns(t *testing.T) {
+	sess := &fakeCronSession{}
+	ctx := context.Background()
+
+	// Simulate three runs of a stateless job. Each run appends messages, then the
+	// next run begins with a reset. A stateless session must never carry history.
+	for run := 0; run < 3; run++ {
+		resetCronSessionIfStateless(ctx, sess, "agent:a:cron:job1", true)
+		sess.appendRunMessages(5) // the run's agent turn produces messages
+	}
+
+	if sess.resets != 3 {
+		t.Fatalf("stateless job: expected Reset called once per run (3), got %d", sess.resets)
+	}
+	if sess.saves != 3 {
+		t.Fatalf("stateless job: expected Save called once per run (3), got %d", sess.saves)
+	}
+	// After the last reset+save, the persisted snapshot must be empty so a restart
+	// reloads nothing — history never accumulates run-over-run.
+	if len(sess.saved) != 0 {
+		t.Fatalf("stateless job: persisted session must be empty after reset, got %d messages", len(sess.saved))
+	}
+	// In-memory session only holds the latest run's messages, not all 15.
+	if len(sess.messages) != 5 {
+		t.Fatalf("stateless job: session grew across runs; want 5 (latest run only), got %d", len(sess.messages))
+	}
+}
+
+func TestResetCronSessionIfStateless_NonStatelessRetainsAcrossRuns(t *testing.T) {
+	sess := &fakeCronSession{}
+	ctx := context.Background()
+
+	for run := 0; run < 3; run++ {
+		resetCronSessionIfStateless(ctx, sess, "agent:a:cron:job2", false)
+		sess.appendRunMessages(5)
+	}
+
+	if sess.resets != 0 {
+		t.Fatalf("non-stateless job: Reset must never be called, got %d", sess.resets)
+	}
+	if sess.saves != 0 {
+		t.Fatalf("non-stateless job: Save must not be called by reset helper, got %d", sess.saves)
+	}
+	// Non-stateless intentionally carries history: all three runs accumulate.
+	if len(sess.messages) != 15 {
+		t.Fatalf("non-stateless job: expected history to carry across runs (15), got %d", len(sess.messages))
+	}
+}
+
 func TestBuildCronTargetHistoryContext_FormatsRecentMessages(t *testing.T) {
 	history := []providers.Message{
 		{Role: "user", Content: "[From: Alice (uid:1)] morning"},
