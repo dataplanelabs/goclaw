@@ -17,6 +17,27 @@ import (
 
 var cronSlugRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
+const (
+	cronHistoryLimitDefault = 50
+	cronHistoryLimitMin     = 5
+	cronHistoryLimitMax     = 200
+)
+
+// normalizeCronHistoryLimit resolves the per-cron history look-back: default
+// when unset/non-positive, clamped to a sane range otherwise.
+func normalizeCronHistoryLimit(v *int) int {
+	if v == nil || *v <= 0 {
+		return cronHistoryLimitDefault
+	}
+	if *v < cronHistoryLimitMin {
+		return cronHistoryLimitMin
+	}
+	if *v > cronHistoryLimitMax {
+		return cronHistoryLimitMax
+	}
+	return *v
+}
+
 // validateCronDelivery returns a localized error message when deliver=true is
 // set but the channel/target fields are empty. Returns "" when the spec is
 // internally consistent (deliver=false ignores empty fields).
@@ -87,7 +108,9 @@ func (m *CronMethods) handleCreate(ctx context.Context, client *gateway.Client, 
 		WakeHeartbeat       bool               `json:"wakeHeartbeat"`
 		Stateless           *bool              `json:"stateless"`           // default true for new crons
 		InjectTargetHistory *bool              `json:"injectTargetHistory"` // default true for new crons
-		AgentID             string             `json:"agentId"`
+		// InjectTargetHistoryLimit defaults to 50, clamped to [5, 200].
+		InjectTargetHistoryLimit *int   `json:"injectTargetHistoryLimit"`
+		AgentID                  string `json:"agentId"`
 		// WriteOnlyHash is an opaque hash supplied by external reconcilers
 		// (gcplane) to detect drift in write-only fields. Stored as-is.
 		WriteOnlyHash string `json:"writeOnlyHash"`
@@ -129,8 +152,13 @@ func (m *CronMethods) handleCreate(ctx context.Context, client *gateway.Client, 
 	if params.InjectTargetHistory != nil {
 		injectTargetHistoryVal = *params.InjectTargetHistory
 	}
+	injectTargetHistoryLimitVal := normalizeCronHistoryLimit(params.InjectTargetHistoryLimit)
 	{
-		patch := store.CronJobPatch{Stateless: &statelessVal, InjectTargetHistory: &injectTargetHistoryVal}
+		patch := store.CronJobPatch{
+			Stateless:                &statelessVal,
+			InjectTargetHistory:      &injectTargetHistoryVal,
+			InjectTargetHistoryLimit: &injectTargetHistoryLimitVal,
+		}
 		if params.WakeHeartbeat {
 			patch.WakeHeartbeat = &params.WakeHeartbeat
 		}
@@ -271,6 +299,11 @@ func (m *CronMethods) handleUpdate(ctx context.Context, client *gateway.Client, 
 			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, msg))
 			return
 		}
+	}
+
+	if params.Patch.InjectTargetHistoryLimit != nil {
+		normalized := normalizeCronHistoryLimit(params.Patch.InjectTargetHistoryLimit)
+		params.Patch.InjectTargetHistoryLimit = &normalized
 	}
 
 	job, err := m.service.UpdateJob(ctx, jobID, params.Patch)

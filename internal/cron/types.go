@@ -55,6 +55,8 @@ type Job struct {
 	DeliverTo           string   `json:"deliverTo"`
 	WakeHeartbeat       bool     `json:"wakeHeartbeat"`
 	InjectTargetHistory bool     `json:"injectTargetHistory"`
+
+	InjectTargetHistoryLimit int `json:"injectTargetHistoryLimit"`
 }
 
 // Store is the persistent store for all cron jobs.
@@ -78,6 +80,8 @@ type JobPatch struct {
 	DeliverTo           *string   `json:"deliverTo,omitempty"`
 	WakeHeartbeat       *bool     `json:"wakeHeartbeat,omitempty"`
 	InjectTargetHistory *bool     `json:"injectTargetHistory,omitempty"`
+
+	InjectTargetHistoryLimit *int `json:"injectTargetHistoryLimit,omitempty"`
 }
 
 // RunLogEntry is an in-memory record of a job execution.

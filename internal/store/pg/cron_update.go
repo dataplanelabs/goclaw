@@ -92,6 +92,9 @@ func (s *PGCronStore) UpdateJob(ctx context.Context, jobID string, patch store.C
 	if patch.InjectTargetHistory != nil {
 		updates["inject_target_history"] = *patch.InjectTargetHistory
 	}
+	if patch.InjectTargetHistoryLimit != nil {
+		updates["inject_target_history_limit"] = *patch.InjectTargetHistoryLimit
+	}
 	if patch.WriteOnlyHash != nil {
 		updates["write_only_hash"] = *patch.WriteOnlyHash
 	}

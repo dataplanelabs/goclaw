@@ -49,6 +49,10 @@ func (m *mockRowScanner) Scan(dest ...any) error {
 			if v, ok := m.values[i].(bool); ok {
 				*dp = v
 			}
+		case *int:
+			if v, ok := m.values[i].(int); ok {
+				*dp = v
+			}
 		case **time.Time:
 			if v, ok := m.values[i].(*time.Time); ok {
 				*dp = v
@@ -97,6 +101,7 @@ func validCronRow(payloadJSON []byte) []any {
 		"",                // deliver_to
 		false,             // wake_heartbeat
 		true,              // inject_target_history
+		50,                // inject_target_history_limit
 		(*time.Time)(nil), // next_run_at
 		(*time.Time)(nil), // last_run_at
 		(*string)(nil),    // last_status
@@ -132,11 +137,12 @@ func TestScanCronRow_ValidPayload(t *testing.T) {
 	// Build row with deliver/deliver_channel/deliver_to set as dedicated columns.
 	rowVals := validCronRow(payloadJSON)
 	// Indices: stateless=13, deliver=14, deliver_channel=15, deliver_to=16,
-	// wake_heartbeat=17, inject_target_history=18
+	// wake_heartbeat=17, inject_target_history=18, inject_target_history_limit=19
 	rowVals[14] = true       // deliver
 	rowVals[15] = "telegram" // deliver_channel
 	rowVals[16] = "user123"  // deliver_to
 	rowVals[18] = true       // inject_target_history
+	rowVals[19] = 80         // inject_target_history_limit
 	row := &mockRowScanner{values: rowVals}
 
 	job, err := scanCronRow(row)
@@ -159,6 +165,9 @@ func TestScanCronRow_ValidPayload(t *testing.T) {
 	if !job.InjectTargetHistory {
 		t.Errorf("expected InjectTargetHistory true")
 	}
+	if job.InjectTargetHistoryLimit != 80 {
+		t.Errorf("expected InjectTargetHistoryLimit 80, got %d", job.InjectTargetHistoryLimit)
+	}
 }
 
 // TestScanCronRow_InjectTargetHistory round-trips the inject_target_history column.
@@ -174,6 +183,23 @@ func TestScanCronRow_InjectTargetHistory(t *testing.T) {
 		}
 		if job.InjectTargetHistory != want {
 			t.Errorf("InjectTargetHistory round-trip: want %v, got %v", want, job.InjectTargetHistory)
+		}
+	}
+}
+
+// TestScanCronRow_InjectTargetHistoryLimit round-trips the inject_target_history_limit column.
+func TestScanCronRow_InjectTargetHistoryLimit(t *testing.T) {
+	payloadJSON, _ := json.Marshal(store.CronPayload{Kind: "message", Message: "hi"})
+
+	for _, want := range []int{5, 50, 200} {
+		rowVals := validCronRow(payloadJSON)
+		rowVals[19] = want // inject_target_history_limit
+		job, err := scanCronRow(&mockRowScanner{values: rowVals})
+		if err != nil {
+			t.Fatalf("scanCronRow error: %v", err)
+		}
+		if job.InjectTargetHistoryLimit != want {
+			t.Errorf("InjectTargetHistoryLimit round-trip: want %d, got %d", want, job.InjectTargetHistoryLimit)
 		}
 	}
 }

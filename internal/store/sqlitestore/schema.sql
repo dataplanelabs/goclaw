@@ -475,6 +475,7 @@ CREATE TABLE IF NOT EXISTS cron_jobs (
     deliver_to       TEXT NOT NULL DEFAULT '',
     wake_heartbeat   INTEGER NOT NULL DEFAULT 0,
     inject_target_history INTEGER NOT NULL DEFAULT 1,
+    inject_target_history_limit INTEGER NOT NULL DEFAULT 50,
     next_run_at      TEXT,
     last_run_at      TEXT,
     last_status      VARCHAR(20),

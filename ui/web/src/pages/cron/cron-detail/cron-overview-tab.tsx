@@ -29,6 +29,11 @@ interface CronOverviewTabProps {
 
 type ScheduleKind = "every" | "cron" | "at";
 
+export function clampHistoryLimit(v: number): number {
+  if (!Number.isFinite(v) || v <= 0) return 50;
+  return Math.min(200, Math.max(5, Math.round(v)));
+}
+
 function getEverySeconds(job: CronJob): string {
   if (job.schedule.kind === "every" && job.schedule.everyMs) {
     return String(job.schedule.everyMs / 1000);
@@ -60,6 +65,7 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
   const [to, setTo] = useState(job.deliverTo ?? "");
   const [wakeHeartbeat, setWakeHeartbeat] = useState(job.wakeHeartbeat ?? false);
   const [injectTargetHistory, setInjectTargetHistory] = useState(job.injectTargetHistory ?? true);
+  const [injectTargetHistoryLimit, setInjectTargetHistoryLimit] = useState(job.injectTargetHistoryLimit ?? 50);
   const [targets, setTargets] = useState<DeliveryTarget[]>([]);
 
   // Lifecycle fields
@@ -106,6 +112,7 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
         deliverTo: deliver ? to.trim() || undefined : undefined,
         wakeHeartbeat,
         injectTargetHistory,
+        injectTargetHistoryLimit: clampHistoryLimit(injectTargetHistoryLimit),
         deleteAfterRun,
         stateless,
       };
@@ -174,6 +181,8 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
         setWakeHeartbeat={setWakeHeartbeat}
         injectTargetHistory={injectTargetHistory}
         setInjectTargetHistory={setInjectTargetHistory}
+        injectTargetHistoryLimit={injectTargetHistoryLimit}
+        setInjectTargetHistoryLimit={setInjectTargetHistoryLimit}
         channelNames={channelNames}
         targets={targets}
         readonly={readonly}

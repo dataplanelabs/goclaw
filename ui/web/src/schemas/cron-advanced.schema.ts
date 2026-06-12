@@ -7,6 +7,7 @@ export const cronAdvancedSchema = z.object({
   to: z.string(),
   wakeHeartbeat: z.boolean(),
   injectTargetHistory: z.boolean(),
+  injectTargetHistoryLimit: z.number().int().min(5).max(200),
   deleteAfterRun: z.boolean(),
   stateless: z.boolean(),
 });
