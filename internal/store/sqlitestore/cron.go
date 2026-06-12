@@ -124,7 +124,7 @@ func scanCronRow(row cronRowScanner) (*store.CronJob, error) {
 	var userID *string
 	var name, scheduleKind string
 	var enabled, deleteAfterRun bool
-	var stateless, deliver, wakeHeartbeat bool
+	var stateless, deliver, wakeHeartbeat, injectTargetHistory bool
 	var deliverChannel, deliverTo string
 	var cronExpr, tz, lastStatus, lastError *string
 	var runAt, nextRunAt, lastRunAt nullSqliteTime
@@ -134,7 +134,7 @@ func scanCronRow(row cronRowScanner) (*store.CronJob, error) {
 	createdAt, updatedAt := scanTimePair()
 
 	err := row.Scan(&id, &tenantID, &agentID, &userID, &name, &enabled, &scheduleKind, &cronExpr, &runAt, &tz,
-		&intervalMS, &payloadJSON, &deleteAfterRun, &stateless, &deliver, &deliverChannel, &deliverTo, &wakeHeartbeat,
+		&intervalMS, &payloadJSON, &deleteAfterRun, &stateless, &deliver, &deliverChannel, &deliverTo, &wakeHeartbeat, &injectTargetHistory,
 		&nextRunAt, &lastRunAt, &lastStatus, &lastError, &writeOnlyHash,
 		createdAt, updatedAt)
 	if err != nil {
@@ -149,21 +149,22 @@ func scanCronRow(row cronRowScanner) (*store.CronJob, error) {
 	}
 
 	job := &store.CronJob{
-		ID:             id.String(),
-		TenantID:       tenantID,
-		Name:           name,
-		Enabled:        enabled,
-		Schedule:       store.CronSchedule{Kind: scheduleKind},
-		Payload:        payload,
-		CreatedAtMS:    createdAt.Time.UnixMilli(),
-		UpdatedAtMS:    updatedAt.Time.UnixMilli(),
-		DeleteAfterRun: deleteAfterRun,
-		Stateless:      stateless,
-		Deliver:        deliver,
-		DeliverChannel: deliverChannel,
-		DeliverTo:      deliverTo,
-		WakeHeartbeat:  wakeHeartbeat,
-		WriteOnlyHash:  writeOnlyHash,
+		ID:                  id.String(),
+		TenantID:            tenantID,
+		Name:                name,
+		Enabled:             enabled,
+		Schedule:            store.CronSchedule{Kind: scheduleKind},
+		Payload:             payload,
+		CreatedAtMS:         createdAt.Time.UnixMilli(),
+		UpdatedAtMS:         updatedAt.Time.UnixMilli(),
+		DeleteAfterRun:      deleteAfterRun,
+		Stateless:           stateless,
+		Deliver:             deliver,
+		DeliverChannel:      deliverChannel,
+		DeliverTo:           deliverTo,
+		WakeHeartbeat:       wakeHeartbeat,
+		InjectTargetHistory: injectTargetHistory,
+		WriteOnlyHash:       writeOnlyHash,
 	}
 
 	if agentID != nil {
@@ -210,7 +211,7 @@ func computeNextRun(schedule *store.CronSchedule, now time.Time, defaultTZ strin
 
 func (s *SQLiteCronStore) scanJob(ctx context.Context, id uuid.UUID) (*store.CronJob, error) {
 	q := `SELECT id, tenant_id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
-		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat,
+		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat, inject_target_history,
 		 next_run_at, last_run_at, last_status, last_error, write_only_hash,
 		 created_at, updated_at FROM cron_jobs WHERE id = ?`
 	args := []any{id}

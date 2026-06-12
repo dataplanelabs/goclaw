@@ -39,21 +39,22 @@ type JobState struct {
 
 // Job represents a scheduled cron job.
 type Job struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	AgentID        string   `json:"agentId,omitempty"`
-	Enabled        bool     `json:"enabled"`
-	Schedule       Schedule `json:"schedule"`
-	Payload        Payload  `json:"payload"`
-	State          JobState `json:"state"`
-	CreatedAtMS    int64    `json:"createdAtMs"`
-	UpdatedAtMS    int64    `json:"updatedAtMs"`
-	DeleteAfterRun bool     `json:"deleteAfterRun,omitempty"`
-	Stateless      bool     `json:"stateless"`
-	Deliver        bool     `json:"deliver"`
-	DeliverChannel string   `json:"deliverChannel"`
-	DeliverTo      string   `json:"deliverTo"`
-	WakeHeartbeat  bool     `json:"wakeHeartbeat"`
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	AgentID             string   `json:"agentId,omitempty"`
+	Enabled             bool     `json:"enabled"`
+	Schedule            Schedule `json:"schedule"`
+	Payload             Payload  `json:"payload"`
+	State               JobState `json:"state"`
+	CreatedAtMS         int64    `json:"createdAtMs"`
+	UpdatedAtMS         int64    `json:"updatedAtMs"`
+	DeleteAfterRun      bool     `json:"deleteAfterRun,omitempty"`
+	Stateless           bool     `json:"stateless"`
+	Deliver             bool     `json:"deliver"`
+	DeliverChannel      string   `json:"deliverChannel"`
+	DeliverTo           string   `json:"deliverTo"`
+	WakeHeartbeat       bool     `json:"wakeHeartbeat"`
+	InjectTargetHistory bool     `json:"injectTargetHistory"`
 }
 
 // Store is the persistent store for all cron jobs.
@@ -65,17 +66,18 @@ type Store struct {
 // JobPatch holds optional fields for updating a job.
 // Only non-zero/non-nil fields are applied. Matching TS CronJobPatch.
 type JobPatch struct {
-	Name           string    `json:"name,omitempty"`
-	AgentID        *string   `json:"agentId,omitempty"`
-	Enabled        *bool     `json:"enabled,omitempty"`
-	Schedule       *Schedule `json:"schedule,omitempty"`
-	Message        string    `json:"message,omitempty"`
-	DeleteAfterRun *bool     `json:"deleteAfterRun,omitempty"`
-	Stateless      *bool     `json:"stateless,omitempty"`
-	Deliver        *bool     `json:"deliver,omitempty"`
-	DeliverChannel *string   `json:"deliverChannel,omitempty"`
-	DeliverTo      *string   `json:"deliverTo,omitempty"`
-	WakeHeartbeat  *bool     `json:"wakeHeartbeat,omitempty"`
+	Name                string    `json:"name,omitempty"`
+	AgentID             *string   `json:"agentId,omitempty"`
+	Enabled             *bool     `json:"enabled,omitempty"`
+	Schedule            *Schedule `json:"schedule,omitempty"`
+	Message             string    `json:"message,omitempty"`
+	DeleteAfterRun      *bool     `json:"deleteAfterRun,omitempty"`
+	Stateless           *bool     `json:"stateless,omitempty"`
+	Deliver             *bool     `json:"deliver,omitempty"`
+	DeliverChannel      *string   `json:"deliverChannel,omitempty"`
+	DeliverTo           *string   `json:"deliverTo,omitempty"`
+	WakeHeartbeat       *bool     `json:"wakeHeartbeat,omitempty"`
+	InjectTargetHistory *bool     `json:"injectTargetHistory,omitempty"`
 }
 
 // RunLogEntry is an in-memory record of a job execution.

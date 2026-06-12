@@ -7,4 +7,4 @@ package upgrade
 // migration file in ./migrations — so the next person who adds a migration
 // without bumping the constant gets a CI failure instead of a silent skip in
 // prod (see commit history around 000059_cron_write_only_hash).
-const RequiredSchemaVersion uint = 78
+const RequiredSchemaVersion uint = 79

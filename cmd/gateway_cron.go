@@ -12,9 +12,18 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/scheduler"
 	"github.com/nextlevelbuilder/goclaw/internal/sessions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+)
+
+const (
+	cronTargetHistoryLimit    = 30
+	cronTargetHistoryCharsCap = 6000
+	// Per-message rune clamp so a single huge target-chat message (e.g. a pasted
+	// document) can't blow the cron context budget. UTF-8/rune-safe.
+	cronTargetHistoryMsgRunes = 600
 )
 
 // makeCronJobHandler creates a cron job handler that routes through the scheduler's cron lane.
@@ -82,6 +91,18 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 		cronCtx, cancelCron := context.WithTimeout(context.Background(), jobTimeout)
 		defer cancelCron()
 		cronCtx = store.WithTenantID(cronCtx, job.TenantID)
+
+		// Seed read-only target-chat history so the agent sees who already responded.
+		// The cron runs in an isolated session and is otherwise blind to the group session.
+		if job.InjectTargetHistory && job.Deliver && job.DeliverChannel != "" && job.DeliverTo != "" {
+			targetKey := sessions.BuildSessionKey(agentID, job.DeliverChannel, sessions.PeerKind(peerKind), job.DeliverTo)
+			// GetHistory on the store-backed session manager hydrates from DB when the
+			// session is cold (post-restart), so this is robust across pod restarts.
+			history := sessionMgr.GetHistory(cronCtx, targetKey)
+			if block := buildCronTargetHistoryContext(history); block != "" {
+				extraPrompt += block
+			}
+		}
 
 		// Reset session before each cron run to prevent tool errors from previous
 		// runs from polluting the context and blocking future executions (#294).
@@ -190,4 +211,50 @@ func resolveCronPeerKind(ctx context.Context, job *store.CronJob, contactStore s
 		return "group"
 	}
 	return "direct"
+}
+
+// buildCronTargetHistoryContext formats the tail of a target chat's history into a
+// clearly-labeled read-only block for the cron's system prompt. Returns "" when
+// there is no usable history. Bounds output by cronTargetHistoryLimit (last N
+// messages) and cronTargetHistoryCharsCap (total chars) to keep tokens in budget.
+func buildCronTargetHistoryContext(history []providers.Message) string {
+	if len(history) == 0 {
+		return ""
+	}
+
+	start := 0
+	if len(history) > cronTargetHistoryLimit {
+		start = len(history) - cronTargetHistoryLimit
+	}
+	recent := history[start:]
+
+	// Walk newest-to-oldest so the char cap drops the OLDEST lines first.
+	var lines []string
+	total := 0
+	for i := len(recent) - 1; i >= 0; i-- {
+		content := strings.TrimSpace(recent[i].Content)
+		if content == "" {
+			continue
+		}
+		if r := []rune(content); len(r) > cronTargetHistoryMsgRunes {
+			content = string(r[:cronTargetHistoryMsgRunes]) + "…"
+		}
+		line := recent[i].Role + ": " + content
+		if total+len(line) > cronTargetHistoryCharsCap && len(lines) > 0 {
+			break
+		}
+		lines = append(lines, line)
+		total += len(line)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+
+	// Restore chronological order (oldest first).
+	for l, r := 0, len(lines)-1; l < r; l, r = l+1, r-1 {
+		lines[l], lines[r] = lines[r], lines[l]
+	}
+
+	return "\n\n[Recent messages in the target chat — READ-ONLY context so you can see who already responded. Do NOT quote, echo, or list these; never print UIDs.]\n" +
+		strings.Join(lines, "\n")
 }

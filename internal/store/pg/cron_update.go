@@ -89,6 +89,9 @@ func (s *PGCronStore) UpdateJob(ctx context.Context, jobID string, patch store.C
 	if patch.WakeHeartbeat != nil {
 		updates["wake_heartbeat"] = *patch.WakeHeartbeat
 	}
+	if patch.InjectTargetHistory != nil {
+		updates["inject_target_history"] = *patch.InjectTargetHistory
+	}
 	if patch.WriteOnlyHash != nil {
 		updates["write_only_hash"] = *patch.WriteOnlyHash
 	}
