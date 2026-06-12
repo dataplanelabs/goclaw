@@ -78,15 +78,16 @@ func (m *CronMethods) handleList(ctx context.Context, client *gateway.Client, re
 func (m *CronMethods) handleCreate(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	locale := store.LocaleFromContext(ctx)
 	var params struct {
-		Name           string             `json:"name"`
-		Schedule       store.CronSchedule `json:"schedule"`
-		Message        string             `json:"message"`
-		Deliver        bool               `json:"deliver"`
-		DeliverChannel string             `json:"deliverChannel"`
-		DeliverTo      string             `json:"deliverTo"`
-		WakeHeartbeat  bool               `json:"wakeHeartbeat"`
-		Stateless      *bool              `json:"stateless"` // default true for new crons
-		AgentID        string             `json:"agentId"`
+		Name                string             `json:"name"`
+		Schedule            store.CronSchedule `json:"schedule"`
+		Message             string             `json:"message"`
+		Deliver             bool               `json:"deliver"`
+		DeliverChannel      string             `json:"deliverChannel"`
+		DeliverTo           string             `json:"deliverTo"`
+		WakeHeartbeat       bool               `json:"wakeHeartbeat"`
+		Stateless           *bool              `json:"stateless"`           // default true for new crons
+		InjectTargetHistory *bool              `json:"injectTargetHistory"` // default true for new crons
+		AgentID             string             `json:"agentId"`
 		// WriteOnlyHash is an opaque hash supplied by external reconcilers
 		// (gcplane) to detect drift in write-only fields. Stored as-is.
 		WriteOnlyHash string `json:"writeOnlyHash"`
@@ -124,8 +125,12 @@ func (m *CronMethods) handleCreate(ctx context.Context, client *gateway.Client, 
 	if params.Stateless != nil {
 		statelessVal = *params.Stateless
 	}
+	injectTargetHistoryVal := true
+	if params.InjectTargetHistory != nil {
+		injectTargetHistoryVal = *params.InjectTargetHistory
+	}
 	{
-		patch := store.CronJobPatch{Stateless: &statelessVal}
+		patch := store.CronJobPatch{Stateless: &statelessVal, InjectTargetHistory: &injectTargetHistoryVal}
 		if params.WakeHeartbeat {
 			patch.WakeHeartbeat = &params.WakeHeartbeat
 		}

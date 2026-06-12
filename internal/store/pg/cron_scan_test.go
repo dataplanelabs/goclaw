@@ -78,30 +78,31 @@ func validCronRow(payloadJSON []byte) []any {
 	expr := "*/5 * * * *"
 	tz := "UTC"
 	return []any{
-		id,                  // id
-		tenantID,            // tenant_id
-		(*uuid.UUID)(nil),   // agent_id
-		(*string)(nil),      // user_id
-		"test-job",          // name
-		true,                // enabled
-		"cron",              // schedule_kind
-		&expr,               // cron_expression
-		(*time.Time)(nil),   // run_at
-		&tz,                 // timezone
-		(*int64)(nil),       // interval_ms
-		payloadJSON,         // payload
-		false,               // delete_after_run
-		false,               // stateless
-		false,               // deliver
-		"",                  // deliver_channel
-		"",                  // deliver_to
-		false,               // wake_heartbeat
-		(*time.Time)(nil),   // next_run_at
-		(*time.Time)(nil),   // last_run_at
-		(*string)(nil),      // last_status
-		(*string)(nil),      // last_error
-		now,                 // created_at
-		now,                 // updated_at
+		id,                // id
+		tenantID,          // tenant_id
+		(*uuid.UUID)(nil), // agent_id
+		(*string)(nil),    // user_id
+		"test-job",        // name
+		true,              // enabled
+		"cron",            // schedule_kind
+		&expr,             // cron_expression
+		(*time.Time)(nil), // run_at
+		&tz,               // timezone
+		(*int64)(nil),     // interval_ms
+		payloadJSON,       // payload
+		false,             // delete_after_run
+		false,             // stateless
+		false,             // deliver
+		"",                // deliver_channel
+		"",                // deliver_to
+		false,             // wake_heartbeat
+		true,              // inject_target_history
+		(*time.Time)(nil), // next_run_at
+		(*time.Time)(nil), // last_run_at
+		(*string)(nil),    // last_status
+		(*string)(nil),    // last_error
+		now,               // created_at
+		now,               // updated_at
 	}
 }
 
@@ -130,10 +131,12 @@ func TestScanCronRow_ValidPayload(t *testing.T) {
 
 	// Build row with deliver/deliver_channel/deliver_to set as dedicated columns.
 	rowVals := validCronRow(payloadJSON)
-	// Indices: stateless=13, deliver=14, deliver_channel=15, deliver_to=16, wake_heartbeat=17
-	rowVals[14] = true      // deliver
+	// Indices: stateless=13, deliver=14, deliver_channel=15, deliver_to=16,
+	// wake_heartbeat=17, inject_target_history=18
+	rowVals[14] = true       // deliver
 	rowVals[15] = "telegram" // deliver_channel
-	rowVals[16] = "user123" // deliver_to
+	rowVals[16] = "user123"  // deliver_to
+	rowVals[18] = true       // inject_target_history
 	row := &mockRowScanner{values: rowVals}
 
 	job, err := scanCronRow(row)
@@ -152,6 +155,26 @@ func TestScanCronRow_ValidPayload(t *testing.T) {
 	}
 	if !job.Deliver {
 		t.Errorf("expected Deliver true")
+	}
+	if !job.InjectTargetHistory {
+		t.Errorf("expected InjectTargetHistory true")
+	}
+}
+
+// TestScanCronRow_InjectTargetHistory round-trips the inject_target_history column.
+func TestScanCronRow_InjectTargetHistory(t *testing.T) {
+	payloadJSON, _ := json.Marshal(store.CronPayload{Kind: "message", Message: "hi"})
+
+	for _, want := range []bool{true, false} {
+		rowVals := validCronRow(payloadJSON)
+		rowVals[18] = want // inject_target_history
+		job, err := scanCronRow(&mockRowScanner{values: rowVals})
+		if err != nil {
+			t.Fatalf("scanCronRow error: %v", err)
+		}
+		if job.InjectTargetHistory != want {
+			t.Errorf("InjectTargetHistory round-trip: want %v, got %v", want, job.InjectTargetHistory)
+		}
 	}
 }
 

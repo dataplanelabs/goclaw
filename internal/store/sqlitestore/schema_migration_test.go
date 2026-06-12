@@ -474,6 +474,11 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`DROP TABLE IF EXISTS vieneu_cloned_voices`)
 	}
 
+	if targetVersion < 49 {
+		// Migration 48→49 adds cron_jobs.inject_target_history.
+		db.Exec(`ALTER TABLE cron_jobs DROP COLUMN inject_target_history`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db

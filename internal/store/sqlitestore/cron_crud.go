@@ -99,7 +99,7 @@ func (s *SQLiteCronStore) GetJob(ctx context.Context, jobID string) (*store.Cron
 
 func (s *SQLiteCronStore) ListJobs(ctx context.Context, includeDisabled bool, agentID, userID string) []store.CronJob {
 	q := `SELECT id, tenant_id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
-		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat,
+		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat, inject_target_history,
 		 next_run_at, last_run_at, last_status, last_error, write_only_hash,
 		 created_at, updated_at FROM cron_jobs WHERE 1=1`
 
@@ -300,6 +300,9 @@ func (s *SQLiteCronStore) UpdateJob(ctx context.Context, jobID string, patch sto
 	}
 	if patch.WakeHeartbeat != nil {
 		updates["wake_heartbeat"] = *patch.WakeHeartbeat
+	}
+	if patch.InjectTargetHistory != nil {
+		updates["inject_target_history"] = *patch.InjectTargetHistory
 	}
 	if patch.WriteOnlyHash != nil {
 		updates["write_only_hash"] = *patch.WriteOnlyHash

@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -88,5 +90,73 @@ func TestResolveCronPeerKind_NilContactStore_FailsSafeDirect(t *testing.T) {
 	got := resolveCronPeerKind(context.Background(), job, nil)
 	if got != "direct" {
 		t.Errorf("nil contact-store → want %q, got %q", "direct", got)
+	}
+}
+
+func TestBuildCronTargetHistoryContext_FormatsRecentMessages(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "[From: Alice (uid:1)] morning"},
+		{Role: "assistant", Content: "chào Alice"},
+		{Role: "user", Content: "[From: Bob (uid:2)] đã xong report"},
+	}
+	got := buildCronTargetHistoryContext(history)
+	if !strings.Contains(got, "READ-ONLY") {
+		t.Fatalf("block missing READ-ONLY label: %q", got)
+	}
+	for _, want := range []string{"morning", "chào Alice", "đã xong report"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("block missing %q; got %q", want, got)
+		}
+	}
+	// Chronological order preserved (oldest first).
+	if strings.Index(got, "morning") > strings.Index(got, "đã xong report") {
+		t.Errorf("messages out of order: %q", got)
+	}
+}
+
+func TestBuildCronTargetHistoryContext_EmptyReturnsNothing(t *testing.T) {
+	if got := buildCronTargetHistoryContext(nil); got != "" {
+		t.Errorf("nil history → want empty, got %q", got)
+	}
+	blank := []providers.Message{{Role: "user", Content: "   "}}
+	if got := buildCronTargetHistoryContext(blank); got != "" {
+		t.Errorf("blank-only history → want empty, got %q", got)
+	}
+}
+
+func TestBuildCronTargetHistoryContext_LimitsToLastN(t *testing.T) {
+	var history []providers.Message
+	for i := 0; i < cronTargetHistoryLimit+10; i++ {
+		marker := "msg-keep"
+		if i < 10 {
+			marker = "msg-old-dropped"
+		}
+		history = append(history, providers.Message{Role: "user", Content: marker})
+	}
+	got := buildCronTargetHistoryContext(history)
+	if strings.Contains(got, "msg-old-dropped") {
+		t.Errorf("expected oldest messages beyond limit to be dropped; got %q", got)
+	}
+	if strings.Count(got, "msg-keep") != cronTargetHistoryLimit {
+		t.Errorf("expected %d kept lines, got %d", cronTargetHistoryLimit, strings.Count(got, "msg-keep"))
+	}
+}
+
+func TestBuildCronTargetHistoryContext_CharCapDropsOldest(t *testing.T) {
+	long := strings.Repeat("x", 2000)
+	history := []providers.Message{
+		{Role: "user", Content: "oldest-" + long},
+		{Role: "user", Content: "mid-" + long},
+		{Role: "user", Content: "newest-" + long},
+	}
+	got := buildCronTargetHistoryContext(history)
+	if len(got) > cronTargetHistoryCharsCap+500 {
+		t.Errorf("output exceeds char cap budget: %d", len(got))
+	}
+	if !strings.Contains(got, "newest-") {
+		t.Errorf("newest message must always be kept; got len %d", len(got))
+	}
+	if strings.Contains(got, "oldest-") {
+		t.Errorf("oldest message should be dropped by char cap; got len %d", len(got))
 	}
 }

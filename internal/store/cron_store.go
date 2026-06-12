@@ -18,23 +18,24 @@ var (
 
 // CronJob represents a scheduled job.
 type CronJob struct {
-	ID             string       `json:"id" db:"id"`
-	TenantID       uuid.UUID    `json:"tenantId,omitempty" db:"tenant_id"`
-	Name           string       `json:"name" db:"name"`
-	AgentID        string       `json:"agentId,omitempty" db:"agent_id"`
-	UserID         string       `json:"userId,omitempty" db:"user_id"`
-	Enabled        bool         `json:"enabled" db:"enabled"`
-	Schedule       CronSchedule `json:"schedule" db:"-"`
-	Payload        CronPayload  `json:"payload" db:"-"`
-	State          CronJobState `json:"state" db:"-"`
-	CreatedAtMS    int64        `json:"createdAtMs" db:"-"`
-	UpdatedAtMS    int64        `json:"updatedAtMs" db:"-"`
-	DeleteAfterRun bool         `json:"deleteAfterRun,omitempty" db:"delete_after_run"`
-	Stateless      bool         `json:"stateless" db:"stateless"`
-	Deliver        bool         `json:"deliver" db:"deliver"`
-	DeliverChannel string       `json:"deliverChannel" db:"deliver_channel"`
-	DeliverTo      string       `json:"deliverTo" db:"deliver_to"`
-	WakeHeartbeat  bool         `json:"wakeHeartbeat" db:"wake_heartbeat"`
+	ID                  string       `json:"id" db:"id"`
+	TenantID            uuid.UUID    `json:"tenantId,omitempty" db:"tenant_id"`
+	Name                string       `json:"name" db:"name"`
+	AgentID             string       `json:"agentId,omitempty" db:"agent_id"`
+	UserID              string       `json:"userId,omitempty" db:"user_id"`
+	Enabled             bool         `json:"enabled" db:"enabled"`
+	Schedule            CronSchedule `json:"schedule" db:"-"`
+	Payload             CronPayload  `json:"payload" db:"-"`
+	State               CronJobState `json:"state" db:"-"`
+	CreatedAtMS         int64        `json:"createdAtMs" db:"-"`
+	UpdatedAtMS         int64        `json:"updatedAtMs" db:"-"`
+	DeleteAfterRun      bool         `json:"deleteAfterRun,omitempty" db:"delete_after_run"`
+	Stateless           bool         `json:"stateless" db:"stateless"`
+	Deliver             bool         `json:"deliver" db:"deliver"`
+	DeliverChannel      string       `json:"deliverChannel" db:"deliver_channel"`
+	DeliverTo           string       `json:"deliverTo" db:"deliver_to"`
+	WakeHeartbeat       bool         `json:"wakeHeartbeat" db:"wake_heartbeat"`
+	InjectTargetHistory bool         `json:"injectTargetHistory" db:"inject_target_history"`
 	// WriteOnlyHash is an opaque content hash supplied by external reconcilers
 	// (gcplane) on every create/update. goclaw stores and echoes it but never
 	// inspects or validates the value. It enables drift detection on fields
@@ -89,18 +90,19 @@ type CronJobResult struct {
 
 // CronJobPatch holds optional fields for updating a job.
 type CronJobPatch struct {
-	Name           string        `json:"name,omitempty" db:"-"`
-	AgentID        *string       `json:"agentId,omitempty" db:"-"`
-	Enabled        *bool         `json:"enabled,omitempty" db:"-"`
-	Schedule       *CronSchedule `json:"schedule,omitempty" db:"-"`
-	Message        string        `json:"message,omitempty" db:"-"`
-	DeleteAfterRun *bool         `json:"deleteAfterRun,omitempty" db:"-"`
-	Stateless      *bool         `json:"stateless,omitempty" db:"-"`
-	Deliver        *bool         `json:"deliver,omitempty" db:"-"`
-	DeliverChannel *string       `json:"deliverChannel,omitempty" db:"-"`
-	DeliverTo      *string       `json:"deliverTo,omitempty" db:"-"`
-	WakeHeartbeat  *bool         `json:"wakeHeartbeat,omitempty" db:"-"`
-	WriteOnlyHash  *string       `json:"writeOnlyHash,omitempty" db:"-"`
+	Name                string        `json:"name,omitempty" db:"-"`
+	AgentID             *string       `json:"agentId,omitempty" db:"-"`
+	Enabled             *bool         `json:"enabled,omitempty" db:"-"`
+	Schedule            *CronSchedule `json:"schedule,omitempty" db:"-"`
+	Message             string        `json:"message,omitempty" db:"-"`
+	DeleteAfterRun      *bool         `json:"deleteAfterRun,omitempty" db:"-"`
+	Stateless           *bool         `json:"stateless,omitempty" db:"-"`
+	Deliver             *bool         `json:"deliver,omitempty" db:"-"`
+	DeliverChannel      *string       `json:"deliverChannel,omitempty" db:"-"`
+	DeliverTo           *string       `json:"deliverTo,omitempty" db:"-"`
+	WakeHeartbeat       *bool         `json:"wakeHeartbeat,omitempty" db:"-"`
+	InjectTargetHistory *bool         `json:"injectTargetHistory,omitempty" db:"-"`
+	WriteOnlyHash       *string       `json:"writeOnlyHash,omitempty" db:"-"`
 }
 
 // CronEvent represents a job lifecycle event sent to subscribers.
