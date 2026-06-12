@@ -32,6 +32,7 @@ export interface CronJobPatch {
   deliverTo?: string;
   deleteAfterRun?: boolean;
   wakeHeartbeat?: boolean;
+  injectTargetHistory?: boolean;
   stateless?: boolean;
 }
 
@@ -46,6 +47,7 @@ export interface CronJob {
   deliverChannel?: string;
   deliverTo?: string;
   wakeHeartbeat?: boolean;
+  injectTargetHistory?: boolean;
   stateless?: boolean;
   createdAtMs: number;
   updatedAtMs: number;
@@ -100,6 +102,7 @@ export function useCron() {
       deliver?: boolean;
       channel?: string;
       to?: string;
+      injectTargetHistory?: boolean;
     }) => {
       try {
         await ws.call(Methods.CRON_CREATE, params);

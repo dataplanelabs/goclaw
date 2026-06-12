@@ -40,6 +40,7 @@ function deriveDefaults(job: CronJob): CronAdvancedFormData {
     channel: job.deliverChannel ?? "",
     to: job.deliverTo ?? "",
     wakeHeartbeat: job.wakeHeartbeat ?? false,
+    injectTargetHistory: job.injectTargetHistory ?? true,
     deleteAfterRun: job.deleteAfterRun ?? false,
     stateless: job.stateless ?? false,
   };
@@ -68,6 +69,7 @@ export function CronAdvancedDialog({ open, onOpenChange, job, onUpdate }: CronAd
   const channel = watch("channel");
   const to = watch("to");
   const wakeHeartbeat = watch("wakeHeartbeat");
+  const injectTargetHistory = watch("injectTargetHistory");
   const deleteAfterRun = watch("deleteAfterRun");
   const stateless = watch("stateless");
 
@@ -110,6 +112,7 @@ export function CronAdvancedDialog({ open, onOpenChange, job, onUpdate }: CronAd
         deliverChannel: data.deliver ? data.channel.trim() || undefined : undefined,
         deliverTo: data.deliver ? data.to.trim() || undefined : undefined,
         wakeHeartbeat: data.wakeHeartbeat,
+        injectTargetHistory: data.injectTargetHistory,
         deleteAfterRun: data.deleteAfterRun,
         stateless: data.stateless,
       });
@@ -244,6 +247,14 @@ export function CronAdvancedDialog({ open, onOpenChange, job, onUpdate }: CronAd
                 <p className="text-xs text-muted-foreground">{t("detail.wakeHeartbeatDesc")}</p>
               </div>
               <Switch checked={wakeHeartbeat} onCheckedChange={(v) => setValue("wakeHeartbeat", v)} />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2.5">
+              <div>
+                <p className="text-sm font-medium">{t("detail.injectTargetHistory")}</p>
+                <p className="text-xs text-muted-foreground">{t("detail.injectTargetHistoryDesc")}</p>
+              </div>
+              <Switch checked={injectTargetHistory} onCheckedChange={(v) => setValue("injectTargetHistory", v)} />
             </div>
           </div>
 
