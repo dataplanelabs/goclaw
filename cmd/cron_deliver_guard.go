@@ -7,8 +7,10 @@ import (
 )
 
 // guardCronDelivery gates a cron final response before forwarding to a chat:
-// leading English CoT paragraphs are stripped, and pure English meta/failure
-// output is suppressed entirely (the cron run log keeps the full text).
+// leading English first-person CoT paragraphs are stripped (never inside code
+// fences, top-only, capped at half the message), then the forward is suppressed
+// ONLY when the remainder is empty or is itself a pure English CoT leak. Legit
+// content (product lists, headlines, status alerts) is delivered as-is.
 func guardCronDelivery(content string) (string, bool) {
 	cleaned := textguard.StripLeadingInternal(content)
 	if strings.TrimSpace(cleaned) == "" {

@@ -3,6 +3,8 @@ package agent
 import (
 	"strings"
 	"testing"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 func TestStripLeadingInternalReasoning(t *testing.T) {
@@ -33,6 +35,21 @@ func TestStripLeadingInternalReasoning(t *testing.T) {
 			name:  "english-only reply no-op even with stopwords",
 			input: "I have reviewed the document and it looks good.\n\nLet me know if you need anything else from my side.",
 			want:  "I have reviewed the document and it looks good.\n\nLet me know if you need anything else from my side.",
+		},
+		{
+			name:  "english headline without stopword never stripped",
+			input: "Apple unveils a new foldable iPhone at its annual September keynote event.\n\n" + vn,
+			want:  "Apple unveils a new foldable iPhone at its annual September keynote event.\n\n" + vn,
+		},
+		{
+			name:  "leading cot stripped delivers vietnamese mention",
+			input: "I don't have access to the history. Let me check.\n\n@Công Ninh ơi, em chờ thông tin cự ly nhé!",
+			want:  "@Công Ninh ơi, em chờ thông tin cự ly nhé!",
+		},
+		{
+			name:  "nfd-decomposed vietnamese after cot stripped and preserved",
+			input: cot + "\n\n" + norm.NFD.String(vn),
+			want:  norm.NFD.String(vn),
 		},
 		{
 			name:  "never strips inside fenced code",

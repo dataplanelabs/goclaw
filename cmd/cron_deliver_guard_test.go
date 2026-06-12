@@ -3,10 +3,13 @@ package cmd
 import (
 	"strings"
 	"testing"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 func TestGuardCronDelivery(t *testing.T) {
 	vnBulletin := "Chào cả nhà! Bản tin sáng nay: thị trường chứng khoán tăng điểm nhẹ, giá vàng ổn định quanh mốc cũ. Chúc mọi người một ngày làm việc hiệu quả nhé!"
+	nfdVietnamese := norm.NFD.String("Chào cả nhà, hôm nay trời nắng đẹp, mọi người nhớ uống đủ nước nhé!")
 
 	tests := []struct {
 		name        string
@@ -14,10 +17,71 @@ func TestGuardCronDelivery(t *testing.T) {
 		wantContent string
 		wantDeliver bool
 	}{
+		// --- MUST-DELIVER / MUST-NOT-STRIP (legit content) ---
 		{
 			name:        "vietnamese bulletin passes unchanged",
 			input:       vnBulletin,
 			wantContent: vnBulletin,
+			wantDeliver: true,
+		},
+		{
+			name:        "nfd-decomposed vietnamese passes unchanged",
+			input:       nfdVietnamese,
+			wantContent: nfdVietnamese,
+			wantDeliver: true,
+		},
+		{
+			name:        "based on calendar report delivered",
+			input:       "Based on the calendar, you have 3 meetings today.",
+			wantContent: "Based on the calendar, you have 3 meetings today.",
+			wantDeliver: true,
+		},
+		{
+			name:        "it seems engagement up delivered",
+			input:       "It seems engagement is up 20% this week.",
+			wantContent: "It seems engagement is up 20% this week.",
+			wantDeliver: true,
+		},
+		{
+			name:        "mention prefixed i have posted delivered",
+			input:       "@[850123] I have posted the schedule for next week.",
+			wantContent: "@[850123] I have posted the schedule for next week.",
+			wantDeliver: true,
+		},
+		{
+			name:        "looking at metrics delivered",
+			input:       "Looking at this week's metrics, sales rose.",
+			wantContent: "Looking at this week's metrics, sales rose.",
+			wantDeliver: true,
+		},
+		{
+			name:        "error rate alert delivered",
+			input:       "Error rate dropped to 0.1% this week - great improvement team!",
+			wantContent: "Error rate dropped to 0.1% this week - great improvement team!",
+			wantDeliver: true,
+		},
+		{
+			name:        "sorry store closed delivered",
+			input:       "Sorry, the store is closed on Sunday. We reopen Monday.",
+			wantContent: "Sorry, the store is closed on Sunday. We reopen Monday.",
+			wantDeliver: true,
+		},
+		{
+			name:        "cross-mark api down alert delivered",
+			input:       "❌ API down: payments endpoint returning 503.",
+			wantContent: "❌ API down: payments endpoint returning 503.",
+			wantDeliver: true,
+		},
+		{
+			name:        "cross-mark product stock list single newline delivered",
+			input:       "❌ iPhone 15 Pro Max - out of stock\n✅ Galaxy S24 - 12 units left",
+			wantContent: "❌ iPhone 15 Pro Max - out of stock\n✅ Galaxy S24 - 12 units left",
+			wantDeliver: true,
+		},
+		{
+			name:        "english headline then vietnamese summary headline preserved",
+			input:       "Apple unveils a new foldable iPhone at its annual September keynote event.\n\n" + vnBulletin,
+			wantContent: "Apple unveils a new foldable iPhone at its annual September keynote event.\n\n" + vnBulletin,
 			wantDeliver: true,
 		},
 		{
@@ -27,52 +91,10 @@ func TestGuardCronDelivery(t *testing.T) {
 			wantDeliver: true,
 		},
 		{
-			name:        "cot stripped vietnamese delivered",
-			input:       "I don't have access to the group chat history. Let me look at the UIDs.\n\n" + vnBulletin,
-			wantContent: vnBulletin,
-			wantDeliver: true,
-		},
-		{
-			name:        "all english failure suppressed",
-			input:       "Error: failed to fetch the market data from the upstream API endpoint.",
-			wantContent: "",
-			wantDeliver: false,
-		},
-		{
-			name:        "i was unable suppressed",
-			input:       "I was unable to retrieve the group chat history for this scheduled run.",
-			wantContent: "",
-			wantDeliver: false,
-		},
-		{
-			name:        "cross mark english failure suppressed",
-			input:       "❌ Could not deliver the report because the channel rejected the message.",
-			wantContent: "",
-			wantDeliver: false,
-		},
-		{
-			name:        "pure english cot suppressed",
-			input:       "I don't have access to the group chat history right now.\n\nLet me look at the UIDs in the recent messages block to figure out who responded.",
-			wantContent: "",
-			wantDeliver: false,
-		},
-		{
 			name:        "mixed vietnamese with one english brand sentence passes",
 			input:       "Bản tin công nghệ sáng nay:\n\nApple Vision Pro 2 launches worldwide with a cheaper price tag this fall.\n\nNguồn tin cho biết giá bán tại Việt Nam sẽ được công bố vào tuần sau nhé cả nhà.",
 			wantContent: "Bản tin công nghệ sáng nay:\n\nApple Vision Pro 2 launches worldwide with a cheaper price tag this fall.\n\nNguồn tin cho biết giá bán tại Việt Nam sẽ được công bố vào tuần sau nhé cả nhà.",
 			wantDeliver: true,
-		},
-		{
-			name:        "empty content suppressed",
-			input:       "",
-			wantContent: "",
-			wantDeliver: false,
-		},
-		{
-			name:        "whitespace only suppressed",
-			input:       "  \n\n  ",
-			wantContent: "",
-			wantDeliver: false,
 		},
 		{
 			name:        "legit english newsletter passes",
@@ -85,6 +107,52 @@ func TestGuardCronDelivery(t *testing.T) {
 			input:       "❌ Lỗi: không thể lấy dữ liệu thị trường hôm nay, mình sẽ thử lại sau nhé.",
 			wantContent: "❌ Lỗi: không thể lấy dữ liệu thị trường hôm nay, mình sẽ thử lại sau nhé.",
 			wantDeliver: true,
+		},
+
+		// --- MUST-CATCH (suppress at cron) ---
+		{
+			name:        "pure english cot suppressed",
+			input:       "I don't have access to the group chat history. Let me look at the UIDs to figure out who to mention.",
+			wantContent: "",
+			wantDeliver: false,
+		},
+		{
+			name:        "leading cot stripped vietnamese delivered",
+			input:       "I don't have access to the history. Let me check.\n\n@Công Ninh ơi, em chờ thông tin cự ly nhé!",
+			wantContent: "@Công Ninh ơi, em chờ thông tin cự ly nhé!",
+			wantDeliver: true,
+		},
+		{
+			name:        "multi-paragraph english cot suppressed",
+			input:       "I don't have access to the group chat history right now.\n\nLet me look at the UIDs in the recent messages block to figure out who responded.",
+			wantContent: "",
+			wantDeliver: false,
+		},
+		{
+			name:        "cot stripped vietnamese delivered",
+			input:       "I don't have access to the group chat history. Let me look at the UIDs.\n\n" + vnBulletin,
+			wantContent: vnBulletin,
+			wantDeliver: true,
+		},
+		{
+			name:        "i was unable cot suppressed",
+			input:       "I was unable to retrieve the group chat history, so let me check the UIDs instead.",
+			wantContent: "",
+			wantDeliver: false,
+		},
+
+		// --- edge cases ---
+		{
+			name:        "empty content suppressed",
+			input:       "",
+			wantContent: "",
+			wantDeliver: false,
+		},
+		{
+			name:        "whitespace only suppressed",
+			input:       "  \n\n  ",
+			wantContent: "",
+			wantDeliver: false,
 		},
 	}
 	for _, tt := range tests {

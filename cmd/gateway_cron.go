@@ -156,11 +156,14 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 			if !deliverable {
 				slog.Warn("cron: delivery suppressed — internal/meta content (full text kept in run log)",
 					"job_id", job.ID, "job_name", job.Name, "content_len", len(result.Content))
-			} else {
+			}
+			// Deliver when text survived the guard OR when media is present:
+			// suppressing leaked text must never drop an attached poster/image.
+			if deliverable || len(result.Media) > 0 {
 				outMsg := bus.OutboundMessage{
 					Channel:  job.DeliverChannel,
 					ChatID:   job.DeliverTo,
-					Content:  deliverContent,
+					Content:  deliverContent, // empty when text suppressed; media still delivered
 					TenantID: job.TenantID,
 				}
 				if peerKind == "group" {

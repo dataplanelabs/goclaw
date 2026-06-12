@@ -257,9 +257,11 @@ func stripEchoedSystemMessages(content string) string {
 
 // --- 6. Leading internal-reasoning paragraphs ---
 
-// stripLeadingInternalReasoning drops leading English CoT paragraphs only when
-// non-English content follows; all-English replies pass through untouched
-// (could be a legit English-speaking tenant).
+// stripLeadingInternalReasoning drops leading English first-person CoT
+// paragraphs (narrowed-stopword match, never inside code fences) only when
+// non-English content follows. Hard no-op when the whole message is
+// English-dominant — a legit English headline/report without a stopword must
+// never be stripped, and an English-speaking tenant's reply passes through.
 func stripLeadingInternalReasoning(content string) string {
 	if content == "" || textguard.IsEnglishDominant(content) {
 		return content

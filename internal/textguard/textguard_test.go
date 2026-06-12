@@ -3,9 +3,14 @@ package textguard
 import (
 	"strings"
 	"testing"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 func TestIsEnglishDominant(t *testing.T) {
+	// NFD-decomposed "Chào buổi sáng" — base letters + combining diacritics.
+	nfdVietnamese := norm.NFD.String("Chào buổi sáng cả nhà, hôm nay thị trường tăng nhẹ.")
+
 	tests := []struct {
 		name  string
 		input string
@@ -19,6 +24,11 @@ func TestIsEnglishDominant(t *testing.T) {
 		{
 			name:  "vietnamese with diacritics",
 			input: "Chào buổi sáng cả nhà, hôm nay thị trường tăng nhẹ.",
+			want:  false,
+		},
+		{
+			name:  "nfd-decomposed vietnamese classified vietnamese",
+			input: nfdVietnamese,
 			want:  false,
 		},
 		{
@@ -68,23 +78,59 @@ func TestIsInternalReasoning(t *testing.T) {
 		want  bool
 	}{
 		{
-			name:  "first person cot",
+			name:  "i dont have access cot",
 			input: "I don't have access to the group chat history. Let me look at the UIDs.",
 			want:  true,
 		},
 		{
 			name:  "curly apostrophe cot",
-			input: "I don’t have the data yet, so I’ll fetch it first.",
+			input: "I don’t have the data yet, so let me fetch it first before replying.",
 			want:  true,
 		},
 		{
-			name:  "cron meta",
-			input: "The cron job requires me to post a summary to the chat.",
+			name:  "let me planning",
+			input: "Let me look at the UIDs to figure out who to mention in the post.",
 			want:  true,
+		},
+		{
+			name:  "i should planning",
+			input: "I should summarize the news for the group before posting anything else.",
+			want:  true,
+		},
+		{
+			name:  "as an ai",
+			input: "As an AI, I cannot directly access the calendar for this account today.",
+			want:  true,
+		},
+		// Ambiguous openers REMOVED from the stopword set — these are legit reports.
+		{
+			name:  "based on the report no longer cot",
+			input: "Based on the calendar, you have three meetings scheduled today.",
+			want:  false,
+		},
+		{
+			name:  "looking at metrics no longer cot",
+			input: "Looking at this week's metrics, sales rose by twelve percent overall.",
+			want:  false,
+		},
+		{
+			name:  "i have posted no longer cot",
+			input: "I have posted the schedule for next week to the team channel already.",
+			want:  false,
+		},
+		{
+			name:  "it seems no longer cot",
+			input: "It seems engagement is up twenty percent this week across all posts.",
+			want:  false,
 		},
 		{
 			name:  "english brand sentence no stopwords",
 			input: "Shopee Super Sale starts this weekend with discounts up to 50%.",
+			want:  false,
+		},
+		{
+			name:  "english product stock list no stopwords",
+			input: "iPhone 15 Pro Max - out of stock\nGalaxy S24 - 12 units left",
 			want:  false,
 		},
 		{
@@ -163,9 +209,14 @@ func TestStripLeadingInternal(t *testing.T) {
 			want:  "",
 		},
 		{
-			name:  "english content after cot is preserved when not internal",
+			name:  "english content after cot preserved when not internal",
 			input: cot + "\n\n" + "Weekly market update: gold steady, stocks up by two percent overall today." + "\n\n" + vn,
 			want:  "Weekly market update: gold steady, stocks up by two percent overall today." + "\n\n" + vn,
+		},
+		{
+			name:  "english headline without stopword never stripped",
+			input: "Apple unveils a new foldable iPhone at its annual September keynote event.\n\n" + vn,
+			want:  "Apple unveils a new foldable iPhone at its annual September keynote event.\n\n" + vn,
 		},
 	}
 	for _, tt := range tests {
@@ -184,35 +235,62 @@ func TestIsMetaFailure(t *testing.T) {
 		input string
 		want  bool
 	}{
-		{
-			name:  "error prefix",
-			input: "Error: failed to fetch data from the upstream API endpoint.",
-			want:  true,
-		},
-		{
-			name:  "failed prefix",
-			input: "Failed to complete the scheduled job because the tool timed out.",
-			want:  true,
-		},
-		{
-			name:  "cross mark prefix english",
-			input: "❌ Could not deliver the report to the requested channel.",
-			want:  true,
-		},
-		{
-			name:  "i was unable",
-			input: "I was unable to retrieve the group chat history for this session.",
-			want:  true,
-		},
+		// MUST-CATCH: pure English first-person CoT leaks.
 		{
 			name:  "pure cot message",
+			input: "I don't have access to the group chat history. Let me look at the UIDs to figure out who to mention.",
+			want:  true,
+		},
+		{
+			name:  "i was unable cot",
+			input: "I was unable to retrieve the group chat history, so let me check the UIDs instead.",
+			want:  true,
+		},
+		{
+			name:  "multi-paragraph pure cot",
 			input: "I don't have access to the group chat history.\n\nLet me look at the UIDs in the recent messages.",
 			want:  true,
 		},
+		// MUST-NOT-SUPPRESS: legit English content (no first-person CoT).
 		{
-			name:  "it seems meta",
-			input: "It seems the tool is unavailable right now, so nothing was posted.",
-			want:  true,
+			name:  "based on calendar report",
+			input: "Based on the calendar, you have 3 meetings today.",
+			want:  false,
+		},
+		{
+			name:  "it seems engagement up",
+			input: "It seems engagement is up 20% this week.",
+			want:  false,
+		},
+		{
+			name:  "looking at metrics",
+			input: "Looking at this week's metrics, sales rose.",
+			want:  false,
+		},
+		{
+			name:  "error rate dropped alert",
+			input: "Error rate dropped to 0.1% this week - great improvement team!",
+			want:  false,
+		},
+		{
+			name:  "sorry store closed",
+			input: "Sorry, the store is closed on Sunday. We reopen Monday.",
+			want:  false,
+		},
+		{
+			name:  "cross-mark api down alert",
+			input: "❌ API down: payments endpoint returning 503.",
+			want:  false,
+		},
+		{
+			name:  "cross-mark product stock list",
+			input: "❌ iPhone 15 Pro Max - out of stock\n✅ Galaxy S24 - 12 units left",
+			want:  false,
+		},
+		{
+			name:  "failed prefix as status line",
+			input: "Failed deploys: 0. All services healthy across every region today.",
+			want:  false,
 		},
 		{
 			name:  "vietnamese bulletin",
