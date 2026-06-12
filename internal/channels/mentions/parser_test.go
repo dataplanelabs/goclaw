@@ -186,14 +186,68 @@ func TestParseMarkers_PreviousVietnameseTextShiftsPosition(t *testing.T) {
 	}
 }
 
-func TestParseMarkers_UnresolvedMarker_PreservedLiteral(t *testing.T) {
+func TestParseMarkers_UnresolvedNameMarker_DowngradedToPlainText(t *testing.T) {
 	got, ms := ParseMarkers("hi @[unknown]!", fixtureResolver(t))
-	want := "hi @[unknown]!"
+	want := "hi @unknown!"
 	if got != want {
 		t.Fatalf("rendered=%q, want %q", got, want)
 	}
 	if ms != nil {
 		t.Fatalf("expected nil mentions, got %+v", ms)
+	}
+}
+
+func TestParseMarkers_UnresolvedUIDMarker_StrippedWithSpaceCollapse(t *testing.T) {
+	got, ms := ParseMarkers("@[583199907997701467] Do Loi", fixtureResolver(t))
+	want := "Do Loi"
+	if got != want {
+		t.Fatalf("rendered=%q, want %q", got, want)
+	}
+	if ms != nil {
+		t.Fatalf("expected nil mentions, got %+v", ms)
+	}
+}
+
+func TestParseMarkers_UnresolvedUIDMarker_MidTextCollapsesDoubledSpace(t *testing.T) {
+	got, _ := ParseMarkers("xin chào @[123] cả nhà", fixtureResolver(t))
+	want := "xin chào cả nhà"
+	if got != want {
+		t.Fatalf("rendered=%q, want %q", got, want)
+	}
+}
+
+func TestParseMarkers_UnresolvedUIDMarker_AtEndStripped(t *testing.T) {
+	// No following space to collapse; trailing space is tolerated.
+	got, _ := ParseMarkers("Do Loi @[123]", fixtureResolver(t))
+	want := "Do Loi "
+	if got != want {
+		t.Fatalf("rendered=%q, want %q", got, want)
+	}
+}
+
+func TestParseMarkers_StrippedUID_FollowingResolvedMentionOffsetCorrect(t *testing.T) {
+	got, ms := ParseMarkers("@[999] xin chào @[u_vn]!", fixtureResolver(t))
+	want := "xin chào @Đức!"
+	if got != want {
+		t.Fatalf("rendered=%q, want %q", got, want)
+	}
+	if len(ms) != 1 {
+		t.Fatalf("mentions=%+v, want exactly 1", ms)
+	}
+	// "xin chào " = 9 UTF-16 code units after the stripped marker+space; @Đức = 4.
+	if ms[0].UserID != "u_vn" || ms[0].Position != 9 || ms[0].Length != 4 {
+		t.Fatalf("offsets wrong: %+v", ms[0])
+	}
+}
+
+func TestParseMarkers_UnresolvedUID_DoesNotAffectAtAll(t *testing.T) {
+	got, ms := ParseMarkers("@[123] @[all] họp lúc 3h", fixtureResolver(t))
+	want := "@All họp lúc 3h"
+	if got != want {
+		t.Fatalf("rendered=%q, want %q", got, want)
+	}
+	if len(ms) != 1 || ms[0].UserID != "-1" || ms[0].Position != 0 || ms[0].Length != 4 {
+		t.Fatalf("ms=%+v", ms)
 	}
 }
 
@@ -363,6 +417,55 @@ func TestParseMarkersWithStyles_FiveStylesAcrossThreeMarkers(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, expected) {
 		t.Fatalf("got=%+v want=%+v", got, expected)
+	}
+}
+
+func TestParseMarkersWithStyles_StrippedUIDMarker_StyleRightShifts(t *testing.T) {
+	// "@[12345] hello bold" — marker [0,8) stripped + following space consumed
+	// → cumulative shift -9. Style over "bold" at input pos 15 len 4 → 6,4.
+	in := "@[12345] hello bold"
+	style := Style{Start: 15, Len: 4, St: "b"}
+	rendered, ms, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if rendered != "hello bold" {
+		t.Fatalf("rendered=%q", rendered)
+	}
+	if ms != nil {
+		t.Fatalf("ms=%+v, want nil", ms)
+	}
+	if len(got) != 1 || got[0].Start != 6 || got[0].Len != 4 {
+		t.Fatalf("got=%+v want=[{6,4,b}]", got)
+	}
+}
+
+func TestParseMarkersWithStyles_StrippedUIDMarkerInsideStyle_LenShrinks(t *testing.T) {
+	// Bold over the whole "@[123] hi" — marker+space span [0,7) delta -7 →
+	// style len 9-7=2 over output "hi".
+	in := "@[123] hi"
+	style := Style{Start: 0, Len: 9, St: "b"}
+	rendered, _, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if rendered != "hi" {
+		t.Fatalf("rendered=%q", rendered)
+	}
+	if len(got) != 1 || got[0].Start != 0 || got[0].Len != 2 {
+		t.Fatalf("got=%+v want=[{0,2,b}]", got)
+	}
+}
+
+func TestParseMarkersWithStyles_StrippedUIDThenResolvedMention(t *testing.T) {
+	// "@[999] hi @[u_b] bold": marker1 [0,6)+space stripped (delta -7),
+	// marker2 "@[u_b]" [10,16) → "@Bob" (delta -2).
+	// Style over "bold" at input pos 17 len 4 → 17-7-2=8.
+	in := "@[999] hi @[u_b] bold"
+	style := Style{Start: 17, Len: 4, St: "b"}
+	rendered, ms, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if rendered != "hi @Bob bold" {
+		t.Fatalf("rendered=%q", rendered)
+	}
+	if len(ms) != 1 || ms[0].UserID != "u_b" || ms[0].Position != 3 || ms[0].Length != 4 {
+		t.Fatalf("ms=%+v", ms)
+	}
+	if len(got) != 1 || got[0].Start != 8 || got[0].Len != 4 {
+		t.Fatalf("got=%+v want=[{8,4,b}]", got)
 	}
 }
 
