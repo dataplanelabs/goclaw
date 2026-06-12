@@ -97,6 +97,10 @@ func (h *TracesHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("session_key"); v != "" {
 		opts.SessionKey = v
 	}
+	switch r.URL.Query().Get("source_type") {
+	case "cron", "group", "direct", "team", "ws":
+		opts.SourceType = r.URL.Query().Get("source_type")
+	}
 	if v := r.URL.Query().Get("status"); v != "" {
 		opts.Status = v
 	}

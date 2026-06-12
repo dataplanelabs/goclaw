@@ -106,6 +106,7 @@ type TraceListOpts struct {
 	AgentID    *uuid.UUID
 	UserID     string
 	SessionKey string
+	SourceType string // cron|group|direct|team|ws — maps to a session_key pattern
 	Status     string
 	Channel    string
 	Limit      int

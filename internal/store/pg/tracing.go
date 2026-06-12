@@ -128,6 +128,10 @@ func buildTraceWhere(ctx context.Context, opts store.TraceListOpts) (string, []a
 		args = append(args, opts.SessionKey)
 		argIdx++
 	}
+	if cond, a := traceSourceTypeCondPG(opts.SourceType, &argIdx); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, a...)
+	}
 	if opts.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, opts.Status)
@@ -144,6 +148,35 @@ func buildTraceWhere(ctx context.Context, opts store.TraceListOpts) (string, []a
 		where = " WHERE " + strings.Join(conditions, " AND ")
 	}
 	return where, args
+}
+
+// traceSourceTypeCondPG maps a UI source type to a session_key/channel filter,
+// mirroring parseSourceType() in the web UI. Direct excludes ws since ws keys
+// contain ":direct:" but the UI classifies them as ws.
+func traceSourceTypeCondPG(srcType string, argIdx *int) (string, []any) {
+	switch srcType {
+	case "cron":
+		c := fmt.Sprintf("session_key LIKE $%d", *argIdx)
+		*argIdx++
+		return c, []any{"%:cron:%"}
+	case "group":
+		c := fmt.Sprintf("session_key LIKE $%d", *argIdx)
+		*argIdx++
+		return c, []any{"%:group:%"}
+	case "team":
+		c := fmt.Sprintf("session_key LIKE $%d", *argIdx)
+		*argIdx++
+		return c, []any{"%:team:%"}
+	case "direct":
+		c := fmt.Sprintf("(session_key LIKE $%d AND session_key NOT LIKE $%d)", *argIdx, *argIdx+1)
+		*argIdx += 2
+		return c, []any{"%:direct:%", "%:ws:%"}
+	case "ws":
+		c := fmt.Sprintf("(channel = $%d OR session_key LIKE $%d)", *argIdx, *argIdx+1)
+		*argIdx += 2
+		return c, []any{"ws", "%:ws:%"}
+	}
+	return "", nil
 }
 
 func (s *PGTracingStore) CountTraces(ctx context.Context, opts store.TraceListOpts) (int, error) {

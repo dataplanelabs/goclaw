@@ -5,6 +5,8 @@
   "filter": "Lọc",
   "allAgents": "Tất cả agent",
   "allChannels": "Tất cả kênh",
+  "allRecipients": "Tất cả người nhận",
+  "allInvocationTypes": "Tất cả loại kích hoạt",
   "emptyTitle": "Không có dữ liệu theo dõi",
   "emptyDescription": "Không tìm thấy dữ liệu theo dõi. Theo dõi được ghi lại khi agent xử lý yêu cầu.",
   "columns": {

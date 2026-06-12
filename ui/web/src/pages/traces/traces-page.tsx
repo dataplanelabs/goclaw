@@ -77,6 +77,8 @@ export function TracesPage() {
   const setGlobalPageSize = useUiStore((s) => s.setPageSize);
   const [agentFilter, setAgentFilter] = useState<string>();
   const [channelFilter, setChannelFilter] = useState<string>();
+  const [userFilter, setUserFilter] = useState<string>();
+  const [sourceTypeFilter, setSourceTypeFilter] = useState<string>();
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSizeRaw] = useState(globalPageSize);
@@ -105,12 +107,25 @@ export function TracesPage() {
   const { traces, total, loading, fetching, refresh, getTrace, retryTrace } = useTraces({
     agentId: agentFilter,
     channel: channelFilter,
+    userId: userFilter,
+    sourceType: sourceTypeFilter,
     limit: pageSize,
     offset: (page - 1) * pageSize,
   });
 
   const traceUserIds = useMemo(() => traces.map((tr) => tr.user_id).filter(Boolean) as string[], [traces]);
   const { resolve } = useContactResolver(traceUserIds);
+
+  // Distinct recipients on the current page: user_id → resolved display label.
+  const recipientOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const tr of traces) {
+      if (tr.user_id && !map.has(tr.user_id)) {
+        map.set(tr.user_id, formatUserLabel(tr.user_id, resolve));
+      }
+    }
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [traces, resolve]);
 
   const spinning = useMinLoading(fetching);
   const showSkeleton = useDeferredLoading(loading && traces.length === 0);
@@ -206,6 +221,40 @@ export function TracesPage() {
             ))}
           </SelectContent>
         </Select>
+
+        {/* Delivered-to (user/group) filter */}
+        <Select
+          value={userFilter ?? "__all__"}
+          onValueChange={(v) => { setUserFilter(v === "__all__" ? undefined : v); setPage(1); }}
+        >
+          <SelectTrigger className="h-8 w-44 text-xs">
+            <SelectValue placeholder={t("allRecipients")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">{t("allRecipients")}</SelectItem>
+            {recipientOptions.map(([id, label]) => (
+              <SelectItem key={id} value={id}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Invocation type filter */}
+        <Select
+          value={sourceTypeFilter ?? "__all__"}
+          onValueChange={(v) => { setSourceTypeFilter(v === "__all__" ? undefined : v); setPage(1); }}
+        >
+          <SelectTrigger className="h-8 w-44 text-xs">
+            <SelectValue placeholder={t("allInvocationTypes")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">{t("allInvocationTypes")}</SelectItem>
+            <SelectItem value="cron">{t("source.cron")}</SelectItem>
+            <SelectItem value="group">{t("source.group")}</SelectItem>
+            <SelectItem value="direct">{t("source.direct")}</SelectItem>
+            <SelectItem value="team">{t("source.team")}</SelectItem>
+            <SelectItem value="ws">{t("source.ws")}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="mt-4">
@@ -235,8 +284,15 @@ export function TracesPage() {
                   const rawUserLabel = formatUserLabel(trace.user_id, resolve);
                   // Suppress the redundant `Channel chatId` chip when the user_id is
                   // a group key — channel badge + chat_title below already carry it,
-                  // and the full chat_id lives in the trace detail modal.
-                  const userLabel = trace.user_id?.startsWith("group:") ? "" : rawUserLabel;
+                  // and the full chat_id lives in the trace detail modal. Cron rows
+                  // are the exception: they carry a group user_id but no channel/chat
+                  // context, so show the resolved delivered-to name there.
+                  const userLabel =
+                    source.type === "cron"
+                      ? rawUserLabel
+                      : trace.user_id?.startsWith("group:")
+                        ? ""
+                        : rawUserLabel;
                   const agentName = trace.agent_id ? agentMap.get(trace.agent_id) : undefined;
                   const SourceIcon = SOURCE_ICONS[source.type] || Bot;
 
