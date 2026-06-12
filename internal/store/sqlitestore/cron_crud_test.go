@@ -277,6 +277,64 @@ func TestSQLiteCronStore_EnableJob_IgnoresMalformedPayload(t *testing.T) {
 	}
 }
 
+// TestSQLiteCronStore_InjectTargetHistoryRoundtrip verifies the new per-cron flag
+// defaults to true on create and round-trips a patched false via GetJob + ListJobs.
+func TestSQLiteCronStore_InjectTargetHistoryRoundtrip(t *testing.T) {
+	cronStore, ctx, _ := newTestSQLiteCronStore(t)
+	everyMS := int64(time.Minute / time.Millisecond)
+
+	job, err := cronStore.AddJob(ctx, "job-ith", store.CronSchedule{
+		Kind:    "every",
+		EveryMS: &everyMS,
+	}, "hello", false, "", "", "", "user-1")
+	if err != nil {
+		t.Fatalf("AddJob error: %v", err)
+	}
+	if job == nil {
+		job = mustOnlyJob(t, cronStore, ctx)
+	}
+
+	// Fresh job defaults to true (DB DEFAULT 1).
+	if !job.InjectTargetHistory {
+		t.Fatalf("expected fresh job InjectTargetHistory=true, got false")
+	}
+
+	// Patch to false.
+	off := false
+	if _, err := cronStore.UpdateJob(ctx, job.ID, store.CronJobPatch{
+		InjectTargetHistory: &off,
+	}); err != nil {
+		t.Fatalf("UpdateJob InjectTargetHistory=false error: %v", err)
+	}
+	got, ok := cronStore.GetJob(ctx, job.ID)
+	if !ok {
+		t.Fatal("job not found after patch")
+	}
+	if got.InjectTargetHistory {
+		t.Fatalf("GetJob InjectTargetHistory: got true, want false")
+	}
+
+	listed := cronStore.ListJobs(ctx, false, "", "user-1")
+	if len(listed) != 1 {
+		t.Fatalf("ListJobs: got %d jobs, want 1", len(listed))
+	}
+	if listed[0].InjectTargetHistory {
+		t.Fatalf("ListJobs InjectTargetHistory: got true, want false")
+	}
+
+	// Patch back to true.
+	on := true
+	if _, err := cronStore.UpdateJob(ctx, job.ID, store.CronJobPatch{
+		InjectTargetHistory: &on,
+	}); err != nil {
+		t.Fatalf("UpdateJob InjectTargetHistory=true error: %v", err)
+	}
+	got2, _ := cronStore.GetJob(ctx, job.ID)
+	if !got2.InjectTargetHistory {
+		t.Fatalf("InjectTargetHistory re-enable: got false, want true")
+	}
+}
+
 func newTestSQLiteCronStore(t *testing.T) (*SQLiteCronStore, context.Context, *sql.DB) {
 	t.Helper()
 

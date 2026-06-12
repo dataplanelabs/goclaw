@@ -275,6 +275,9 @@ func (cs *Service) UpdateJob(jobID string, patch JobPatch) (*Job, error) {
 		if patch.Stateless != nil {
 			job.Stateless = *patch.Stateless
 		}
+		if patch.InjectTargetHistory != nil {
+			job.InjectTargetHistory = *patch.InjectTargetHistory
+		}
 		if patch.DeleteAfterRun != nil {
 			job.DeleteAfterRun = *patch.DeleteAfterRun
 		}
