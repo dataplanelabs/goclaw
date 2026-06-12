@@ -23,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/textguard"
 )
 
 // SanitizeAssistantContent applies the full sanitization pipeline to assistant
@@ -53,13 +54,16 @@ func SanitizeAssistantContent(content string) string {
 	// 5. Strip echoed [System Message] blocks
 	content = stripEchoedSystemMessages(content)
 
-	// 6. Collapse consecutive duplicate blocks
+	// 6. Strip leading English CoT paragraphs leaked into the content channel
+	content = stripLeadingInternalReasoning(content)
+
+	// 7. Collapse consecutive duplicate blocks
 	content = collapseConsecutiveDuplicateBlocks(content)
 
-	// 7. Strip MEDIA: paths from LLM output (media delivered separately)
+	// 8. Strip MEDIA: paths from LLM output (media delivered separately)
 	content = stripMediaPaths(content)
 
-	// 8. Strip leading blank lines (preserve indentation)
+	// 9. Strip leading blank lines (preserve indentation)
 	content = stripLeadingBlankLines(content)
 
 	content = strings.TrimSpace(content)
@@ -251,7 +255,26 @@ func stripEchoedSystemMessages(content string) string {
 	return cleaned
 }
 
-// --- 6. Collapse consecutive duplicate blocks ---
+// --- 6. Leading internal-reasoning paragraphs ---
+
+// stripLeadingInternalReasoning drops leading English CoT paragraphs only when
+// non-English content follows; all-English replies pass through untouched
+// (could be a legit English-speaking tenant).
+func stripLeadingInternalReasoning(content string) string {
+	if content == "" || textguard.IsEnglishDominant(content) {
+		return content
+	}
+	cleaned := textguard.StripLeadingInternal(content)
+	if cleaned != content {
+		slog.Warn("stripped leading internal reasoning from response",
+			"original_len", len(content),
+			"cleaned_len", len(cleaned),
+		)
+	}
+	return cleaned
+}
+
+// --- 7. Collapse consecutive duplicate blocks ---
 
 // collapseConsecutiveDuplicateBlocks removes repeated paragraph blocks.
 // Matching TS collapseConsecutiveDuplicateBlocks().
@@ -283,7 +306,7 @@ func collapseConsecutiveDuplicateBlocks(content string) string {
 	return collapsed
 }
 
-// --- 7. Strip MEDIA: paths ---
+// --- 8. Strip MEDIA: paths ---
 
 // mediaPathPattern matches "MEDIA:" followed by a path (absolute or relative).
 var mediaPathPattern = regexp.MustCompile(`MEDIA:\S+`)
@@ -313,7 +336,7 @@ func stripMediaPaths(content string) string {
 	return strings.TrimSpace(strings.Join(result, "\n"))
 }
 
-// --- 8. Strip leading blank lines ---
+// --- 9. Strip leading blank lines ---
 
 var leadingBlankLinesPattern = regexp.MustCompile(`^(?:[ \t]*\r?\n)+`)
 
@@ -321,7 +344,7 @@ func stripLeadingBlankLines(content string) string {
 	return leadingBlankLinesPattern.ReplaceAllString(content, "")
 }
 
-// --- 9. Config leak detection (predefined agents) ---
+// --- 10. Config leak detection (predefined agents) ---
 
 // configLeakFileNames are internal file names that should not appear in user-facing output
 // when a predefined agent describes its procedures or configuration.
