@@ -21,6 +21,9 @@ import (
 const (
 	cronTargetHistoryLimit    = 30
 	cronTargetHistoryCharsCap = 6000
+	// Per-message rune clamp so a single huge target-chat message (e.g. a pasted
+	// document) can't blow the cron context budget. UTF-8/rune-safe.
+	cronTargetHistoryMsgRunes = 600
 )
 
 // makeCronJobHandler creates a cron job handler that routes through the scheduler's cron lane.
@@ -232,6 +235,9 @@ func buildCronTargetHistoryContext(history []providers.Message) string {
 		content := strings.TrimSpace(recent[i].Content)
 		if content == "" {
 			continue
+		}
+		if r := []rune(content); len(r) > cronTargetHistoryMsgRunes {
+			content = string(r[:cronTargetHistoryMsgRunes]) + "…"
 		}
 		line := recent[i].Role + ": " + content
 		if total+len(line) > cronTargetHistoryCharsCap && len(lines) > 0 {
