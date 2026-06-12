@@ -21,6 +21,8 @@ interface CronDeliverySectionProps {
   setTo: (v: string) => void;
   wakeHeartbeat: boolean;
   setWakeHeartbeat: (v: boolean) => void;
+  injectTargetHistory: boolean;
+  setInjectTargetHistory: (v: boolean) => void;
   channelNames: string[];
   targets: DeliveryTarget[];
   readonly: boolean;
@@ -35,6 +37,8 @@ export function CronDeliverySection({
   setTo,
   wakeHeartbeat,
   setWakeHeartbeat,
+  injectTargetHistory,
+  setInjectTargetHistory,
   channelNames,
   targets,
   readonly,
@@ -114,6 +118,14 @@ export function CronDeliverySection({
           <p className="text-xs text-muted-foreground">{t("detail.wakeHeartbeatDesc")}</p>
         </div>
         <Switch checked={wakeHeartbeat} onCheckedChange={setWakeHeartbeat} disabled={readonly} />
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2.5">
+        <div>
+          <p className="text-sm font-medium">{t("detail.injectTargetHistory")}</p>
+          <p className="text-xs text-muted-foreground">{t("detail.injectTargetHistoryDesc")}</p>
+        </div>
+        <Switch checked={injectTargetHistory} onCheckedChange={setInjectTargetHistory} disabled={readonly} />
       </div>
     </section>
   );

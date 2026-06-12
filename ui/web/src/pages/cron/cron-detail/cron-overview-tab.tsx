@@ -59,6 +59,7 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
   const [channel, setChannel] = useState(job.deliverChannel ?? "");
   const [to, setTo] = useState(job.deliverTo ?? "");
   const [wakeHeartbeat, setWakeHeartbeat] = useState(job.wakeHeartbeat ?? false);
+  const [injectTargetHistory, setInjectTargetHistory] = useState(job.injectTargetHistory ?? true);
   const [targets, setTargets] = useState<DeliveryTarget[]>([]);
 
   // Lifecycle fields
@@ -104,6 +105,7 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
         deliverChannel: deliver ? channel.trim() || undefined : undefined,
         deliverTo: deliver ? to.trim() || undefined : undefined,
         wakeHeartbeat,
+        injectTargetHistory,
         deleteAfterRun,
         stateless,
       };
@@ -170,6 +172,8 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
         setTo={setTo}
         wakeHeartbeat={wakeHeartbeat}
         setWakeHeartbeat={setWakeHeartbeat}
+        injectTargetHistory={injectTargetHistory}
+        setInjectTargetHistory={setInjectTargetHistory}
         channelNames={channelNames}
         targets={targets}
         readonly={readonly}
