@@ -3,8 +3,10 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -143,14 +145,21 @@ func TestBuildCronTargetHistoryContext_LimitsToLastN(t *testing.T) {
 }
 
 func TestBuildCronTargetHistoryContext_CharCapDropsOldest(t *testing.T) {
-	long := strings.Repeat("x", 2000)
-	history := []providers.Message{
-		{Role: "user", Content: "oldest-" + long},
-		{Role: "user", Content: "mid-" + long},
-		{Role: "user", Content: "newest-" + long},
+	// Many moderate messages (each under the per-message clamp) whose total
+	// exceeds the char cap → newest kept, oldest dropped.
+	body := strings.Repeat("y", 500)
+	var history []providers.Message
+	for i := 0; i < 20; i++ {
+		tag := "oldest-"
+		if i == 19 {
+			tag = "newest-"
+		} else if i > 0 {
+			tag = fmt.Sprintf("msg%02d-", i)
+		}
+		history = append(history, providers.Message{Role: "user", Content: tag + body})
 	}
 	got := buildCronTargetHistoryContext(history)
-	if len(got) > cronTargetHistoryCharsCap+500 {
+	if len(got) > cronTargetHistoryCharsCap+700 {
 		t.Errorf("output exceeds char cap budget: %d", len(got))
 	}
 	if !strings.Contains(got, "newest-") {
@@ -158,5 +167,21 @@ func TestBuildCronTargetHistoryContext_CharCapDropsOldest(t *testing.T) {
 	}
 	if strings.Contains(got, "oldest-") {
 		t.Errorf("oldest message should be dropped by char cap; got len %d", len(got))
+	}
+}
+
+func TestBuildCronTargetHistoryContext_ClampsHugeMessage(t *testing.T) {
+	// A single message far larger than the per-message clamp must be truncated
+	// (rune-safe) so it can't blow the context budget.
+	huge := strings.Repeat("ô", 5000) // multi-byte runes — exercises rune-safe clamp
+	got := buildCronTargetHistoryContext([]providers.Message{{Role: "user", Content: huge}})
+	if !utf8.ValidString(got) {
+		t.Fatalf("output is not valid UTF-8 (clamp cut mid-rune)")
+	}
+	if !strings.Contains(got, "…") {
+		t.Errorf("huge message should be truncated with an ellipsis")
+	}
+	if n := utf8.RuneCountInString(got); n > cronTargetHistoryMsgRunes+200 {
+		t.Errorf("clamped output too large: %d runes", n)
 	}
 }
