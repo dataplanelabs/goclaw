@@ -36,6 +36,8 @@ type CronJob struct {
 	DeliverTo           string       `json:"deliverTo" db:"deliver_to"`
 	WakeHeartbeat       bool         `json:"wakeHeartbeat" db:"wake_heartbeat"`
 	InjectTargetHistory bool         `json:"injectTargetHistory" db:"inject_target_history"`
+
+	InjectTargetHistoryLimit int `json:"injectTargetHistoryLimit" db:"inject_target_history_limit"`
 	// WriteOnlyHash is an opaque content hash supplied by external reconcilers
 	// (gcplane) on every create/update. goclaw stores and echoes it but never
 	// inspects or validates the value. It enables drift detection on fields
@@ -103,6 +105,8 @@ type CronJobPatch struct {
 	WakeHeartbeat       *bool         `json:"wakeHeartbeat,omitempty" db:"-"`
 	InjectTargetHistory *bool         `json:"injectTargetHistory,omitempty" db:"-"`
 	WriteOnlyHash       *string       `json:"writeOnlyHash,omitempty" db:"-"`
+
+	InjectTargetHistoryLimit *int `json:"injectTargetHistoryLimit,omitempty" db:"-"`
 }
 
 // CronEvent represents a job lifecycle event sent to subscribers.

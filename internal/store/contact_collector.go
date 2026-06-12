@@ -59,3 +59,24 @@ func (c *ContactCollector) EnsureContact(ctx context.Context, channelType, chann
 func (c *ContactCollector) ResolveTenantUserID(ctx context.Context, channelType, senderID string) (string, error) {
 	return c.store.ResolveTenantUserID(ctx, channelType, senderID)
 }
+
+// DisplayNameBySenderID reads back a stored display_name — mention fallback for
+// channels whose in-memory member cache is cold (e.g. right after pod restart).
+func (c *ContactCollector) DisplayNameBySenderID(ctx context.Context, channelType, senderID string) (string, bool) {
+	if senderID == "" {
+		return "", false
+	}
+	byID, err := c.store.GetContactsBySenderIDs(ctx, []string{senderID})
+	if err != nil {
+		slog.Warn("contact_collector.display_name_lookup_failed", "error", err, "sender", senderID)
+		return "", false
+	}
+	contact, ok := byID[senderID]
+	if !ok || contact.ChannelType != channelType {
+		return "", false
+	}
+	if contact.DisplayName == nil || *contact.DisplayName == "" {
+		return "", false
+	}
+	return *contact.DisplayName, true
+}

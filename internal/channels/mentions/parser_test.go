@@ -186,14 +186,68 @@ func TestParseMarkers_PreviousVietnameseTextShiftsPosition(t *testing.T) {
 	}
 }
 
-func TestParseMarkers_UnresolvedMarker_PreservedLiteral(t *testing.T) {
+func TestParseMarkers_UnresolvedNameMarker_DowngradedToPlainText(t *testing.T) {
 	got, ms := ParseMarkers("hi @[unknown]!", fixtureResolver(t))
-	want := "hi @[unknown]!"
+	want := "hi @unknown!"
 	if got != want {
 		t.Fatalf("rendered=%q, want %q", got, want)
 	}
 	if ms != nil {
 		t.Fatalf("expected nil mentions, got %+v", ms)
+	}
+}
+
+func TestParseMarkers_UnresolvedUIDMarker_StrippedWithSpaceCollapse(t *testing.T) {
+	got, ms := ParseMarkers("@[583199907997701467] Do Loi", fixtureResolver(t))
+	want := "Do Loi"
+	if got != want {
+		t.Fatalf("rendered=%q, want %q", got, want)
+	}
+	if ms != nil {
+		t.Fatalf("expected nil mentions, got %+v", ms)
+	}
+}
+
+func TestParseMarkers_UnresolvedUIDMarker_MidTextCollapsesDoubledSpace(t *testing.T) {
+	got, _ := ParseMarkers("xin chào @[123] cả nhà", fixtureResolver(t))
+	want := "xin chào cả nhà"
+	if got != want {
+		t.Fatalf("rendered=%q, want %q", got, want)
+	}
+}
+
+func TestParseMarkers_UnresolvedUIDMarker_AtEndStripped(t *testing.T) {
+	// No following space to collapse; trailing space is tolerated.
+	got, _ := ParseMarkers("Do Loi @[123]", fixtureResolver(t))
+	want := "Do Loi "
+	if got != want {
+		t.Fatalf("rendered=%q, want %q", got, want)
+	}
+}
+
+func TestParseMarkers_StrippedUID_FollowingResolvedMentionOffsetCorrect(t *testing.T) {
+	got, ms := ParseMarkers("@[999] xin chào @[u_vn]!", fixtureResolver(t))
+	want := "xin chào @Đức!"
+	if got != want {
+		t.Fatalf("rendered=%q, want %q", got, want)
+	}
+	if len(ms) != 1 {
+		t.Fatalf("mentions=%+v, want exactly 1", ms)
+	}
+	// "xin chào " = 9 UTF-16 code units after the stripped marker+space; @Đức = 4.
+	if ms[0].UserID != "u_vn" || ms[0].Position != 9 || ms[0].Length != 4 {
+		t.Fatalf("offsets wrong: %+v", ms[0])
+	}
+}
+
+func TestParseMarkers_UnresolvedUID_DoesNotAffectAtAll(t *testing.T) {
+	got, ms := ParseMarkers("@[123] @[all] họp lúc 3h", fixtureResolver(t))
+	want := "@All họp lúc 3h"
+	if got != want {
+		t.Fatalf("rendered=%q, want %q", got, want)
+	}
+	if len(ms) != 1 || ms[0].UserID != "-1" || ms[0].Position != 0 || ms[0].Length != 4 {
+		t.Fatalf("ms=%+v", ms)
 	}
 }
 
@@ -347,8 +401,8 @@ func TestParseMarkersWithStyles_FiveStylesAcrossThreeMarkers(t *testing.T) {
 	// italic over "italic" at pos 25 len 6.
 	in := "@[u_a] bold @[u_b] italic"
 	styles := []Style{
-		{Start: 7, Len: 4, St: "b"},   // "bold" at input pos 7
-		{Start: 19, Len: 6, St: "i"},  // "italic" at input pos 19
+		{Start: 7, Len: 4, St: "b"},  // "bold" at input pos 7
+		{Start: 19, Len: 6, St: "i"}, // "italic" at input pos 19
 	}
 	// markers: [0,6) delta 0 (@[u_a]→@Alice), [12,18) delta -2 (@[u_b]→@Bob)
 	// Style "bold" at 7: right of m1 (shift 0), left of m2 → final 7,4
@@ -366,6 +420,55 @@ func TestParseMarkersWithStyles_FiveStylesAcrossThreeMarkers(t *testing.T) {
 	}
 }
 
+func TestParseMarkersWithStyles_StrippedUIDMarker_StyleRightShifts(t *testing.T) {
+	// "@[12345] hello bold" — marker [0,8) stripped + following space consumed
+	// → cumulative shift -9. Style over "bold" at input pos 15 len 4 → 6,4.
+	in := "@[12345] hello bold"
+	style := Style{Start: 15, Len: 4, St: "b"}
+	rendered, ms, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if rendered != "hello bold" {
+		t.Fatalf("rendered=%q", rendered)
+	}
+	if ms != nil {
+		t.Fatalf("ms=%+v, want nil", ms)
+	}
+	if len(got) != 1 || got[0].Start != 6 || got[0].Len != 4 {
+		t.Fatalf("got=%+v want=[{6,4,b}]", got)
+	}
+}
+
+func TestParseMarkersWithStyles_StrippedUIDMarkerInsideStyle_LenShrinks(t *testing.T) {
+	// Bold over the whole "@[123] hi" — marker+space span [0,7) delta -7 →
+	// style len 9-7=2 over output "hi".
+	in := "@[123] hi"
+	style := Style{Start: 0, Len: 9, St: "b"}
+	rendered, _, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if rendered != "hi" {
+		t.Fatalf("rendered=%q", rendered)
+	}
+	if len(got) != 1 || got[0].Start != 0 || got[0].Len != 2 {
+		t.Fatalf("got=%+v want=[{0,2,b}]", got)
+	}
+}
+
+func TestParseMarkersWithStyles_StrippedUIDThenResolvedMention(t *testing.T) {
+	// "@[999] hi @[u_b] bold": marker1 [0,6)+space stripped (delta -7),
+	// marker2 "@[u_b]" [10,16) → "@Bob" (delta -2).
+	// Style over "bold" at input pos 17 len 4 → 17-7-2=8.
+	in := "@[999] hi @[u_b] bold"
+	style := Style{Start: 17, Len: 4, St: "b"}
+	rendered, ms, got := ParseMarkersWithStyles(in, fixtureResolver(t), []Style{style})
+	if rendered != "hi @Bob bold" {
+		t.Fatalf("rendered=%q", rendered)
+	}
+	if len(ms) != 1 || ms[0].UserID != "u_b" || ms[0].Position != 3 || ms[0].Length != 4 {
+		t.Fatalf("ms=%+v", ms)
+	}
+	if len(got) != 1 || got[0].Start != 8 || got[0].Len != 4 {
+		t.Fatalf("got=%+v want=[{8,4,b}]", got)
+	}
+}
+
 // Regression pin: ParseMarkers (non-styles) must keep identical behavior to
 // before the ParseMarkersWithStyles addition — used by zalo/bot caller.
 func TestParseMarkers_BotPathUnchanged(t *testing.T) {
@@ -377,5 +480,33 @@ func TestParseMarkers_BotPathUnchanged(t *testing.T) {
 	}
 	if len(ms) != 2 {
 		t.Fatalf("mentions=%+v", ms)
+	}
+}
+
+// With styles present, each unique marker must resolve exactly once across both
+// the render pass and the span pass (memoization halves DB lookups).
+func TestParseMarkersWithStyles_ResolvesEachMarkerOnce(t *testing.T) {
+	calls := map[string]int{}
+	resolve := func(m string) (string, string, bool) {
+		calls[m]++
+		switch m {
+		case "u_a":
+			return m, "Alice", true
+		case "u_b":
+			return m, "Bob", true
+		default:
+			return "", "", false
+		}
+	}
+	in := "@[u_a] @[u_b] @[u_a] @[u_zz]"
+	style := Style{Start: 0, Len: protocol.UTF16Len(in), St: "b"}
+	ParseMarkersWithStyles(in, resolve, []Style{style})
+	for marker, n := range calls {
+		if n != 1 {
+			t.Errorf("marker %q resolved %d times, want 1", marker, n)
+		}
+	}
+	if calls["u_a"] != 1 {
+		t.Errorf("repeated marker u_a resolved %d times, want 1", calls["u_a"])
 	}
 }

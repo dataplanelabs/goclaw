@@ -2,6 +2,7 @@
 package mentions
 
 import (
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -10,9 +11,52 @@ import (
 
 var markerRE = regexp.MustCompile(`@\[([^\[\]]+)\]`)
 
-// Resolve maps a marker token to a UID + display name. ok=false leaves the
-// marker as literal text. "all" is reserved by the parser.
+func isAllMarker(m string) bool { return m == "all" || m == "All" || m == "everyone" }
+
+// isUIDMarker: digit-only markers are raw platform UIDs — meaningless to humans.
+func isUIDMarker(m string) bool {
+	if m == "" {
+		return false
+	}
+	for _, r := range m {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// stripsFollowingSpace reports whether dropping the marker at [start,end) must
+// also consume one trailing space ("@[1] hi" → "hi", "a @[1] b" → "a b").
+func stripsFollowingSpace(text string, start, end int) bool {
+	if end >= len(text) || text[end] != ' ' {
+		return false
+	}
+	return start == 0 || text[start-1] == ' ' || text[start-1] == '\n'
+}
+
+// Resolve maps a marker token to a UID + display name. ok=false strips
+// uid-shaped markers and downgrades name-shaped ones to plain "@Name" text —
+// raw "@[…]" never reaches the wire. "all" is reserved by the parser.
 type Resolve func(marker string) (uid, displayName string, ok bool)
+
+type resolveResult struct {
+	uid, displayName string
+	ok               bool
+}
+
+// memoizeResolve wraps a Resolve so each unique marker is looked up at most once.
+func memoizeResolve(resolve Resolve) Resolve {
+	cache := make(map[string]resolveResult)
+	return func(marker string) (string, string, bool) {
+		if r, hit := cache[marker]; hit {
+			return r.uid, r.displayName, r.ok
+		}
+		uid, name, ok := resolve(marker)
+		cache[marker] = resolveResult{uid, name, ok}
+		return uid, name, ok
+	}
+}
 
 // ParseMarkers rewrites @[uid] / @[all] markers to @<DisplayName> and returns
 // the rewritten text + mention spans with UTF-16 offsets.
@@ -45,7 +89,7 @@ func ParseMarkers(text string, resolve Resolve) (string, []protocol.Mention) {
 
 		marker := text[capStart:capEnd]
 
-		if marker == "all" || marker == "All" || marker == "everyone" {
+		if isAllMarker(marker) {
 			replacement := "@All"
 			out.WriteString(replacement)
 			mentions = append(mentions, protocol.Mention{
@@ -62,10 +106,20 @@ func ParseMarkers(text string, resolve Resolve) (string, []protocol.Mention) {
 
 		uid, displayName, ok := resolve(marker)
 		if !ok {
-			literal := text[start:end]
-			out.WriteString(literal)
-			posUTF16 += protocol.UTF16Len(literal)
 			cursor = end
+			if isUIDMarker(marker) {
+				// Raw "@[123…]" leaking to the chat is worse than no mention at all.
+				slog.Warn("mentions.unresolved_marker_stripped", "uid", marker)
+				if stripsFollowingSpace(text, start, end) {
+					cursor = end + 1
+				}
+				continue
+			}
+			// Name-shaped marker: keep the human-readable name, drop the brackets.
+			slog.Warn("mentions.unresolved_marker_downgraded_to_text", "marker", marker)
+			replacement := "@" + marker
+			out.WriteString(replacement)
+			posUTF16 += protocol.UTF16Len(replacement)
 			continue
 		}
 
@@ -118,6 +172,10 @@ type markerSpan struct {
 // then for each input-space style aggregate the cumulative shift / length
 // adjustment from every marker.
 func ParseMarkersWithStyles(text string, resolve Resolve, styles []Style) (string, []protocol.Mention, []Style) {
+	// Memoize so the render pass and the span pass resolve each unique marker
+	// once — halves DB lookups (contacts fallback) and prevents render/span
+	// divergence if a lookup returns differently between the two calls.
+	resolve = memoizeResolve(resolve)
 	rendered, mentions := ParseMarkers(text, resolve)
 	if len(styles) == 0 {
 		return rendered, mentions, nil
@@ -139,17 +197,23 @@ func ParseMarkersWithStyles(text string, resolve Resolve, styles []Style) (strin
 		markerLenUTF16 := mEndUTF16 - mStartUTF16
 
 		var replacementLenUTF16 int
-		if marker == "all" || marker == "All" || marker == "everyone" {
+		extraSkipUTF16 := 0 // collapsed space consumed alongside a stripped marker
+		if isAllMarker(marker) {
 			replacementLenUTF16 = protocol.UTF16Len("@All")
 		} else if uid, displayName, ok := resolve(marker); ok && uid != "" {
 			replacementLenUTF16 = protocol.UTF16Len("@" + displayName)
+		} else if isUIDMarker(marker) {
+			replacementLenUTF16 = 0
+			if stripsFollowingSpace(text, start, end) {
+				extraSkipUTF16 = 1
+			}
 		} else {
-			replacementLenUTF16 = markerLenUTF16
+			replacementLenUTF16 = protocol.UTF16Len("@" + marker)
 		}
 		spans = append(spans, markerSpan{
 			startUTF16: mStartUTF16,
-			endUTF16:   mEndUTF16,
-			delta:      replacementLenUTF16 - markerLenUTF16,
+			endUTF16:   mEndUTF16 + extraSkipUTF16,
+			delta:      replacementLenUTF16 - markerLenUTF16 - extraSkipUTF16,
 		})
 	}
 
@@ -158,8 +222,8 @@ func ParseMarkersWithStyles(text string, resolve Resolve, styles []Style) (strin
 		styleStart := s.Start
 		styleEnd := s.Start + s.Len
 		drop := false
-		shift := 0     // cumulative shift to apply to Start
-		lenDelta := 0  // cumulative len adjustment for "marker inside style" case
+		shift := 0    // cumulative shift to apply to Start
+		lenDelta := 0 // cumulative len adjustment for "marker inside style" case
 		for _, sp := range spans {
 			switch {
 			case styleStart >= sp.endUTF16:

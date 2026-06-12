@@ -479,6 +479,11 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`ALTER TABLE cron_jobs DROP COLUMN inject_target_history`)
 	}
 
+	if targetVersion < 50 {
+		// Migration 49→50 adds cron_jobs.inject_target_history_limit.
+		db.Exec(`ALTER TABLE cron_jobs DROP COLUMN inject_target_history_limit`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db

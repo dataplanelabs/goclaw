@@ -278,6 +278,9 @@ func (cs *Service) UpdateJob(jobID string, patch JobPatch) (*Job, error) {
 		if patch.InjectTargetHistory != nil {
 			job.InjectTargetHistory = *patch.InjectTargetHistory
 		}
+		if patch.InjectTargetHistoryLimit != nil {
+			job.InjectTargetHistoryLimit = *patch.InjectTargetHistoryLimit
+		}
 		if patch.DeleteAfterRun != nil {
 			job.DeleteAfterRun = *patch.DeleteAfterRun
 		}

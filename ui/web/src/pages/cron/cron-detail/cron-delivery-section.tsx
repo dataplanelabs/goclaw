@@ -23,6 +23,8 @@ interface CronDeliverySectionProps {
   setWakeHeartbeat: (v: boolean) => void;
   injectTargetHistory: boolean;
   setInjectTargetHistory: (v: boolean) => void;
+  injectTargetHistoryLimit: number;
+  setInjectTargetHistoryLimit: (v: number) => void;
   channelNames: string[];
   targets: DeliveryTarget[];
   readonly: boolean;
@@ -39,6 +41,8 @@ export function CronDeliverySection({
   setWakeHeartbeat,
   injectTargetHistory,
   setInjectTargetHistory,
+  injectTargetHistoryLimit,
+  setInjectTargetHistoryLimit,
   channelNames,
   targets,
   readonly,
@@ -120,12 +124,34 @@ export function CronDeliverySection({
         <Switch checked={wakeHeartbeat} onCheckedChange={setWakeHeartbeat} disabled={readonly} />
       </div>
 
-      <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2.5">
-        <div>
-          <p className="text-sm font-medium">{t("detail.injectTargetHistory")}</p>
-          <p className="text-xs text-muted-foreground">{t("detail.injectTargetHistoryDesc")}</p>
+      <div className="space-y-3 rounded-md border px-3 py-2.5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">{t("detail.injectTargetHistory")}</p>
+            <p className="text-xs text-muted-foreground">{t("detail.injectTargetHistoryDesc")}</p>
+          </div>
+          <Switch checked={injectTargetHistory} onCheckedChange={setInjectTargetHistory} disabled={readonly} />
         </div>
-        <Switch checked={injectTargetHistory} onCheckedChange={setInjectTargetHistory} disabled={readonly} />
+        {injectTargetHistory && (
+          <div className="space-y-1.5">
+            <Label>{t("detail.injectTargetHistoryLimit")}</Label>
+            <Input
+              type="number"
+              min={5}
+              max={200}
+              value={injectTargetHistoryLimit}
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                // Empty/cleared input falls back to the default so it never
+                // round-trips as 0 (which fails the .min(5) validation/clamp).
+                setInjectTargetHistoryLimit(raw === "" ? 50 : Number(raw));
+              }}
+              disabled={readonly}
+              className="w-32 text-base md:text-sm"
+            />
+            <p className="text-xs text-muted-foreground">{t("detail.injectTargetHistoryLimitDesc")}</p>
+          </div>
+        )}
       </div>
     </section>
   );

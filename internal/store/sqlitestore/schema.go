@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 49
+const SchemaVersion = 50
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -865,6 +865,8 @@ SET path = substr(path, instr(substr(path, 9), '/') + 9)
 WHERE path LIKE 'tenants/%/%';`,
 	// Version 48 → 49: per-cron inject_target_history flag (mirrors PG migration 000079).
 	48: `ALTER TABLE cron_jobs ADD COLUMN inject_target_history INTEGER NOT NULL DEFAULT 1;`,
+	// Version 49 → 50: per-cron history look-back limit (mirrors PG migration 000080).
+	49: `ALTER TABLE cron_jobs ADD COLUMN inject_target_history_limit INTEGER NOT NULL DEFAULT 50;`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.

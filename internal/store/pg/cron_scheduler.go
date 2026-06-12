@@ -38,7 +38,7 @@ func (s *PGCronStore) GetDueJobs(now time.Time) []store.CronJob {
 func (s *PGCronStore) refreshJobCache() {
 	rows, err := s.db.QueryContext(s.baseCtx,
 		`SELECT id, tenant_id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
-		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat, inject_target_history,
+		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat, inject_target_history, inject_target_history_limit,
 		 next_run_at, last_run_at, last_status, last_error, write_only_hash,
 		 created_at, updated_at FROM cron_jobs WHERE enabled = true`)
 	if err != nil {
@@ -371,7 +371,7 @@ func (s *PGCronStore) loadClaimedJob(id uuid.UUID) (*store.CronJob, bool) {
 	row := s.db.QueryRowContext(
 		s.baseCtx,
 		`SELECT id, tenant_id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
-		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat, inject_target_history,
+		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat, inject_target_history, inject_target_history_limit,
 		 next_run_at, last_run_at, last_status, last_error, write_only_hash,
 		 created_at, updated_at
 		 FROM cron_jobs

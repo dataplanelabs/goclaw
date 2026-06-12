@@ -18,6 +18,7 @@ import { useWs } from "@/hooks/use-ws";
 import { Methods } from "@/api/protocol";
 import type { CronJob, CronJobPatch } from "../hooks/use-cron";
 import { cronAdvancedSchema, type CronAdvancedFormData } from "@/schemas/cron-advanced.schema";
+import { clampHistoryLimit } from "./cron-overview-tab";
 
 interface DeliveryTarget {
   channel: string;
@@ -41,6 +42,7 @@ function deriveDefaults(job: CronJob): CronAdvancedFormData {
     to: job.deliverTo ?? "",
     wakeHeartbeat: job.wakeHeartbeat ?? false,
     injectTargetHistory: job.injectTargetHistory ?? true,
+    injectTargetHistoryLimit: job.injectTargetHistoryLimit ?? 50,
     deleteAfterRun: job.deleteAfterRun ?? false,
     stateless: job.stateless ?? false,
   };
@@ -70,6 +72,7 @@ export function CronAdvancedDialog({ open, onOpenChange, job, onUpdate }: CronAd
   const to = watch("to");
   const wakeHeartbeat = watch("wakeHeartbeat");
   const injectTargetHistory = watch("injectTargetHistory");
+  const injectTargetHistoryLimit = watch("injectTargetHistoryLimit");
   const deleteAfterRun = watch("deleteAfterRun");
   const stateless = watch("stateless");
 
@@ -113,6 +116,7 @@ export function CronAdvancedDialog({ open, onOpenChange, job, onUpdate }: CronAd
         deliverTo: data.deliver ? data.to.trim() || undefined : undefined,
         wakeHeartbeat: data.wakeHeartbeat,
         injectTargetHistory: data.injectTargetHistory,
+        injectTargetHistoryLimit: clampHistoryLimit(data.injectTargetHistoryLimit),
         deleteAfterRun: data.deleteAfterRun,
         stateless: data.stateless,
       });
@@ -249,12 +253,28 @@ export function CronAdvancedDialog({ open, onOpenChange, job, onUpdate }: CronAd
               <Switch checked={wakeHeartbeat} onCheckedChange={(v) => setValue("wakeHeartbeat", v)} />
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2.5">
-              <div>
-                <p className="text-sm font-medium">{t("detail.injectTargetHistory")}</p>
-                <p className="text-xs text-muted-foreground">{t("detail.injectTargetHistoryDesc")}</p>
+            <div className="space-y-3 rounded-md border px-3 py-2.5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">{t("detail.injectTargetHistory")}</p>
+                  <p className="text-xs text-muted-foreground">{t("detail.injectTargetHistoryDesc")}</p>
+                </div>
+                <Switch checked={injectTargetHistory} onCheckedChange={(v) => setValue("injectTargetHistory", v)} />
               </div>
-              <Switch checked={injectTargetHistory} onCheckedChange={(v) => setValue("injectTargetHistory", v)} />
+              {injectTargetHistory && (
+                <div className="space-y-1.5">
+                  <Label>{t("detail.injectTargetHistoryLimit")}</Label>
+                  <Input
+                    type="number"
+                    min={5}
+                    max={200}
+                    value={injectTargetHistoryLimit}
+                    onChange={(e) => setValue("injectTargetHistoryLimit", Number(e.target.value))}
+                    className="w-32 text-base md:text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">{t("detail.injectTargetHistoryLimitDesc")}</p>
+                </div>
+              )}
             </div>
           </div>
 

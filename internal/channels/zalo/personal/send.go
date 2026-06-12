@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
@@ -16,6 +17,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/common"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
 	mediapkg "github.com/nextlevelbuilder/goclaw/internal/media"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 	pkgproto "github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
@@ -97,7 +99,13 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		}
 	}
 
+	hadMarkers := strings.Contains(msg.Content, "@[")
 	rendered, allMentions, adjustedStyles := c.parseOutboundMentionsWithStyles(ctx, msg.ChatID, threadType, msg.Content, outStyles)
+	if hadMarkers && rendered == "" {
+		slog.Warn("zalo_personal.send.dropped_all_markers_unresolved",
+			"chat_id", msg.ChatID,
+			"thread_type", threadType)
+	}
 	msg.Content = rendered
 	outStyles = adjustedStyles
 
@@ -146,15 +154,7 @@ func (c *Channel) parseOutboundMentionsWithStyles(ctx context.Context, threadID 
 		rendered, ms := c.parseOutboundMentions(ctx, threadID, threadType, text)
 		return rendered, ms, nil
 	}
-	resolve := func(marker string) (string, string, bool) {
-		if name, ok := c.LookupGroupMember(ctx, threadID, marker); ok {
-			return marker, name, true
-		}
-		if uid, name, ok := c.LookupGroupMemberByName(ctx, threadID, marker); ok {
-			return uid, name, true
-		}
-		return "", "", false
-	}
+	resolve := c.mentionResolver(ctx, threadID)
 	// Convert []common.Style ↔ []mentions.Style across the boundary.
 	mStyles := make([]mentions.Style, len(inStyles))
 	for i, s := range inStyles {
@@ -174,20 +174,44 @@ func (c *Channel) parseOutboundMentionsWithStyles(ctx context.Context, threadID 
 	return rendered, ms, out
 }
 
-func (c *Channel) parseOutboundMentions(ctx context.Context, threadID string, threadType protocol.ThreadType, text string) (string, []pkgproto.Mention) {
-	if text == "" || !strings.Contains(text, "@[") {
-		return text, nil
-	}
-	resolve := func(marker string) (string, string, bool) {
+// mentionResolver chains: group member cache (uid, then name) → rate-limited
+// member fetch → channel_contacts. The contacts fallback covers cold caches
+// after pod restart; a contacts hit may be a non-member, which still renders
+// "@Name" (Zalo drops mention spans for non-members server-side).
+func (c *Channel) mentionResolver(ctx context.Context, threadID string) mentions.Resolve {
+	return func(marker string) (string, string, bool) {
 		if name, ok := c.LookupGroupMember(ctx, threadID, marker); ok {
 			return marker, name, true
 		}
 		if uid, name, ok := c.LookupGroupMemberByName(ctx, threadID, marker); ok {
 			return uid, name, true
 		}
+		if name, ok := c.lookupContactDisplayName(ctx, marker); ok {
+			slog.Info("zalo_personal.mention.contacts_fallback",
+				"thread_id", threadID, "uid", marker, "name", name)
+			return marker, name, true
+		}
 		return "", "", false
 	}
-	rendered, ms := mentions.ParseMarkers(text, resolve)
+}
+
+func (c *Channel) lookupContactDisplayName(ctx context.Context, uid string) (string, bool) {
+	cc := c.ContactCollector()
+	if cc == nil {
+		return "", false
+	}
+	// Bound the DB lookup so a hung PG conn can't stall the serial outbound
+	// dispatch path (mirrors memberFetchTimeout discipline).
+	fctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return cc.DisplayNameBySenderID(store.WithTenantID(fctx, c.TenantID()), c.Type(), uid)
+}
+
+func (c *Channel) parseOutboundMentions(ctx context.Context, threadID string, threadType protocol.ThreadType, text string) (string, []pkgproto.Mention) {
+	if text == "" || !strings.Contains(text, "@[") {
+		return text, nil
+	}
+	rendered, ms := mentions.ParseMarkers(text, c.mentionResolver(ctx, threadID))
 	slog.Info("mention.parse",
 		"channel", "zalo_personal",
 		"thread_type", threadType,
