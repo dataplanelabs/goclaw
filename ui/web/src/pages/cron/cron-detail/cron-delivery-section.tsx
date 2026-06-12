@@ -140,7 +140,12 @@ export function CronDeliverySection({
               min={5}
               max={200}
               value={injectTargetHistoryLimit}
-              onChange={(e) => setInjectTargetHistoryLimit(Number(e.target.value))}
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                // Empty/cleared input falls back to the default so it never
+                // round-trips as 0 (which fails the .min(5) validation/clamp).
+                setInjectTargetHistoryLimit(raw === "" ? 50 : Number(raw));
+              }}
               disabled={readonly}
               className="w-32 text-base md:text-sm"
             />

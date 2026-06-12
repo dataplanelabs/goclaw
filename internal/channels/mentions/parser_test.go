@@ -401,8 +401,8 @@ func TestParseMarkersWithStyles_FiveStylesAcrossThreeMarkers(t *testing.T) {
 	// italic over "italic" at pos 25 len 6.
 	in := "@[u_a] bold @[u_b] italic"
 	styles := []Style{
-		{Start: 7, Len: 4, St: "b"},   // "bold" at input pos 7
-		{Start: 19, Len: 6, St: "i"},  // "italic" at input pos 19
+		{Start: 7, Len: 4, St: "b"},  // "bold" at input pos 7
+		{Start: 19, Len: 6, St: "i"}, // "italic" at input pos 19
 	}
 	// markers: [0,6) delta 0 (@[u_a]→@Alice), [12,18) delta -2 (@[u_b]→@Bob)
 	// Style "bold" at 7: right of m1 (shift 0), left of m2 → final 7,4
@@ -480,5 +480,33 @@ func TestParseMarkers_BotPathUnchanged(t *testing.T) {
 	}
 	if len(ms) != 2 {
 		t.Fatalf("mentions=%+v", ms)
+	}
+}
+
+// With styles present, each unique marker must resolve exactly once across both
+// the render pass and the span pass (memoization halves DB lookups).
+func TestParseMarkersWithStyles_ResolvesEachMarkerOnce(t *testing.T) {
+	calls := map[string]int{}
+	resolve := func(m string) (string, string, bool) {
+		calls[m]++
+		switch m {
+		case "u_a":
+			return m, "Alice", true
+		case "u_b":
+			return m, "Bob", true
+		default:
+			return "", "", false
+		}
+	}
+	in := "@[u_a] @[u_b] @[u_a] @[u_zz]"
+	style := Style{Start: 0, Len: protocol.UTF16Len(in), St: "b"}
+	ParseMarkersWithStyles(in, resolve, []Style{style})
+	for marker, n := range calls {
+		if n != 1 {
+			t.Errorf("marker %q resolved %d times, want 1", marker, n)
+		}
+	}
+	if calls["u_a"] != 1 {
+		t.Errorf("repeated marker u_a resolved %d times, want 1", calls["u_a"])
 	}
 }

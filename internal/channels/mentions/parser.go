@@ -40,6 +40,24 @@ func stripsFollowingSpace(text string, start, end int) bool {
 // raw "@[…]" never reaches the wire. "all" is reserved by the parser.
 type Resolve func(marker string) (uid, displayName string, ok bool)
 
+type resolveResult struct {
+	uid, displayName string
+	ok               bool
+}
+
+// memoizeResolve wraps a Resolve so each unique marker is looked up at most once.
+func memoizeResolve(resolve Resolve) Resolve {
+	cache := make(map[string]resolveResult)
+	return func(marker string) (string, string, bool) {
+		if r, hit := cache[marker]; hit {
+			return r.uid, r.displayName, r.ok
+		}
+		uid, name, ok := resolve(marker)
+		cache[marker] = resolveResult{uid, name, ok}
+		return uid, name, ok
+	}
+}
+
 // ParseMarkers rewrites @[uid] / @[all] markers to @<DisplayName> and returns
 // the rewritten text + mention spans with UTF-16 offsets.
 func ParseMarkers(text string, resolve Resolve) (string, []protocol.Mention) {
@@ -154,6 +172,10 @@ type markerSpan struct {
 // then for each input-space style aggregate the cumulative shift / length
 // adjustment from every marker.
 func ParseMarkersWithStyles(text string, resolve Resolve, styles []Style) (string, []protocol.Mention, []Style) {
+	// Memoize so the render pass and the span pass resolve each unique marker
+	// once — halves DB lookups (contacts fallback) and prevents render/span
+	// divergence if a lookup returns differently between the two calls.
+	resolve = memoizeResolve(resolve)
 	rendered, mentions := ParseMarkers(text, resolve)
 	if len(styles) == 0 {
 		return rendered, mentions, nil
@@ -200,8 +222,8 @@ func ParseMarkersWithStyles(text string, resolve Resolve, styles []Style) (strin
 		styleStart := s.Start
 		styleEnd := s.Start + s.Len
 		drop := false
-		shift := 0     // cumulative shift to apply to Start
-		lenDelta := 0  // cumulative len adjustment for "marker inside style" case
+		shift := 0    // cumulative shift to apply to Start
+		lenDelta := 0 // cumulative len adjustment for "marker inside style" case
 		for _, sp := range spans {
 			switch {
 			case styleStart >= sp.endUTF16:

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
@@ -98,7 +99,13 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		}
 	}
 
+	hadMarkers := strings.Contains(msg.Content, "@[")
 	rendered, allMentions, adjustedStyles := c.parseOutboundMentionsWithStyles(ctx, msg.ChatID, threadType, msg.Content, outStyles)
+	if hadMarkers && rendered == "" {
+		slog.Warn("zalo_personal.send.dropped_all_markers_unresolved",
+			"chat_id", msg.ChatID,
+			"thread_type", threadType)
+	}
 	msg.Content = rendered
 	outStyles = adjustedStyles
 
@@ -193,7 +200,11 @@ func (c *Channel) lookupContactDisplayName(ctx context.Context, uid string) (str
 	if cc == nil {
 		return "", false
 	}
-	return cc.DisplayNameBySenderID(store.WithTenantID(ctx, c.TenantID()), c.Type(), uid)
+	// Bound the DB lookup so a hung PG conn can't stall the serial outbound
+	// dispatch path (mirrors memberFetchTimeout discipline).
+	fctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return cc.DisplayNameBySenderID(store.WithTenantID(fctx, c.TenantID()), c.Type(), uid)
 }
 
 func (c *Channel) parseOutboundMentions(ctx context.Context, threadID string, threadType protocol.ThreadType, text string) (string, []pkgproto.Mention) {
