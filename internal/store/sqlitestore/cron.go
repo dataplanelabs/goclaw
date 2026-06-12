@@ -125,6 +125,7 @@ func scanCronRow(row cronRowScanner) (*store.CronJob, error) {
 	var name, scheduleKind string
 	var enabled, deleteAfterRun bool
 	var stateless, deliver, wakeHeartbeat, injectTargetHistory bool
+	var injectTargetHistoryLimit int
 	var deliverChannel, deliverTo string
 	var cronExpr, tz, lastStatus, lastError *string
 	var runAt, nextRunAt, lastRunAt nullSqliteTime
@@ -134,7 +135,7 @@ func scanCronRow(row cronRowScanner) (*store.CronJob, error) {
 	createdAt, updatedAt := scanTimePair()
 
 	err := row.Scan(&id, &tenantID, &agentID, &userID, &name, &enabled, &scheduleKind, &cronExpr, &runAt, &tz,
-		&intervalMS, &payloadJSON, &deleteAfterRun, &stateless, &deliver, &deliverChannel, &deliverTo, &wakeHeartbeat, &injectTargetHistory,
+		&intervalMS, &payloadJSON, &deleteAfterRun, &stateless, &deliver, &deliverChannel, &deliverTo, &wakeHeartbeat, &injectTargetHistory, &injectTargetHistoryLimit,
 		&nextRunAt, &lastRunAt, &lastStatus, &lastError, &writeOnlyHash,
 		createdAt, updatedAt)
 	if err != nil {
@@ -165,6 +166,8 @@ func scanCronRow(row cronRowScanner) (*store.CronJob, error) {
 		WakeHeartbeat:       wakeHeartbeat,
 		InjectTargetHistory: injectTargetHistory,
 		WriteOnlyHash:       writeOnlyHash,
+
+		InjectTargetHistoryLimit: injectTargetHistoryLimit,
 	}
 
 	if agentID != nil {
@@ -211,7 +214,7 @@ func computeNextRun(schedule *store.CronSchedule, now time.Time, defaultTZ strin
 
 func (s *SQLiteCronStore) scanJob(ctx context.Context, id uuid.UUID) (*store.CronJob, error) {
 	q := `SELECT id, tenant_id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
-		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat, inject_target_history,
+		 interval_ms, payload, delete_after_run, stateless, deliver, deliver_channel, deliver_to, wake_heartbeat, inject_target_history, inject_target_history_limit,
 		 next_run_at, last_run_at, last_status, last_error, write_only_hash,
 		 created_at, updated_at FROM cron_jobs WHERE id = ?`
 	args := []any{id}

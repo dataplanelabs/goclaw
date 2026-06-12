@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	cronTargetHistoryLimit    = 30
-	cronTargetHistoryCharsCap = 6000
+	// Fallback look-back when the per-cron InjectTargetHistoryLimit is unset (<=0).
+	cronTargetHistoryDefaultLimit = 50
+	cronTargetHistoryCharsCap     = 6000
 	// Per-message rune clamp so a single huge target-chat message (e.g. a pasted
 	// document) can't blow the cron context budget. UTF-8/rune-safe.
 	cronTargetHistoryMsgRunes = 600
@@ -96,13 +97,17 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 		// The cron runs in an isolated session and is otherwise blind to the group session.
 		if job.InjectTargetHistory && job.Deliver && job.DeliverChannel != "" && job.DeliverTo != "" {
 			targetKey := sessions.BuildSessionKey(agentID, job.DeliverChannel, sessions.PeerKind(peerKind), job.DeliverTo)
+			limit := job.InjectTargetHistoryLimit
+			if limit <= 0 {
+				limit = cronTargetHistoryDefaultLimit
+			}
 			// GetHistory on the store-backed session manager hydrates from DB when the
 			// session is cold (post-restart), so this is robust across pod restarts.
 			history := sessionMgr.GetHistory(cronCtx, targetKey)
-			block := buildCronTargetHistoryContext(history)
+			block := buildCronTargetHistoryContext(history, limit)
 			slog.Info("cron: target-history injection",
 				"job", job.Name, "peer_kind", peerKind, "key", targetKey,
-				"msgs", len(history), "block_chars", len(block))
+				"limit", limit, "msgs", len(history), "block_chars", len(block))
 			if block != "" {
 				extraPrompt += block
 			}
@@ -219,16 +224,19 @@ func resolveCronPeerKind(ctx context.Context, job *store.CronJob, contactStore s
 
 // buildCronTargetHistoryContext formats the tail of a target chat's history into a
 // clearly-labeled read-only block for the cron's system prompt. Returns "" when
-// there is no usable history. Bounds output by cronTargetHistoryLimit (last N
-// messages) and cronTargetHistoryCharsCap (total chars) to keep tokens in budget.
-func buildCronTargetHistoryContext(history []providers.Message) string {
+// there is no usable history. Bounds output by limit (last N messages) and
+// cronTargetHistoryCharsCap (total chars) to keep tokens in budget.
+func buildCronTargetHistoryContext(history []providers.Message, limit int) string {
 	if len(history) == 0 {
 		return ""
 	}
+	if limit <= 0 {
+		limit = cronTargetHistoryDefaultLimit
+	}
 
 	start := 0
-	if len(history) > cronTargetHistoryLimit {
-		start = len(history) - cronTargetHistoryLimit
+	if len(history) > limit {
+		start = len(history) - limit
 	}
 	recent := history[start:]
 

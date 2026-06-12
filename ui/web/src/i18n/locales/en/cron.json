@@ -125,6 +125,8 @@
     "wakeHeartbeatDesc": "Trigger agent heartbeat when job runs",
     "injectTargetHistory": "Inject target chat history",
     "injectTargetHistoryDesc": "Seed the run with the target chat's recent messages so the agent can see who already responded.",
+    "injectTargetHistoryLimit": "History look-back (messages)",
+    "injectTargetHistoryLimitDesc": "How many recent messages of the delivered chat are injected.",
     "lifecycle": "Lifecycle",
     "lifecycleDesc": "Job lifecycle settings",
     "deleteAfterRun": "Delete after run",

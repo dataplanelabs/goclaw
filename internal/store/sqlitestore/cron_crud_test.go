@@ -335,6 +335,52 @@ func TestSQLiteCronStore_InjectTargetHistoryRoundtrip(t *testing.T) {
 	}
 }
 
+// TestSQLiteCronStore_InjectTargetHistoryLimitRoundtrip verifies the per-cron
+// look-back limit defaults to 50 on create and round-trips a patched value
+// via GetJob + ListJobs.
+func TestSQLiteCronStore_InjectTargetHistoryLimitRoundtrip(t *testing.T) {
+	cronStore, ctx, _ := newTestSQLiteCronStore(t)
+	everyMS := int64(time.Minute / time.Millisecond)
+
+	job, err := cronStore.AddJob(ctx, "job-ith-limit", store.CronSchedule{
+		Kind:    "every",
+		EveryMS: &everyMS,
+	}, "hello", false, "", "", "", "user-1")
+	if err != nil {
+		t.Fatalf("AddJob error: %v", err)
+	}
+	if job == nil {
+		job = mustOnlyJob(t, cronStore, ctx)
+	}
+
+	// Fresh job defaults to 50 (DB DEFAULT 50).
+	if job.InjectTargetHistoryLimit != 50 {
+		t.Fatalf("expected fresh job InjectTargetHistoryLimit=50, got %d", job.InjectTargetHistoryLimit)
+	}
+
+	limit := 120
+	if _, err := cronStore.UpdateJob(ctx, job.ID, store.CronJobPatch{
+		InjectTargetHistoryLimit: &limit,
+	}); err != nil {
+		t.Fatalf("UpdateJob InjectTargetHistoryLimit error: %v", err)
+	}
+	got, ok := cronStore.GetJob(ctx, job.ID)
+	if !ok {
+		t.Fatal("job not found after patch")
+	}
+	if got.InjectTargetHistoryLimit != limit {
+		t.Fatalf("GetJob InjectTargetHistoryLimit: got %d, want %d", got.InjectTargetHistoryLimit, limit)
+	}
+
+	listed := cronStore.ListJobs(ctx, false, "", "user-1")
+	if len(listed) != 1 {
+		t.Fatalf("ListJobs: got %d jobs, want 1", len(listed))
+	}
+	if listed[0].InjectTargetHistoryLimit != limit {
+		t.Fatalf("ListJobs InjectTargetHistoryLimit: got %d, want %d", listed[0].InjectTargetHistoryLimit, limit)
+	}
+}
+
 func newTestSQLiteCronStore(t *testing.T) (*SQLiteCronStore, context.Context, *sql.DB) {
 	t.Helper()
 

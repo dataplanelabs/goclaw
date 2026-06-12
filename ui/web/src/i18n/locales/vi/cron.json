@@ -125,6 +125,8 @@
     "wakeHeartbeatDesc": "Kích hoạt heartbeat của agent khi công việc chạy",
     "injectTargetHistory": "Nạp lịch sử cuộc trò chuyện đích",
     "injectTargetHistoryDesc": "Cho cron đọc tin nhắn gần đây của nhóm/người nhận để biết ai đã phản hồi.",
+    "injectTargetHistoryLimit": "Số tin nhắn nhìn lại",
+    "injectTargetHistoryLimitDesc": "Số tin nhắn gần đây của cuộc trò chuyện đích được nạp vào lần chạy.",
     "lifecycle": "Vòng đời",
     "lifecycleDesc": "Cài đặt vòng đời công việc",
     "deleteAfterRun": "Xóa sau khi chạy",

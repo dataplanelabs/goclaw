@@ -125,6 +125,8 @@
     "wakeHeartbeatDesc": "任务运行时触发Agent心跳",
     "injectTargetHistory": "注入目标会话历史",
     "injectTargetHistoryDesc": "用目标会话的近期消息预填此次运行，让Agent知道谁已经回复过。",
+    "injectTargetHistoryLimit": "历史回看条数",
+    "injectTargetHistoryLimitDesc": "注入目标会话最近多少条消息。",
     "lifecycle": "生命周期",
     "lifecycleDesc": "任务生命周期设置",
     "deleteAfterRun": "运行后删除",

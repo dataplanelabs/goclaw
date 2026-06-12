@@ -101,7 +101,7 @@ func TestBuildCronTargetHistoryContext_FormatsRecentMessages(t *testing.T) {
 		{Role: "assistant", Content: "chào Alice"},
 		{Role: "user", Content: "[From: Bob (uid:2)] đã xong report"},
 	}
-	got := buildCronTargetHistoryContext(history)
+	got := buildCronTargetHistoryContext(history, cronTargetHistoryDefaultLimit)
 	if !strings.Contains(got, "READ-ONLY") {
 		t.Fatalf("block missing READ-ONLY label: %q", got)
 	}
@@ -117,30 +117,59 @@ func TestBuildCronTargetHistoryContext_FormatsRecentMessages(t *testing.T) {
 }
 
 func TestBuildCronTargetHistoryContext_EmptyReturnsNothing(t *testing.T) {
-	if got := buildCronTargetHistoryContext(nil); got != "" {
+	if got := buildCronTargetHistoryContext(nil, cronTargetHistoryDefaultLimit); got != "" {
 		t.Errorf("nil history → want empty, got %q", got)
 	}
 	blank := []providers.Message{{Role: "user", Content: "   "}}
-	if got := buildCronTargetHistoryContext(blank); got != "" {
+	if got := buildCronTargetHistoryContext(blank, cronTargetHistoryDefaultLimit); got != "" {
 		t.Errorf("blank-only history → want empty, got %q", got)
 	}
 }
 
 func TestBuildCronTargetHistoryContext_LimitsToLastN(t *testing.T) {
 	var history []providers.Message
-	for i := 0; i < cronTargetHistoryLimit+10; i++ {
+	for i := 0; i < cronTargetHistoryDefaultLimit+10; i++ {
 		marker := "msg-keep"
 		if i < 10 {
 			marker = "msg-old-dropped"
 		}
 		history = append(history, providers.Message{Role: "user", Content: marker})
 	}
-	got := buildCronTargetHistoryContext(history)
+	got := buildCronTargetHistoryContext(history, cronTargetHistoryDefaultLimit)
 	if strings.Contains(got, "msg-old-dropped") {
 		t.Errorf("expected oldest messages beyond limit to be dropped; got %q", got)
 	}
-	if strings.Count(got, "msg-keep") != cronTargetHistoryLimit {
-		t.Errorf("expected %d kept lines, got %d", cronTargetHistoryLimit, strings.Count(got, "msg-keep"))
+	if strings.Count(got, "msg-keep") != cronTargetHistoryDefaultLimit {
+		t.Errorf("expected %d kept lines, got %d", cronTargetHistoryDefaultLimit, strings.Count(got, "msg-keep"))
+	}
+}
+
+func TestBuildCronTargetHistoryContext_CustomLimitHonored(t *testing.T) {
+	var history []providers.Message
+	for i := 0; i < 20; i++ {
+		marker := "msg-keep"
+		if i < 15 {
+			marker = "msg-old-dropped"
+		}
+		history = append(history, providers.Message{Role: "user", Content: marker})
+	}
+	got := buildCronTargetHistoryContext(history, 5)
+	if strings.Contains(got, "msg-old-dropped") {
+		t.Errorf("limit=5: expected messages beyond limit to be dropped; got %q", got)
+	}
+	if n := strings.Count(got, "msg-keep"); n != 5 {
+		t.Errorf("limit=5: expected 5 kept lines, got %d", n)
+	}
+}
+
+func TestBuildCronTargetHistoryContext_NonPositiveLimitFallsBackToDefault(t *testing.T) {
+	var history []providers.Message
+	for i := 0; i < cronTargetHistoryDefaultLimit+10; i++ {
+		history = append(history, providers.Message{Role: "user", Content: "m"})
+	}
+	got := buildCronTargetHistoryContext(history, 0)
+	if n := strings.Count(got, "user: m"); n != cronTargetHistoryDefaultLimit {
+		t.Errorf("limit=0: expected default %d lines, got %d", cronTargetHistoryDefaultLimit, n)
 	}
 }
 
@@ -158,7 +187,7 @@ func TestBuildCronTargetHistoryContext_CharCapDropsOldest(t *testing.T) {
 		}
 		history = append(history, providers.Message{Role: "user", Content: tag + body})
 	}
-	got := buildCronTargetHistoryContext(history)
+	got := buildCronTargetHistoryContext(history, cronTargetHistoryDefaultLimit)
 	if len(got) > cronTargetHistoryCharsCap+700 {
 		t.Errorf("output exceeds char cap budget: %d", len(got))
 	}
@@ -174,7 +203,7 @@ func TestBuildCronTargetHistoryContext_ClampsHugeMessage(t *testing.T) {
 	// A single message far larger than the per-message clamp must be truncated
 	// (rune-safe) so it can't blow the context budget.
 	huge := strings.Repeat("ô", 5000) // multi-byte runes — exercises rune-safe clamp
-	got := buildCronTargetHistoryContext([]providers.Message{{Role: "user", Content: huge}})
+	got := buildCronTargetHistoryContext([]providers.Message{{Role: "user", Content: huge}}, cronTargetHistoryDefaultLimit)
 	if !utf8.ValidString(got) {
 		t.Fatalf("output is not valid UTF-8 (clamp cut mid-rune)")
 	}
