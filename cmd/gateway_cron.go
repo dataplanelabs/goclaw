@@ -99,7 +99,11 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 			// GetHistory on the store-backed session manager hydrates from DB when the
 			// session is cold (post-restart), so this is robust across pod restarts.
 			history := sessionMgr.GetHistory(cronCtx, targetKey)
-			if block := buildCronTargetHistoryContext(history); block != "" {
+			block := buildCronTargetHistoryContext(history)
+			slog.Info("cron: target-history injection",
+				"job", job.Name, "peer_kind", peerKind, "key", targetKey,
+				"msgs", len(history), "block_chars", len(block))
+			if block != "" {
 				extraPrompt += block
 			}
 		}
