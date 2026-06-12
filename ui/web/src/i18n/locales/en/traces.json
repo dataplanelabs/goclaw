@@ -5,6 +5,8 @@
   "filter": "Filter",
   "allAgents": "All agents",
   "allChannels": "All channels",
+  "allRecipients": "All recipients",
+  "allInvocationTypes": "All invocation types",
   "emptyTitle": "No traces",
   "emptyDescription": "No traces found. Traces are recorded when agents process requests.",
   "columns": {

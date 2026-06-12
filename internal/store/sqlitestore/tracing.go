@@ -117,6 +117,10 @@ func buildTraceWhere(ctx context.Context, opts store.TraceListOpts) (string, []a
 		conditions = append(conditions, "session_key = ?")
 		args = append(args, opts.SessionKey)
 	}
+	if cond, a := traceSourceTypeCondSQLite(opts.SourceType); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, a...)
+	}
 	if opts.Status != "" {
 		conditions = append(conditions, "status = ?")
 		args = append(args, opts.Status)
@@ -130,6 +134,25 @@ func buildTraceWhere(ctx context.Context, opts store.TraceListOpts) (string, []a
 		return "", nil
 	}
 	return " WHERE " + strings.Join(conditions, " AND "), args
+}
+
+// traceSourceTypeCondSQLite maps a UI source type to a session_key/channel
+// filter, mirroring parseSourceType() in the web UI. Direct excludes ws since
+// ws keys contain ":direct:" but the UI classifies them as ws.
+func traceSourceTypeCondSQLite(srcType string) (string, []any) {
+	switch srcType {
+	case "cron":
+		return "session_key LIKE ?", []any{"%:cron:%"}
+	case "group":
+		return "session_key LIKE ?", []any{"%:group:%"}
+	case "team":
+		return "session_key LIKE ?", []any{"%:team:%"}
+	case "direct":
+		return "(session_key LIKE ? AND session_key NOT LIKE ?)", []any{"%:direct:%", "%:ws:%"}
+	case "ws":
+		return "(channel = ? OR session_key LIKE ?)", []any{"ws", "%:ws:%"}
+	}
+	return "", nil
 }
 
 func (s *SQLiteTracingStore) CountTraces(ctx context.Context, opts store.TraceListOpts) (int, error) {
