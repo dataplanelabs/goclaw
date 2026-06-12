@@ -157,17 +157,26 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 
 		// If job wants delivery to a channel, send the agent response to the target chat.
 		if job.Deliver && job.DeliverChannel != "" && job.DeliverTo != "" {
-			outMsg := bus.OutboundMessage{
-				Channel:  job.DeliverChannel,
-				ChatID:   job.DeliverTo,
-				Content:  result.Content,
-				TenantID: job.TenantID,
+			deliverContent, deliverable := guardCronDelivery(result.Content)
+			if !deliverable {
+				slog.Warn("cron: delivery suppressed — internal/meta content (full text kept in run log)",
+					"job_id", job.ID, "job_name", job.Name, "content_len", len(result.Content))
 			}
-			if peerKind == "group" {
-				outMsg.Metadata = map[string]string{"group_id": job.DeliverTo}
+			// Deliver when text survived the guard OR when media is present:
+			// suppressing leaked text must never drop an attached poster/image.
+			if deliverable || len(result.Media) > 0 {
+				outMsg := bus.OutboundMessage{
+					Channel:  job.DeliverChannel,
+					ChatID:   job.DeliverTo,
+					Content:  deliverContent, // empty when text suppressed; media still delivered
+					TenantID: job.TenantID,
+				}
+				if peerKind == "group" {
+					outMsg.Metadata = map[string]string{"group_id": job.DeliverTo}
+				}
+				appendMediaToOutbound(&outMsg, result.Media)
+				msgBus.PublishOutbound(outMsg)
 			}
-			appendMediaToOutbound(&outMsg, result.Media)
-			msgBus.PublishOutbound(outMsg)
 		} else if job.Deliver {
 			slog.Warn("cron: delivery configured but channel/chatID missing — output discarded",
 				"job_id", job.ID, "job_name", job.Name, "channel", job.DeliverChannel, "to", job.DeliverTo)

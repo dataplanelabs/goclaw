@@ -33,8 +33,12 @@ func modelLeaksReasoning(model string) bool {
 		return false
 	}
 	// Known leakers: Moonshot Kimi (any variant), DeepSeek-Reasoner family,
-	// and Gemma 4+ variants (for example "gemma4:8b" or "google/gemma-4-27b-it").
+	// Gemma 4+ variants (for example "gemma4:8b" or "google/gemma-4-27b-it"),
+	// and GLM (prefix match covers glm-5.1, glm-5-turbo, provider-qualified ids).
 	// Extend this list only after confirming the model does not honor effort="off".
+	if strings.HasPrefix(m, "glm") || strings.Contains(m, "/glm") || strings.Contains(m, ":glm") {
+		return true
+	}
 	return strings.Contains(m, "kimi") ||
 		strings.Contains(m, "deepseek-reasoner") ||
 		strings.Contains(m, "gemma4") ||
