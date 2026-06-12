@@ -69,6 +69,14 @@ const SOURCE_ICONS: Record<string, typeof Bot> = {
   ws: Globe,
 };
 
+/** Bare chat/group id for a "group:<channel>:<chatID>" / "guild:..." key, used to resolve the group contact row keyed by bare id. */
+function bareGroupChatId(userId: string): string | undefined {
+  if (!userId.startsWith("group:") && !userId.startsWith("guild:")) return undefined;
+  const parts = userId.split(":");
+  if (parts.length < 3) return undefined;
+  return parts.slice(2).join(":");
+}
+
 export function TracesPage() {
   const { t } = useTranslation("traces");
   const { t: tc } = useTranslation("common");
@@ -113,18 +121,34 @@ export function TracesPage() {
     offset: (page - 1) * pageSize,
   });
 
-  const traceUserIds = useMemo(() => traces.map((tr) => tr.user_id).filter(Boolean) as string[], [traces]);
+  // Resolve the prefixed ids AND the bare group/guild chatIDs (group contact rows are keyed by bare id).
+  const traceUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const tr of traces) {
+      if (!tr.user_id) continue;
+      ids.add(tr.user_id);
+      const bare = bareGroupChatId(tr.user_id);
+      if (bare) ids.add(bare);
+    }
+    return [...ids];
+  }, [traces]);
   const { resolve } = useContactResolver(traceUserIds);
 
-  // Distinct recipients on the current page: user_id → resolved display label.
+  // Distinct recipients on the current page: user_id → human label. Prefer a real
+  // chat_title (set on group traces) over a slug; a group also appears in cron traces
+  // with empty chat_title, so chat_title must win when any trace provides it.
   const recipientOptions = useMemo(() => {
-    const map = new Map<string, string>();
+    const labels = new Map<string, string>();
     for (const tr of traces) {
-      if (tr.user_id && !map.has(tr.user_id)) {
-        map.set(tr.user_id, formatUserLabel(tr.user_id, resolve));
+      if (!tr.user_id) continue;
+      const existing = labels.get(tr.user_id);
+      if (tr.chat_title) {
+        labels.set(tr.user_id, tr.chat_title);
+      } else if (existing === undefined) {
+        labels.set(tr.user_id, formatUserLabel(tr.user_id, resolve));
       }
     }
-    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    return [...labels.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [traces, resolve]);
 
   const spinning = useMinLoading(fetching);
