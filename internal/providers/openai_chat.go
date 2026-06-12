@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"strings"
 )
 
@@ -184,9 +185,20 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, req ChatRequest, onChun
 		return nil, fmt.Errorf("%s: stream read error: %w", p.name, err)
 	}
 
-	// Parse accumulated tool call arguments
-	for i := 0; i < len(accumulators); i++ {
-		acc := accumulators[i]
+	// Parse accumulated tool call arguments. Iterate the indexes actually present
+	// in ascending order — provider delta.Index values can be sparse (e.g. 0 then 2)
+	// or out-of-order, so indexing accumulators[0..len-1] would nil-deref on gaps
+	// and silently drop high indexes (zai-coding/glm-5.1 path, #panic).
+	indexes := make([]int, 0, len(accumulators))
+	for idx := range accumulators {
+		indexes = append(indexes, idx)
+	}
+	sort.Ints(indexes)
+	for _, idx := range indexes {
+		acc := accumulators[idx]
+		if acc == nil {
+			continue
+		}
 		args := make(map[string]any)
 		if err := json.Unmarshal([]byte(acc.rawArgs), &args); err != nil && acc.rawArgs != "" {
 			slog.Warn("openai_stream: failed to parse tool call arguments",

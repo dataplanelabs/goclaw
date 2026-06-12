@@ -113,14 +113,11 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 			}
 		}
 
-		// Reset session before each cron run to prevent tool errors from previous
-		// runs from polluting the context and blocking future executions (#294).
-		// Save() persists the empty session to DB so stale data won't reload after restart.
-		// Stateless jobs skip this — they intentionally carry no session history.
-		if !job.Stateless {
-			sessionMgr.Reset(cronCtx, sessionKey)
-			sessionMgr.Save(cronCtx, sessionKey)
-		}
+		// Stateless crons (the default) must start fresh each run: reset clears the
+		// isolated cron session and Save persists the empty session to DB so a
+		// restart won't reload stale history (#294). Non-stateless crons intentionally
+		// carry history across runs, so they are NOT reset here.
+		resetCronSessionIfStateless(cronCtx, sessionMgr, sessionKey, job.Stateless)
 
 		// Schedule through cron lane — scheduler handles agent resolution and concurrency.
 		// SenderID = "cron:<jobID>" gives the run distinct audit-trail provenance and
@@ -198,6 +195,23 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 
 		return cronResult, nil
 	}
+}
+
+// cronSessionResetter is the minimal session-store surface needed to clear a
+// stateless cron's isolated session before each run.
+type cronSessionResetter interface {
+	Reset(ctx context.Context, key string)
+	Save(ctx context.Context, key string) error
+}
+
+// resetCronSessionIfStateless clears and persists an empty cron session when the
+// job is stateless. No-op for non-stateless jobs (they carry history across runs).
+func resetCronSessionIfStateless(ctx context.Context, sessionMgr cronSessionResetter, sessionKey string, stateless bool) {
+	if !stateless {
+		return
+	}
+	sessionMgr.Reset(ctx, sessionKey)
+	sessionMgr.Save(ctx, sessionKey)
 }
 
 // cronContextForJob builds a short tenant-scoped context for resolver lookups.
