@@ -17,11 +17,18 @@ export function formatUserLabel(userId: string, resolve?: Resolver): string {
 
   // Special cases
   if (userId === "system") return "System";
-  if (userId.startsWith("group:")) {
+  if (userId.startsWith("group:") || userId.startsWith("guild:")) {
     const parts = userId.split(":");
     if (parts.length >= 3) {
+      // Group contact rows are keyed by the bare chatID, so resolve(chatID) before the slug fallback.
+      const chatId = parts.slice(2).join(":");
+      if (resolve) {
+        const groupContact = resolve(chatId);
+        if (groupContact?.display_name) return groupContact.display_name;
+        if (groupContact?.username) return `@${groupContact.username}`;
+      }
       const channel = parts[1]!.charAt(0).toUpperCase() + parts[1]!.slice(1);
-      return `${channel} ${parts.slice(2).join(":")}`;
+      return `${channel} ${chatId}`;
     }
   }
 
