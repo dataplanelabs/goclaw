@@ -405,10 +405,10 @@ func (s *SQLiteSecureCLIStore) LookupByBinary(ctx context.Context, binaryName st
 
 	query := `SELECT ` + selectCols
 
-	// LEFT JOIN agent grant
+	// LEFT JOIN agent grant — tenant_id guard makes isolation explicit.
 	if agentID != nil {
 		query += `, uc_user.encrypted_env AS user_env FROM secure_cli_binaries b`
-		query += ` LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = ?`
+		query += ` LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = ? AND g.tenant_id = b.tenant_id`
 		args = append(args, *agentID)
 	} else {
 		query += `, NULL AS user_env FROM secure_cli_binaries b`
@@ -607,7 +607,7 @@ func (s *SQLiteSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UU
 		   g.encrypted_env AS grant_enc_env`
 
 	query := `SELECT ` + selectCols + ` FROM secure_cli_binaries b
-		LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = ?
+		LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = ? AND g.tenant_id = b.tenant_id
 		WHERE b.enabled = 1
 		  AND (
 		    b.is_global = 1

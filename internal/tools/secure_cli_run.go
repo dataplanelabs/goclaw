@@ -85,9 +85,21 @@ func (t *SecureCliRunTool) Execute(ctx context.Context, args map[string]any) *Re
 		cmdArgs = append(cmdArgs, s)
 	}
 
-	cwd, _ := args["cwd"].(string)
-	if cwd == "" {
-		cwd = t.execTool.workspace
+	// Default to tenant-scoped workspace; fall back to global only if context has none.
+	tenantWs := ToolWorkspaceFromCtx(ctx)
+	if tenantWs == "" {
+		tenantWs = t.execTool.workspace
+	}
+	cwd := tenantWs
+	if rawCwd, _ := args["cwd"].(string); rawCwd != "" {
+		// Mirror shell.go's effectiveRestrict path: clamp agent-supplied cwd to
+		// the tenant workspace so gh/codex cannot escape via a rogue working dir.
+		allowed := allowedWriteWithTeamWorkspace(ctx, nil)
+		resolved, err := resolvePathWithAllowed(rawCwd, tenantWs, true, allowed)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("secure_cli_run: cwd rejected: %v", err))
+		}
+		cwd = resolved
 	}
 
 	agentID := store.AgentIDFromContext(ctx)

@@ -384,9 +384,10 @@ func (s *PGSecureCLIStore) LookupByBinary(ctx context.Context, binaryName string
 	// Base query
 	query := `SELECT ` + selectCols + ` FROM secure_cli_binaries b`
 
-	// LEFT JOIN agent grant
+	// LEFT JOIN agent grant — tenant_id guard makes isolation explicit rather than
+	// relying solely on b.tenant_id transitivity via binary_id FK integrity.
 	if agentID != nil {
-		query += fmt.Sprintf(` LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = $%d`, argIdx)
+		query += fmt.Sprintf(` LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = $%d AND g.tenant_id = b.tenant_id`, argIdx)
 		args = append(args, *agentID)
 		argIdx++
 	} else {
@@ -581,7 +582,7 @@ func (s *PGSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) 
 		   g.encrypted_env AS grant_enc_env`
 
 	query := `SELECT ` + selectCols + ` FROM secure_cli_binaries b
-		LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = $1
+		LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = $1 AND g.tenant_id = b.tenant_id
 		WHERE b.enabled = true
 		  AND (
 		    (b.is_global = true AND (g.id IS NULL OR g.enabled = true))
