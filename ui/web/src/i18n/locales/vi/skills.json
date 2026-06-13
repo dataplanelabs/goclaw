@@ -179,5 +179,30 @@
     "failed": "Bulk action thất bại",
     "deleteTitle": "Xóa các skill đã chọn",
     "deleteDescription": "Thao tác này sẽ xóa {{count}} custom skill đã chọn. Gõ DELETE để xác nhận."
+  },
+  "evolution": {
+    "tab": "Tiến hóa",
+    "title": "Tự tiến hóa",
+    "enabled": "Đã bật",
+    "disabled": "Đã tắt",
+    "status": "Trạng thái: {{status}}",
+    "unavailable": "Không có dữ liệu tiến hóa cho kỹ năng này.",
+    "modes": {
+      "suggest_only": "Chỉ gợi ý",
+      "auto_analyze": "Tự động phân tích"
+    },
+    "metrics": "Số liệu",
+    "total": "Tổng",
+    "succeeded": "Thành công",
+    "failed": "Thất bại",
+    "successRate": "Tỷ lệ thành công",
+    "suggestions": "Gợi ý",
+    "noSuggestions": "Chưa có gợi ý.",
+    "noReason": "Không có lý do được ghi nhận.",
+    "approve": "Phê duyệt",
+    "reject": "Từ chối",
+    "apply": "Áp dụng",
+    "activity": "Hoạt động",
+    "noActivity": "Chưa có hoạt động gần đây."
   }
 }
