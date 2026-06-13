@@ -79,9 +79,13 @@ func New(cfg config.ZaloPersonalConfig, msgBus *bus.MessageBus, pairingSvc store
 		requireMention = *cfg.RequireMention
 	}
 
-	enableNativeStyles := false
+	// zalo_personal operator defaults: native markdown styling + full reactions.
+	enableNativeStyles := true
 	if cfg.EnableNativeStyles != nil {
 		enableNativeStyles = *cfg.EnableNativeStyles
+	}
+	if cfg.ReactionLevel == "" {
+		cfg.ReactionLevel = "full"
 	}
 	turnGrace := defaultTurnGrace
 	switch {
