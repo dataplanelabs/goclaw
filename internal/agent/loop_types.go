@@ -246,6 +246,7 @@ type Loop struct {
 	// Budget enforcement: monthly spending limit in cents (0 = unlimited)
 	budgetMonthlyCents int
 	tracingStore       store.TracingStore
+	usageEvents        store.UsageEventStore
 	replayStore        store.ReplayPayloadStore
 	replayRetention    time.Duration
 
@@ -447,6 +448,7 @@ type LoopConfig struct {
 	// Budget enforcement
 	BudgetMonthlyCents int
 	TracingStore       store.TracingStore
+	UsageEvents        store.UsageEventStore
 	ReplayPayloadStore store.ReplayPayloadStore
 	ReplayRetention    time.Duration
 
@@ -593,6 +595,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		modelPricing:           cfg.ModelPricing,
 		budgetMonthlyCents:     cfg.BudgetMonthlyCents,
 		tracingStore:           cfg.TracingStore,
+		usageEvents:            cfg.UsageEvents,
 		replayStore:            cfg.ReplayPayloadStore,
 		replayRetention:        cfg.ReplayRetention,
 		memStore:               cfg.MemoryStore,

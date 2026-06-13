@@ -1940,3 +1940,96 @@ CREATE TABLE IF NOT EXISTS vieneu_cloned_voices (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vieneu_voices_tenant_voice
     ON vieneu_cloned_voices (tenant_id, voice_id);
+
+-- ============================================================
+-- usage_events + usage_event_rollups (mirrors PG migration 000081)
+-- Append-only per-tool-call / per-skill-activation analytics. Recorded
+-- best-effort from the agent tool pipeline; rolled up hourly by SnapshotWorker.
+-- Intentionally excludes user IDs, raw prompts, tool args, and outputs.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS usage_events (
+    id            TEXT NOT NULL PRIMARY KEY,
+    tenant_id     TEXT NOT NULL REFERENCES tenants(id),
+    event_time    TEXT NOT NULL,
+    bucket_hour   TEXT NOT NULL,
+    event_type    TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_name TEXT NOT NULL,
+    resource_id   TEXT NOT NULL DEFAULT '',
+    source        TEXT NOT NULL DEFAULT '',
+    agent_id      TEXT REFERENCES agents(id) ON DELETE SET NULL,
+    team_id       TEXT,
+    trace_id      TEXT REFERENCES traces(id) ON DELETE SET NULL,
+    span_id       TEXT REFERENCES spans(id) ON DELETE SET NULL,
+    run_id        TEXT NOT NULL DEFAULT '',
+    session_key   TEXT NOT NULL DEFAULT '',
+    channel       TEXT NOT NULL DEFAULT '',
+    provider      TEXT NOT NULL DEFAULT '',
+    model         TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT '',
+    input_tokens  BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0,
+    total_tokens  BIGINT NOT NULL DEFAULT 0,
+    cost_usd      NUMERIC(12,6) NOT NULL DEFAULT 0,
+    duration_ms   INTEGER NOT NULL DEFAULT 0,
+    call_count    INTEGER NOT NULL DEFAULT 1,
+    error_count   INTEGER NOT NULL DEFAULT 0,
+    metadata      TEXT,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_time
+    ON usage_events(tenant_id, event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_resource_time
+    ON usage_events(tenant_id, resource_type, resource_name, event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_type_time
+    ON usage_events(tenant_id, event_type, event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_agent_time
+    ON usage_events(tenant_id, agent_id, event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_channel_time
+    ON usage_events(tenant_id, channel, event_time DESC) WHERE channel != '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_events_trace_span_type_source
+    ON usage_events(trace_id, span_id, event_type, source)
+    WHERE trace_id IS NOT NULL AND span_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS usage_event_rollups (
+    id            TEXT NOT NULL PRIMARY KEY,
+    tenant_id     TEXT NOT NULL REFERENCES tenants(id),
+    bucket_hour   TEXT NOT NULL,
+    event_type    TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_name TEXT NOT NULL,
+    source        TEXT NOT NULL DEFAULT '',
+    agent_id      TEXT REFERENCES agents(id) ON DELETE SET NULL,
+    channel       TEXT NOT NULL DEFAULT '',
+    provider      TEXT NOT NULL DEFAULT '',
+    model         TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT '',
+    input_tokens  BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0,
+    total_tokens  BIGINT NOT NULL DEFAULT 0,
+    cost_usd      NUMERIC(12,6) NOT NULL DEFAULT 0,
+    duration_ms   INTEGER NOT NULL DEFAULT 0,
+    call_count    INTEGER NOT NULL DEFAULT 0,
+    error_count   INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_event_rollups_unique
+    ON usage_event_rollups(
+        tenant_id,
+        bucket_hour,
+        event_type,
+        resource_type,
+        resource_name,
+        source,
+        COALESCE(agent_id, '00000000-0000-0000-0000-000000000000'),
+        channel,
+        provider,
+        model,
+        status
+    );
+CREATE INDEX IF NOT EXISTS idx_usage_event_rollups_tenant_hour
+    ON usage_event_rollups(tenant_id, bucket_hour DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_event_rollups_resource_hour
+    ON usage_event_rollups(tenant_id, resource_type, resource_name, bucket_hour DESC);

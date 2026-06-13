@@ -29,6 +29,8 @@ type RunContext struct {
 	CredentialUserID string // resolved tenant user for credential lookups (empty = use UserID)
 	AgentType        string
 	SenderID         string
+	RunID            string
+	SessionKey       string
 
 	// Flags
 	SelfEvolve          bool
@@ -41,6 +43,7 @@ type RunContext struct {
 	// Tool configuration
 	BuiltinToolSettings map[string][]byte
 	ChannelType         string
+	Channel             string
 	SubagentsCfg        *config.SubagentsConfig
 	ParentModel         string
 	ParentProvider      string

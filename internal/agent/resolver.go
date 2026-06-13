@@ -105,6 +105,9 @@ type ResolverDeps struct {
 	// Tracing store for budget enforcement queries
 	TracingStore store.TracingStore
 
+	// UsageEvents store for append-only resource-usage analytics
+	UsageEvents store.UsageEventStore
+
 	ReplayPayloadStore store.ReplayPayloadStore
 	// ReplayRetention controls how long captured retry payloads survive.
 	// 0 = legacy behavior (sweep on every successful run); >0 = absolute TTL.
@@ -546,6 +549,7 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			ModelPricing:           deps.ModelPricing,
 			BudgetMonthlyCents:     derefInt(ag.BudgetMonthlyCents),
 			TracingStore:           deps.TracingStore,
+			UsageEvents:            deps.UsageEvents,
 			ReplayPayloadStore:     deps.ReplayPayloadStore,
 			ReplayRetention:        deps.ReplayRetention,
 			MemoryStore:            deps.MemoryStore,

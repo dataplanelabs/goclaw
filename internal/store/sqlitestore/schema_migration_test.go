@@ -484,6 +484,21 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`ALTER TABLE cron_jobs DROP COLUMN inject_target_history_limit`)
 	}
 
+	if targetVersion < 51 {
+		// Migration 50→51 creates usage_events + usage_event_rollups.
+		db.Exec(`DROP INDEX IF EXISTS idx_usage_events_tenant_time`)
+		db.Exec(`DROP INDEX IF EXISTS idx_usage_events_tenant_resource_time`)
+		db.Exec(`DROP INDEX IF EXISTS idx_usage_events_tenant_type_time`)
+		db.Exec(`DROP INDEX IF EXISTS idx_usage_events_tenant_agent_time`)
+		db.Exec(`DROP INDEX IF EXISTS idx_usage_events_tenant_channel_time`)
+		db.Exec(`DROP INDEX IF EXISTS idx_usage_events_trace_span_type_source`)
+		db.Exec(`DROP TABLE IF EXISTS usage_events`)
+		db.Exec(`DROP INDEX IF EXISTS idx_usage_event_rollups_unique`)
+		db.Exec(`DROP INDEX IF EXISTS idx_usage_event_rollups_tenant_hour`)
+		db.Exec(`DROP INDEX IF EXISTS idx_usage_event_rollups_resource_hour`)
+		db.Exec(`DROP TABLE IF EXISTS usage_event_rollups`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db

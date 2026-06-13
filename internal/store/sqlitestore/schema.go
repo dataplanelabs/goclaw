@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 50
+const SchemaVersion = 51
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -867,7 +867,95 @@ WHERE path LIKE 'tenants/%/%';`,
 	48: `ALTER TABLE cron_jobs ADD COLUMN inject_target_history INTEGER NOT NULL DEFAULT 1;`,
 	// Version 49 → 50: per-cron history look-back limit (mirrors PG migration 000080).
 	49: `ALTER TABLE cron_jobs ADD COLUMN inject_target_history_limit INTEGER NOT NULL DEFAULT 50;`,
+	// Version 50 → 51: append-only usage event analytics (mirrors PG migration 000081).
+	50: addUsageEventAnalyticsTables,
 }
+
+const addUsageEventAnalyticsTables = `
+CREATE TABLE IF NOT EXISTS usage_events (
+    id            TEXT NOT NULL PRIMARY KEY,
+    tenant_id     TEXT NOT NULL REFERENCES tenants(id),
+    event_time    TEXT NOT NULL,
+    bucket_hour   TEXT NOT NULL,
+    event_type    TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_name TEXT NOT NULL,
+    resource_id   TEXT NOT NULL DEFAULT '',
+    source        TEXT NOT NULL DEFAULT '',
+    agent_id      TEXT REFERENCES agents(id) ON DELETE SET NULL,
+    team_id       TEXT,
+    trace_id      TEXT REFERENCES traces(id) ON DELETE SET NULL,
+    span_id       TEXT REFERENCES spans(id) ON DELETE SET NULL,
+    run_id        TEXT NOT NULL DEFAULT '',
+    session_key   TEXT NOT NULL DEFAULT '',
+    channel       TEXT NOT NULL DEFAULT '',
+    provider      TEXT NOT NULL DEFAULT '',
+    model         TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT '',
+    input_tokens  BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0,
+    total_tokens  BIGINT NOT NULL DEFAULT 0,
+    cost_usd      NUMERIC(12,6) NOT NULL DEFAULT 0,
+    duration_ms   INTEGER NOT NULL DEFAULT 0,
+    call_count    INTEGER NOT NULL DEFAULT 1,
+    error_count   INTEGER NOT NULL DEFAULT 0,
+    metadata      TEXT,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_time
+    ON usage_events(tenant_id, event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_resource_time
+    ON usage_events(tenant_id, resource_type, resource_name, event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_type_time
+    ON usage_events(tenant_id, event_type, event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_agent_time
+    ON usage_events(tenant_id, agent_id, event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_channel_time
+    ON usage_events(tenant_id, channel, event_time DESC) WHERE channel != '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_events_trace_span_type_source
+    ON usage_events(trace_id, span_id, event_type, source)
+    WHERE trace_id IS NOT NULL AND span_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS usage_event_rollups (
+    id            TEXT NOT NULL PRIMARY KEY,
+    tenant_id     TEXT NOT NULL REFERENCES tenants(id),
+    bucket_hour   TEXT NOT NULL,
+    event_type    TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_name TEXT NOT NULL,
+    source        TEXT NOT NULL DEFAULT '',
+    agent_id      TEXT REFERENCES agents(id) ON DELETE SET NULL,
+    channel       TEXT NOT NULL DEFAULT '',
+    provider      TEXT NOT NULL DEFAULT '',
+    model         TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT '',
+    input_tokens  BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0,
+    total_tokens  BIGINT NOT NULL DEFAULT 0,
+    cost_usd      NUMERIC(12,6) NOT NULL DEFAULT 0,
+    duration_ms   INTEGER NOT NULL DEFAULT 0,
+    call_count    INTEGER NOT NULL DEFAULT 0,
+    error_count   INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_event_rollups_unique
+    ON usage_event_rollups(
+        tenant_id,
+        bucket_hour,
+        event_type,
+        resource_type,
+        resource_name,
+        source,
+        COALESCE(agent_id, '00000000-0000-0000-0000-000000000000'),
+        channel,
+        provider,
+        model,
+        status
+    );
+CREATE INDEX IF NOT EXISTS idx_usage_event_rollups_tenant_hour
+    ON usage_event_rollups(tenant_id, bucket_hour DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_event_rollups_resource_hour
+    ON usage_event_rollups(tenant_id, resource_type, resource_name, bucket_hour DESC);`
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.
 // Mirrors PG migrations 000052–000055 (consolidated — desktop never shipped
