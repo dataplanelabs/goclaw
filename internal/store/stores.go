@@ -27,6 +27,7 @@ type Stores struct {
 	Contacts         ContactStore
 	Activity         ActivityStore
 	Snapshots        SnapshotStore
+	UsageEvents      UsageEventStore
 	SecureCLI           SecureCLIStore
 	SecureCLIGrants     SecureCLIAgentGrantStore
 	APIKeys             APIKeyStore

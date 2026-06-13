@@ -23,6 +23,36 @@
   },
   "analytics": {
     "title": "Usage Analytics",
+    "events": {
+      "title": "Resource Event Analytics",
+      "description": "Counts tool, skill, MCP, and runtime activity from traced executions.",
+      "tabs": {
+        "tool": "Tools",
+        "skill": "Skills",
+        "mcp_tool": "MCP",
+        "runtime_tool": "Runtime"
+      },
+      "metrics": {
+        "calls": "Calls",
+        "errorRate": "Error rate",
+        "tokens": "Tokens",
+        "avgDuration": "Avg duration",
+        "cost": "Cost"
+      },
+      "activeBuckets": "{{count}} active buckets",
+      "unknownSource": "Unknown",
+      "empty": "No event data for this selection.",
+      "table": {
+        "resource": "Resource",
+        "source": "Source",
+        "calls": "Calls",
+        "errors": "Errors",
+        "errorRate": "Error rate",
+        "avgDuration": "Avg duration",
+        "tokens": "Tokens",
+        "cost": "Cost"
+      }
+    },
     "period24h": "24h",
     "period7d": "7 days",
     "period30d": "30 days",

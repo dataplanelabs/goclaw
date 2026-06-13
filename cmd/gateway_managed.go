@@ -252,6 +252,7 @@ func wireExtras(
 		MediaStore:             mediaStore,
 		ModelPricing:           appCfg.Telemetry.ModelPricing,
 		TracingStore:           stores.Tracing,
+		UsageEvents:            stores.UsageEvents,
 		ReplayPayloadStore:     stores.ReplayPayloads,
 		ReplayRetention:        resolveReplayRetention(appCfg.Gateway.ReplayRetentionDays),
 		MemoryStore:            stores.Memory,

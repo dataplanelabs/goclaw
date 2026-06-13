@@ -158,7 +158,7 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 
 	// Usage analytics API
 	if d.pgStores.Snapshots != nil {
-		d.server.SetUsageHandler(httpapi.NewUsageHandler(d.pgStores.Snapshots, d.pgStores.DB))
+		d.server.SetUsageHandler(httpapi.NewUsageHandler(d.pgStores.Snapshots, d.pgStores.UsageEvents, d.pgStores.DB))
 	}
 
 	// Runtime package management (install/uninstall system/pip/npm/github packages)

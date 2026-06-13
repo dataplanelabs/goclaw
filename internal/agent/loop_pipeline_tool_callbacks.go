@@ -20,7 +20,7 @@ import (
 func (l *Loop) makeExecuteToolCall(req *RunRequest, bridgeRS *runState) func(ctx context.Context, state *pipeline.RunState, tc providers.ToolCall) ([]providers.Message, error) {
 	emitRun := makeToolEmitRun(l, req)
 	return func(ctx context.Context, state *pipeline.RunState, tc providers.ToolCall) ([]providers.Message, error) {
-		registryName := l.resolveToolCallName(tc.Name)
+		registryName := l.canonicalToolName(l.resolveToolCallName(tc.Name))
 		argsJSON, _ := json.Marshal(tc.Arguments)
 		slog.Info("tool call", "agent", l.id, "tool", tc.Name, "args_len", len(argsJSON))
 
@@ -33,7 +33,7 @@ func (l *Loop) makeExecuteToolCall(req *RunRequest, bridgeRS *runState) func(ctx
 
 		// Emit tool span start for tracing.
 		toolStart := time.Now().UTC()
-		toolSpanID := l.emitToolSpanStart(ctx, toolStart, tc.Name, tc.ID, string(argsJSON))
+		toolSpanID := l.emitToolSpanStart(ctx, toolStart, registryName, tc.ID, string(argsJSON))
 
 		// Inject agent audio snapshot so TTS tool (and any future audio consumers)
 		// can read agent-level voice/model config without an extra DB lookup.
@@ -53,6 +53,9 @@ func (l *Loop) makeExecuteToolCall(req *RunRequest, bridgeRS *runState) func(ctx
 
 		l.emitToolSpanEnd(ctx, toolSpanID, toolStart, result)
 
+		// Append-only usage analytics: best-effort, non-blocking (sequential path).
+		l.recordToolUsageEvent(ctx, req, registryName, tc.Name, tc.ID, tc.Arguments, toolStart, result, toolSpanID)
+
 		// v3 evolution metrics: record tool execution non-blocking (best-effort).
 		l.recordToolMetric(ctx, req.SessionKey, registryName, !result.IsError, toolDuration)
 
@@ -70,6 +73,10 @@ func (l *Loop) makeExecuteToolCall(req *RunRequest, bridgeRS *runState) func(ctx
 type toolRawResult struct {
 	result   *tools.Result
 	duration time.Duration
+	start    time.Time
+	spanID   uuid.UUID
+	toolName string // canonical (registry) name
+	rawName  string // raw name as the LLM emitted it
 }
 
 // makeExecuteToolRaw wraps tool I/O only (parallel-safe, no state mutation).
@@ -77,7 +84,7 @@ type toolRawResult struct {
 func (l *Loop) makeExecuteToolRaw(req *RunRequest) func(ctx context.Context, tc providers.ToolCall) (providers.Message, any, error) {
 	emitRun := makeToolEmitRun(l, req)
 	return func(ctx context.Context, tc providers.ToolCall) (providers.Message, any, error) {
-		registryName := l.resolveToolCallName(tc.Name)
+		registryName := l.canonicalToolName(l.resolveToolCallName(tc.Name))
 		argsJSON, _ := json.Marshal(tc.Arguments)
 		slog.Info("tool call", "agent", l.id, "tool", tc.Name, "args_len", len(argsJSON))
 
@@ -94,7 +101,7 @@ func (l *Loop) makeExecuteToolRaw(req *RunRequest) func(ctx context.Context, tc 
 
 		// Emit tool span start (goroutine-safe: channel send only).
 		start := time.Now().UTC()
-		spanID := l.emitToolSpanStart(ctx, start, tc.Name, tc.ID, string(argsJSON))
+		spanID := l.emitToolSpanStart(ctx, start, registryName, tc.ID, string(argsJSON))
 
 		// Inject agent audio snapshot (parallel path — same as sequential makeExecuteToolCall).
 		if l.agentUUID != uuid.Nil {
@@ -120,7 +127,14 @@ func (l *Loop) makeExecuteToolRaw(req *RunRequest) func(ctx context.Context, tc 
 			ToolCallID: tc.ID,
 			IsError:    result.IsError,
 		}
-		return msg, &toolRawResult{result: result, duration: dur}, nil
+		return msg, &toolRawResult{
+			result:   result,
+			duration: dur,
+			start:    start,
+			spanID:   spanID,
+			toolName: registryName,
+			rawName:  tc.Name,
+		}, nil
 	}
 }
 
@@ -129,19 +143,36 @@ func (l *Loop) makeExecuteToolRaw(req *RunRequest) func(ctx context.Context, tc 
 func (l *Loop) makeProcessToolResult(req *RunRequest, bridgeRS *runState) func(ctx context.Context, state *pipeline.RunState, tc providers.ToolCall, rawMsg providers.Message, rawData any) []providers.Message {
 	emitRun := makeToolEmitRun(l, req)
 	return func(ctx context.Context, state *pipeline.RunState, tc providers.ToolCall, rawMsg providers.Message, rawData any) []providers.Message {
-		registryName := l.resolveToolCallName(tc.Name)
+		registryName := l.canonicalToolName(l.resolveToolCallName(tc.Name))
 
 		// Extract result and timing from toolRawResult wrapper.
 		var result *tools.Result
 		var dur time.Duration
+		var start time.Time
+		var spanID uuid.UUID
+		rawName := tc.Name
 		if raw, ok := rawData.(*toolRawResult); ok && raw != nil {
 			result = raw.result
 			dur = raw.duration
+			start = raw.start
+			spanID = raw.spanID
+			if raw.toolName != "" {
+				registryName = raw.toolName
+			}
+			if raw.rawName != "" {
+				rawName = raw.rawName
+			}
 		} else if r, ok := rawData.(*tools.Result); ok {
 			result = r // backward compat
 		}
 		if result == nil {
 			return []providers.Message{rawMsg}
+		}
+
+		// Append-only usage analytics: best-effort, non-blocking (parallel path).
+		// Sequential path records in makeExecuteToolCall; these branches are mutually exclusive.
+		if !start.IsZero() {
+			l.recordToolUsageEvent(ctx, req, registryName, rawName, tc.ID, tc.Arguments, start, result, spanID)
 		}
 
 		// Record tool metrics (non-blocking, best-effort).
