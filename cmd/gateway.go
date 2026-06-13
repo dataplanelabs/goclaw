@@ -607,6 +607,9 @@ func runGateway() {
 
 	server.StartUpdateChecker(ctx)
 
+	// Sweep aged durable pending-media files (orphans / never-mentioned groups).
+	channels.StartPendingMediaGC(ctx, filepath.Join(cfg.WorkspacePath(), ".pending-media"))
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
