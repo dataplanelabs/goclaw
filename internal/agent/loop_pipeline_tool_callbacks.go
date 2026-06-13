@@ -288,23 +288,14 @@ func (l *Loop) recordSkillUsageFromTool(ctx context.Context, req *RunRequest, tc
 
 func (l *Loop) recordSkillUsage(ctx context.Context, req *RunRequest, skillName, invocationID, source, status, reason string, duration time.Duration) {
 	if l.skillEvolutionStore == nil || l.skillStore == nil {
-		slog.Info("skill.metric.diag", "stage", "store-nil", "skill", skillName,
-			"evo_store_nil", l.skillEvolutionStore == nil, "skill_store_nil", l.skillStore == nil)
 		return
 	}
 	info, ok := l.skillStore.GetSkill(ctx, skillName)
 	if !ok || info == nil || info.ID == "" {
-		idVal := ""
-		if info != nil {
-			idVal = info.ID
-		}
-		slog.Info("skill.metric.diag", "stage", "getskill-miss", "skill", skillName,
-			"ok", ok, "info_nil", info == nil, "info_id", idVal)
 		return
 	}
 	skillID, err := uuid.Parse(info.ID)
 	if err != nil {
-		slog.Info("skill.metric.diag", "stage", "id-parse-fail", "skill", skillName, "info_id", info.ID, "error", err)
 		return
 	}
 	tenantID := store.TenantIDFromContext(ctx)
@@ -330,7 +321,6 @@ func (l *Loop) recordSkillUsage(ctx context.Context, req *RunRequest, skillName,
 			metric.TraceID = req.RunID
 		}
 	}
-	slog.Info("skill.metric.diag", "stage", "inserting", "skill", skillName, "skill_id", skillID.String())
 	go func() {
 		bgCtx, cancel := context.WithTimeout(store.WithTenantID(context.Background(), tenantID), 5*time.Second)
 		defer cancel()
