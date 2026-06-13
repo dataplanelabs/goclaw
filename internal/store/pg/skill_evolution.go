@@ -120,7 +120,7 @@ func (s *PGSkillEvolutionStore) RecordUsage(ctx context.Context, metric store.Sk
 		`INSERT INTO skill_usage_metrics
 		 (id, tenant_id, skill_id, skill_slug, skill_version, agent_id, user_id, session_key,
 		  trace_id, invocation_id, invocation_source, status, failure_reason, tool_calls_count, duration_ms)
-		 VALUES ($1, $2, $3, $4, $5, NULLIF($6, $16), $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		 VALUES ($1, $2, $3, $4, $5, NULLIF($6::uuid, $16::uuid), $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		metric.ID, tenantID, metric.SkillID, metric.SkillSlug, metric.SkillVersion,
 		metric.AgentID, metric.UserID, metric.SessionKey, metric.TraceID, metric.InvocationID,
 		metric.InvocationSource, metric.Status, metric.FailureReason, metric.ToolCallsCount, metric.DurationMs, uuid.Nil,
