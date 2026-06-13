@@ -113,6 +113,15 @@ type TraceListOpts struct {
 	Offset     int
 }
 
+// TraceRecipient is one representative trace row per distinct user_id, used to
+// build the tenant-wide "Delivered to" filter. Channel is carried for chat-title
+// resolution (mirrors enrichChatTitles).
+type TraceRecipient struct {
+	UserID     string `json:"user_id" db:"user_id"`
+	SessionKey string `json:"session_key" db:"session_key"`
+	Channel    string `json:"channel" db:"channel"`
+}
+
 // CostSummaryOpts configures cost aggregation queries.
 type CostSummaryOpts struct {
 	AgentID *uuid.UUID
@@ -148,6 +157,9 @@ type TracingStore interface {
 	GetTrace(ctx context.Context, traceID uuid.UUID) (*TraceData, error)
 	ListTraces(ctx context.Context, opts TraceListOpts) ([]TraceData, error)
 	CountTraces(ctx context.Context, opts TraceListOpts) (int, error)
+	// ListTraceRecipients returns one representative row per distinct user_id for
+	// the tenant, used to populate the tenant-wide recipient filter.
+	ListTraceRecipients(ctx context.Context, tenantID uuid.UUID) ([]TraceRecipient, error)
 	// SetOutboundEmitted is idempotent: only flips false→true.
 	SetOutboundEmitted(ctx context.Context, traceID uuid.UUID) error
 

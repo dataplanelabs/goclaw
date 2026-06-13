@@ -25,6 +25,7 @@ export const queryKeys = {
   traces: {
     all: ["traces"] as const,
     list: (params: Record<string, unknown>) => ["traces", params] as const,
+    recipients: ["traces", "recipients"] as const,
   },
   cliCredentials: {
     all: ["cliCredentials"] as const,
