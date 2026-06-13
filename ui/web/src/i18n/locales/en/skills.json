@@ -179,5 +179,30 @@
     "rescanUpdated": "{{count}} skill(s) updated",
     "rescanNoChanges": "All skills up to date",
     "rescanFailed": "Failed to rescan dependencies"
+  },
+  "evolution": {
+    "tab": "Evolution",
+    "title": "Self-evolution",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "status": "Status: {{status}}",
+    "unavailable": "Evolution data is unavailable for this skill.",
+    "modes": {
+      "suggest_only": "Suggest only",
+      "auto_analyze": "Auto analyze"
+    },
+    "metrics": "Metrics",
+    "total": "Total",
+    "succeeded": "Succeeded",
+    "failed": "Failed",
+    "successRate": "Success rate",
+    "suggestions": "Suggestions",
+    "noSuggestions": "No suggestions.",
+    "noReason": "No reason recorded.",
+    "approve": "Approve",
+    "reject": "Reject",
+    "apply": "Apply",
+    "activity": "Activity",
+    "noActivity": "No recent activity."
   }
 }

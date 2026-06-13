@@ -48,6 +48,10 @@ export const queryKeys = {
     all: ["skills"] as const,
     agentGrants: (agentId: string) => ["skills", "agent", agentId] as const,
     runtimes: ["skills", "runtimes"] as const,
+    evolution: (skillId: string) => ["skills", skillId, "evolution"] as const,
+    metrics: (skillId: string) => ["skills", skillId, "metrics"] as const,
+    suggestions: (skillId: string) => ["skills", skillId, "suggestions"] as const,
+    activity: (skillId: string) => ["skills", skillId, "activity"] as const,
   },
   cron: {
     all: ["cron"] as const,

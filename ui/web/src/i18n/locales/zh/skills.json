@@ -179,5 +179,30 @@
     "failed": "批量操作失败",
     "deleteTitle": "删除所选 Skill",
     "deleteDescription": "这将删除 {{count}} 个所选自定义 Skill。请输入 DELETE 确认。"
+  },
+  "evolution": {
+    "tab": "演进",
+    "title": "自我演进",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "status": "状态：{{status}}",
+    "unavailable": "此技能暂无演进数据。",
+    "modes": {
+      "suggest_only": "仅建议",
+      "auto_analyze": "自动分析"
+    },
+    "metrics": "指标",
+    "total": "总计",
+    "succeeded": "成功",
+    "failed": "失败",
+    "successRate": "成功率",
+    "suggestions": "建议",
+    "noSuggestions": "暂无建议。",
+    "noReason": "未记录原因。",
+    "approve": "批准",
+    "reject": "拒绝",
+    "apply": "应用",
+    "activity": "活动",
+    "noActivity": "暂无近期活动。"
   }
 }

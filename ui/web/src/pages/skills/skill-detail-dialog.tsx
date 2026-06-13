@@ -20,6 +20,7 @@ import { isTextFile } from "@/lib/file-helpers";
 import type { SkillInfo, SkillFile, SkillVersions } from "@/types/skill";
 import { buildTree } from "./skill-file-helpers";
 import { FileBrowser } from "./skill-file-browser";
+import { SkillEvolutionPanel } from "./skill-evolution-panel";
 import { parseSkillDetailVersionParam, shouldLoadSkillDetailFile } from "./lib/skill-detail-deeplink";
 
 interface SkillDetailDialogProps {
@@ -180,6 +181,7 @@ export function SkillDetailDialog({
   };
 
   const headerVersion = selectedVersion ?? versions?.current ?? skill.version;
+  const activeTab = hasFiles && (detailTab === "files" || detailTab === "evolution") ? detailTab : "content";
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
@@ -239,10 +241,11 @@ export function SkillDetailDialog({
           )}
         </DialogHeader>
 
-        <Tabs value={detailTab === "files" && hasFiles ? "files" : "content"} className="flex-1 overflow-hidden flex flex-col" onValueChange={handleTabChange}>
+        <Tabs value={activeTab} className="flex-1 overflow-hidden flex flex-col" onValueChange={handleTabChange}>
           <TabsList>
             <TabsTrigger value="content">{t("detail.content")}</TabsTrigger>
             {hasFiles && <TabsTrigger value="files">{t("detail.files")}</TabsTrigger>}
+            {hasFiles && <TabsTrigger value="evolution">{t("evolution.tab")}</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="content" className="flex-1 overflow-y-auto mt-2 -mx-4 px-4 sm:-mx-6 sm:px-6">
@@ -266,6 +269,12 @@ export function SkillDetailDialog({
                 fileContent={fileContent}
                 fetchBlob={fetchSkillFileBlob}
               />
+            </TabsContent>
+          )}
+
+          {hasFiles && (
+            <TabsContent value="evolution" className="flex-1 overflow-y-auto mt-2 -mx-4 px-4 sm:-mx-6 sm:px-6">
+              <SkillEvolutionPanel skill={skill} active={activeTab === "evolution"} />
             </TabsContent>
           )}
         </Tabs>
