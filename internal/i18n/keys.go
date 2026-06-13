@@ -405,4 +405,14 @@ const (
 	TraceRetryConfirmRequired = "trace.retry.confirm_required"
 	TraceRetryStarted         = "trace.retry.started"
 	TraceRetryNotFailed       = "trace.retry.not_failed"
+
+	// --- Skill self-evolution ---
+	MsgSkillEvolutionNotConfigured = "error.skill_evolution_not_configured" // "skill evolution store is not configured"
+	MsgActivityStoreNotConfigured  = "error.activity_store_not_configured"  // "activity store is not configured"
+	MsgInvalidEvolutionMode        = "error.invalid_evolution_mode"         // "invalid evolution mode"
+	MsgSystemSkillMutationBlocked  = "error.system_skill_mutation_blocked"  // "system skill mutation is blocked"
+	MsgSuggestionMustBeApproved    = "error.suggestion_must_be_approved"    // "suggestion must be approved before apply"
+	MsgInvalidDraftPatch           = "error.invalid_draft_patch"            // "invalid draft_patch: %s"
+	MsgDraftPatchRequired          = "error.draft_patch_required"           // "draft_patch requires content or find/replace"
+	MsgFindTextNotFound            = "error.find_text_not_found"            // "find text not found in target file"
 )

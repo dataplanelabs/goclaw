@@ -119,6 +119,10 @@ type ResolverDeps struct {
 	// V3 evolution metrics store
 	EvolutionMetricsStore store.EvolutionMetricsStore
 
+	// Skill self-evolution metrics store + DB-backed skill resolver
+	SkillEvolutionStore store.SkillEvolutionStore
+	SkillStore          store.SkillStore
+
 	// Contact store for user identity resolution (channel contacts → tenant users)
 	ContactStore store.ContactStore
 
@@ -560,6 +564,8 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			OrchMode:               orchMode,
 			DelegateTargets:        delegateTargets,
 			EvolutionMetricsStore:  evoMetricsStore,
+			SkillEvolutionStore:    deps.SkillEvolutionStore,
+			SkillStore:             deps.SkillStore,
 			UserResolver:           newContactResolver(deps.ContactStore),
 			StandbyResolveMode:     deps.StandbyResolveMode,
 		})

@@ -351,7 +351,76 @@ All endpoints require authentication (`authMiddleware`). Mutation endpoints requ
 | `POST` | `/v1/skills/install-deps` | Install all missing deps |
 | `GET` | `/v1/skills/runtimes` | Check python3/node availability |
 
-### 3.5 WebSocket RPC
+### 3.5 Skill Self-Evolution
+
+Skill self-evolution tracks how each existing skill performs over time. It is
+separate from agent-level `skill_evolve`, which teaches agents when to create or
+patch reusable skills.
+
+**Runtime recording**
+
+- `use_skill` tool calls record tenant-scoped usage with status `succeeded` or
+  `failed`, duration, session key, run/trace ID, agent ID, and user scope. This
+  records via the same loop tool-callback path as usage-event analytics; the
+  recorder resolves the skill name to its DB id/slug/version through the
+  DB-backed skill store.
+- Usage writes are internal only. v1 intentionally has no public
+  `POST /v1/skills/{id}/usage` endpoint, so clients cannot forge success rates.
+
+**Persistent tables** (PG migration `000082`, sqlite schema v52)
+
+| Table | Purpose |
+|-------|---------|
+| `skill_evolution_settings` | Per-tenant, per-skill enabled flag and mode |
+| `skill_usage_metrics` | Runtime usage events and status counts |
+| `skill_improvement_suggestions` | Skill-scoped suggestions with evidence and draft patches |
+| `skill_versions` | Immutable applied-version records linked to changed files and suggestions |
+
+**HTTP and CLI controls**
+
+- HTTP reads (viewer+): `GET /v1/skills/{id}/evolution`,
+  `GET /v1/skills/{id}/metrics`, `GET /v1/skills/{id}/evolution/suggestions`.
+  Activity read is admin-only.
+- HTTP mutations (tenant-admin only — agents cannot self-apply):
+  `PATCH /v1/skills/{id}/evolution` and suggestion approve/reject/apply.
+- CLI: `goclaw skills evolve`, `goclaw skills metrics`,
+  `goclaw skills suggestions`, and `goclaw skills activity`.
+
+**Guardrails**
+
+- Default mode is `suggest_only`; no automatic patching and no autonomous LLM
+  suggester in v1 — suggestions are admin-authored.
+- Applying a suggestion to a custom skill copies the current skill directory to
+  the next version, validates the target path (`ValidateSkillTargetPath`), runs
+  the SKILL.md guard scanner (`GuardSkillContent`) when the target is SKILL.md,
+  atomically renames into place, updates the active skill, records
+  `skill_versions`, and writes an activity log entry.
+- System/bundled skill mutation is refused by the apply path (and by the HTTP
+  handler's `IsSystem` check).
+- Viewer surfaces are sanitized. Failure evidence, draft patches, actor IDs,
+  and activity details require admin visibility.
+
+**GitOps (gcplane) coexistence guard**
+
+Skills are GitOps-managed: gcplane reconciles `goclaw-config/{tenant}/skills/`
+and uploads with `source='gcplane'`. When a self-evolution apply targets a
+`source='gcplane'` skill, the apply path **re-stamps the skill's `source` to
+`'evolution'`** so it is no longer owned by gcplane (engaging the upload
+overwrite gate), and emits a `slog.Warn` (`skill.evolution.gcplane_restamp`)
+recording the prior source plus a note that a future gcplane reconcile triggered
+by a goclaw-config edit to that skill will overwrite the evolved version. The
+prior source and new source are also recorded in the activity log entry, making
+the git↔runtime divergence visible and auditable instead of silent.
+
+**Relationship to self-improving skills**
+
+This v1 is the control-plane foundation: runtime usage events, evidence-backed
+suggestions, reference-file patches, version records, and approval/audit
+surfaces. It does not yet run a consolidation extractor that turns repeated
+corrections into learning notes or auto-applies reference overlays. That
+higher-level learning loop belongs above this foundation.
+
+### 3.6 WebSocket RPC
 
 | Method | Description |
 |--------|-------------|
@@ -359,7 +428,7 @@ All endpoints require authentication (`authMiddleware`). Mutation endpoints requ
 | `skills.get` | Get skill content by name |
 | `skills.update` | Update metadata (ownership-protected) |
 
-### 3.6 Grants & Visibility
+### 3.7 Grants & Visibility
 
 ```mermaid
 stateDiagram-v2

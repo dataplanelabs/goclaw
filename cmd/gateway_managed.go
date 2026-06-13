@@ -265,6 +265,8 @@ func wireExtras(
 		TTSAutoMode:            appCfg.Tts.Auto,
 		AutoInjector:           autoInjector,
 		EvolutionMetricsStore:  stores.EvolutionMetrics,
+		SkillEvolutionStore:    stores.SkillEvolution,
+		SkillStore:             stores.Skills,
 		DomainBus:              domainBus,
 		HookDispatcher:         hookDispatcher,
 		OnTextUploaded: func(ctx context.Context, path, content string) {
