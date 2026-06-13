@@ -268,6 +268,14 @@ func (c *BaseChannel) SetPendingHistoryTimezone(tz string) {
 	}
 }
 
+// SetPendingHistoryDurableMediaDir configures the durable media directory for
+// persisting pending group media across restarts.
+func (c *BaseChannel) SetPendingHistoryDurableMediaDir(dir string) {
+	if c.groupHistory != nil {
+		c.groupHistory.SetDurableMediaDir(dir)
+	}
+}
+
 // SetHistoryLimit sets the per-group message accumulation limit.
 func (c *BaseChannel) SetHistoryLimit(n int) { c.historyLimit = n }
 

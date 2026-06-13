@@ -5,6 +5,7 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -28,7 +29,7 @@ func (s *SQLitePendingMessageStore) AppendBatch(ctx context.Context, msgs []stor
 		return nil
 	}
 
-	const cols = 11
+	const cols = 12
 	placeholders := make([]string, len(msgs))
 	args := make([]any, 0, len(msgs)*cols)
 	now := time.Now()
@@ -38,13 +39,19 @@ func (s *SQLitePendingMessageStore) AppendBatch(ctx context.Context, msgs []stor
 		if msgs[i].ID == uuid.Nil {
 			msgs[i].ID = uuid.Must(uuid.NewV7())
 		}
-		placeholders[i] = "(?,?,?,?,?,?,?,?,?,?,?)"
+		placeholders[i] = "(?,?,?,?,?,?,?,?,?,?,?,?)"
+		var mediaPaths any
+		if len(msgs[i].MediaPaths) > 0 {
+			if b, err := json.Marshal(msgs[i].MediaPaths); err == nil {
+				mediaPaths = string(b)
+			}
+		}
 		args = append(args, msgs[i].ID, msgs[i].ChannelName, msgs[i].HistoryKey,
-			msgs[i].Sender, msgs[i].SenderID, msgs[i].Body, msgs[i].PlatformMsgID, msgs[i].IsSummary, now, now, tid)
+			msgs[i].Sender, msgs[i].SenderID, msgs[i].Body, msgs[i].PlatformMsgID, msgs[i].IsSummary, now, now, tid, mediaPaths)
 	}
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO channel_pending_messages (id, channel_name, history_key, sender, sender_id, body, platform_msg_id, is_summary, created_at, updated_at, tenant_id)
+		`INSERT INTO channel_pending_messages (id, channel_name, history_key, sender, sender_id, body, platform_msg_id, is_summary, created_at, updated_at, tenant_id, media_paths)
 		 VALUES `+strings.Join(placeholders, ","),
 		args...,
 	)
@@ -58,7 +65,7 @@ func (s *SQLitePendingMessageStore) ListByKey(ctx context.Context, channelName, 
 	}
 	args := append([]any{channelName, historyKey}, tArgs...)
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, channel_name, history_key, sender, sender_id, body, platform_msg_id, is_summary, created_at, updated_at
+		`SELECT id, channel_name, history_key, sender, sender_id, body, platform_msg_id, is_summary, created_at, updated_at, media_paths
 		 FROM channel_pending_messages
 		 WHERE channel_name = ? AND history_key = ?`+tClause+`
 		 ORDER BY created_at ASC`,
@@ -73,11 +80,15 @@ func (s *SQLitePendingMessageStore) ListByKey(ctx context.Context, channelName, 
 	for rows.Next() {
 		var m store.PendingMessage
 		createdAt, updatedAt := scanTimePair()
-		if err := rows.Scan(&m.ID, &m.ChannelName, &m.HistoryKey, &m.Sender, &m.SenderID, &m.Body, &m.PlatformMsgID, &m.IsSummary, createdAt, updatedAt); err != nil {
+		var mediaPaths sql.NullString
+		if err := rows.Scan(&m.ID, &m.ChannelName, &m.HistoryKey, &m.Sender, &m.SenderID, &m.Body, &m.PlatformMsgID, &m.IsSummary, createdAt, updatedAt, &mediaPaths); err != nil {
 			return nil, err
 		}
 		m.CreatedAt = createdAt.Time
 		m.UpdatedAt = updatedAt.Time
+		if mediaPaths.Valid && mediaPaths.String != "" {
+			_ = json.Unmarshal([]byte(mediaPaths.String), &m.MediaPaths)
+		}
 		result = append(result, m)
 	}
 	return result, rows.Err()

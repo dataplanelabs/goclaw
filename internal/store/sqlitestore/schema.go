@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 52
+const SchemaVersion = 53
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -871,6 +871,8 @@ WHERE path LIKE 'tenants/%/%';`,
 	50: addUsageEventAnalyticsTables,
 	// Version 51 → 52: skill self-evolution control plane (mirrors PG migration 000082).
 	51: addSkillSelfEvolutionTables,
+	// Version 52 → 53: durable media paths for pending messages (mirrors PG migration 000083).
+	52: `ALTER TABLE channel_pending_messages ADD COLUMN media_paths TEXT;`,
 }
 
 const addUsageEventAnalyticsTables = `
@@ -1310,6 +1312,8 @@ func idempotentColumnMigration(version int) (string, string, bool) {
 		return "skill_agent_grants", "can_manage", true
 	case 45:
 		return "agents", "write_only_hash", true
+	case 52:
+		return "channel_pending_messages", "media_paths", true
 	default:
 		return "", "", false
 	}
