@@ -81,6 +81,7 @@ func (f *fakeStore) CountByKey(_ context.Context, _, _ string) (int, error)     
 func (f *fakeStore) ResolveGroupTitles(_ context.Context, _ []store.PendingMessageGroup) (map[string]string, error) {
 	return nil, nil
 }
+func (f *fakeStore) ListReferencedMediaPaths(_ context.Context) ([]string, error) { return nil, nil }
 
 func TestDurableMediaDirMovesFilesAndPersistsToStore(t *testing.T) {
 	durableDir := t.TempDir()

@@ -13,6 +13,13 @@ type PendingCompactionConfig struct {
 	Model      string `json:"model,omitempty"`       // model for summarization; empty = use agent's model
 }
 
+// PendingMediaConfig configures GC of durable .pending-media files.
+type PendingMediaConfig struct {
+	Enabled              *bool `json:"enabled,omitempty"`                // default true
+	MaxAgeHours          int   `json:"max_age_hours,omitempty"`          // default 72
+	SweepIntervalMinutes int   `json:"sweep_interval_minutes,omitempty"` // default 60
+}
+
 // ChannelsConfig contains per-channel configuration.
 type ChannelsConfig struct {
 	Telegram          TelegramConfig           `json:"telegram"`
@@ -24,6 +31,7 @@ type ChannelsConfig struct {
 	ZaloPersonal      ZaloPersonalConfig       `json:"zalo_personal"`
 	Feishu            FeishuConfig             `json:"feishu"`
 	PendingCompaction *PendingCompactionConfig `json:"pending_compaction,omitempty"` // global pending message compaction settings
+	PendingMedia      *PendingMediaConfig      `json:"pending_media,omitempty"`      // GC settings for durable .pending-media files
 }
 
 type TelegramConfig struct {
