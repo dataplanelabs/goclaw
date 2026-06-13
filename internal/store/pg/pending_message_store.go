@@ -352,3 +352,28 @@ func resolveFromContacts(ctx context.Context, db *sql.DB, groups []store.Pending
 		}
 	}
 }
+
+// ListReferencedMediaPaths returns durable media paths still referenced by any
+// pending message (all tenants) — a system-level GC query, intentionally unscoped.
+func (s *PGPendingMessageStore) ListReferencedMediaPaths(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT media_paths FROM channel_pending_messages WHERE media_paths IS NOT NULL`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var mp sql.NullString
+		if err := rows.Scan(&mp); err != nil {
+			return nil, err
+		}
+		if !mp.Valid || mp.String == "" {
+			continue
+		}
+		var paths []string
+		if json.Unmarshal([]byte(mp.String), &paths) == nil {
+			out = append(out, paths...)
+		}
+	}
+	return out, rows.Err()
+}

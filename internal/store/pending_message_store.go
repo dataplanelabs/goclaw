@@ -62,4 +62,9 @@ type PendingMessageStore interface {
 	// ResolveGroupTitles looks up chat_title from session metadata for each group.
 	// Returns a map of "channel_name:history_key" → title. Used only by the UI layer.
 	ResolveGroupTitles(ctx context.Context, groups []PendingMessageGroup) (map[string]string, error)
+
+	// ListReferencedMediaPaths returns every durable media path still referenced by
+	// a pending message, across all tenants. The .pending-media GC uses it to avoid
+	// deleting files that are still pending consumption.
+	ListReferencedMediaPaths(ctx context.Context) ([]string, error)
 }

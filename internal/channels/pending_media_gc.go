@@ -9,40 +9,64 @@ import (
 )
 
 const (
-	// pendingMediaMaxAge bounds how long a durable .pending-media file lives
-	// without being consumed. Files survive a restart (unlike the old /tmp
-	// behavior), so a quiet/never-mentioned group or an orphan from an
-	// ungraceful shutdown would otherwise grow the PVC unbounded. 72h covers
-	// the realistic "send media now, @mention days later" window.
-	pendingMediaMaxAge     = 72 * time.Hour
-	pendingMediaGCInterval = 1 * time.Hour
+	pendingMediaDefaultMaxAge     = 72 * time.Hour
+	pendingMediaDefaultGCInterval = 1 * time.Hour
 )
 
-// StartPendingMediaGC runs a background sweep that removes aged files from the
-// shared durable media dir until ctx is done. The dir is shared across all
-// channels, so it is started once (from the gateway) rather than per-channel.
-func StartPendingMediaGC(ctx context.Context, dir string) {
-	if dir == "" {
+// PendingMediaDefaultMaxAge returns the fallback max-age when config is nil/zero.
+func PendingMediaDefaultMaxAge() time.Duration { return pendingMediaDefaultMaxAge }
+
+// PendingMediaDefaultInterval returns the fallback sweep interval when config is nil/zero.
+func PendingMediaDefaultInterval() time.Duration { return pendingMediaDefaultGCInterval }
+
+// PendingMediaGCSettings carries live-readable GC parameters.
+type PendingMediaGCSettings struct {
+	Enabled  bool
+	MaxAge   time.Duration
+	Interval time.Duration
+}
+
+// StartPendingMediaGC sweeps the shared durable media dir using live settings
+// so config.patch applies without restart. referenced (optional) yields the set
+// of paths still referenced by a pending message; those are never deleted, only
+// aged-out orphans are. If referenced errors, the sweep is skipped (fail-safe).
+func StartPendingMediaGC(ctx context.Context, dir string, settings func() PendingMediaGCSettings, referenced func(context.Context) (map[string]struct{}, error)) {
+	if dir == "" || settings == nil {
 		return
 	}
 	go func() {
-		t := time.NewTicker(pendingMediaGCInterval)
-		defer t.Stop()
-		sweepPendingMedia(dir, pendingMediaMaxAge)
 		for {
+			s := settings()
+			if s.Enabled && s.MaxAge > 0 {
+				ref, ok := map[string]struct{}{}, true
+				if referenced != nil {
+					var err error
+					if ref, err = referenced(ctx); err != nil {
+						slog.Warn("pending_media_gc: skip sweep — cannot list referenced paths", "error", err)
+						ok = false
+					}
+				}
+				if ok {
+					sweepPendingMedia(dir, s.MaxAge, ref)
+				}
+			}
+			interval := s.Interval
+			if interval <= 0 {
+				interval = pendingMediaDefaultGCInterval
+			}
 			select {
 			case <-ctx.Done():
 				return
-			case <-t.C:
-				sweepPendingMedia(dir, pendingMediaMaxAge)
+			case <-time.After(interval):
 			}
 		}
 	}()
 }
 
-// sweepPendingMedia removes regular files in dir whose modtime is older than
-// maxAge. Best-effort; returns the count removed.
-func sweepPendingMedia(dir string, maxAge time.Duration) int {
+// sweepPendingMedia removes regular files in dir that are older than maxAge AND
+// not referenced by any pending message. Best-effort; returns the count removed.
+// A nil referenced map means "nothing referenced" (pure age-based).
+func sweepPendingMedia(dir string, maxAge time.Duration, referenced map[string]struct{}) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0
@@ -53,12 +77,16 @@ func sweepPendingMedia(dir string, maxAge time.Duration) int {
 		if e.IsDir() {
 			continue
 		}
+		full := filepath.Join(dir, e.Name())
+		if _, ok := referenced[full]; ok {
+			continue // still pending consumption — keep for later use
+		}
 		info, err := e.Info()
 		if err != nil || info.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
 		if info.ModTime().Before(cutoff) {
-			if rmErr := os.Remove(filepath.Join(dir, e.Name())); rmErr != nil && !os.IsNotExist(rmErr) {
+			if rmErr := os.Remove(full); rmErr != nil && !os.IsNotExist(rmErr) {
 				slog.Warn("pending_media_gc: remove failed", "file", e.Name(), "error", rmErr)
 				continue
 			}
@@ -66,7 +94,7 @@ func sweepPendingMedia(dir string, maxAge time.Duration) int {
 		}
 	}
 	if removed > 0 {
-		slog.Info("pending_media_gc: swept aged files", "dir", dir, "removed", removed, "max_age", maxAge.String())
+		slog.Info("pending_media_gc: swept aged unreferenced files", "dir", dir, "removed", removed, "max_age", maxAge.String())
 	}
 	return removed
 }

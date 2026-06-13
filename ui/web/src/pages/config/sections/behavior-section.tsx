@@ -7,6 +7,7 @@ import { BehaviorRateCard } from "./behavior-rate-card";
 import { BehaviorSessionsCard } from "./behavior-sessions-card";
 import { BehaviorSecurityCard } from "./behavior-security-card";
 import { BehaviorPendingCompactionCard, type PendingCompactionValues } from "./behavior-pending-compaction-card";
+import { BehaviorPendingMediaCard, type PendingMediaValues } from "./behavior-pending-media-card";
 
  
 
@@ -56,6 +57,11 @@ export function BehaviorSection({ config, onPatch, saving }: Props) {
     ch.pending_compaction ?? {},
   );
 
+  // Pending media GC (from channels.pending_media)
+  const [pendingMedia, setPendingMedia] = useState<PendingMediaValues>(
+    ch.pending_media ?? {},
+  );
+
   const [dirty, setDirty] = useState(false);
 
   // Reset drafts when external config changes
@@ -76,8 +82,9 @@ export function BehaviorSection({ config, onPatch, saving }: Props) {
       scrub_credentials: tl.scrub_credentials,
     });
     setPendingCompaction(ch.pending_compaction ?? {});
+    setPendingMedia(ch.pending_media ?? {});
     setDirty(false);
-  }, [config]);  
+  }, [config]);
 
   const markDirty = <T,>(setter: React.Dispatch<React.SetStateAction<T>>) =>
     (v: T) => { setter(v); setDirty(true); };
@@ -103,7 +110,7 @@ export function BehaviorSection({ config, onPatch, saving }: Props) {
       },
       tools: { ...tl, scrub_credentials: security.scrub_credentials },
       sessions: { ...ss, ...sessions },
-      channels: { ...ch, pending_compaction: pendingCompaction },
+      channels: { ...ch, pending_compaction: pendingCompaction, pending_media: pendingMedia },
     });
   };
 
@@ -114,6 +121,7 @@ export function BehaviorSection({ config, onPatch, saving }: Props) {
       <BehaviorSessionsCard value={sessions} onChange={markDirty(setSessions)} />
       <BehaviorSecurityCard value={security} onChange={markDirty(setSecurity)} />
       <BehaviorPendingCompactionCard value={pendingCompaction} onChange={markDirty(setPendingCompaction)} />
+      <BehaviorPendingMediaCard value={pendingMedia} onChange={markDirty(setPendingMedia)} />
 
       {dirty && (
         <div className="flex justify-end pt-2">

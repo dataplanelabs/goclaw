@@ -608,7 +608,38 @@ func runGateway() {
 	server.StartUpdateChecker(ctx)
 
 	// Sweep aged durable pending-media files (orphans / never-mentioned groups).
-	channels.StartPendingMediaGC(ctx, filepath.Join(cfg.WorkspacePath(), ".pending-media"))
+	// Settings are read every cycle so config.patch applies without restart.
+	channels.StartPendingMediaGC(ctx, filepath.Join(cfg.WorkspacePath(), ".pending-media"), func() channels.PendingMediaGCSettings {
+		pm := cfg.Channels.PendingMedia
+		enabled := true
+		maxAge := channels.PendingMediaDefaultMaxAge()
+		interval := channels.PendingMediaDefaultInterval()
+		if pm != nil {
+			if pm.Enabled != nil {
+				enabled = *pm.Enabled
+			}
+			if pm.MaxAgeHours > 0 {
+				maxAge = time.Duration(pm.MaxAgeHours) * time.Hour
+			}
+			if pm.SweepIntervalMinutes > 0 {
+				interval = time.Duration(pm.SweepIntervalMinutes) * time.Minute
+			}
+		}
+		return channels.PendingMediaGCSettings{Enabled: enabled, MaxAge: maxAge, Interval: interval}
+	}, func(c context.Context) (map[string]struct{}, error) {
+		if pgStores.PendingMessages == nil {
+			return nil, nil
+		}
+		paths, err := pgStores.PendingMessages.ListReferencedMediaPaths(c)
+		if err != nil {
+			return nil, err
+		}
+		set := make(map[string]struct{}, len(paths))
+		for _, p := range paths {
+			set[p] = struct{}{}
+		}
+		return set, nil
+	})
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

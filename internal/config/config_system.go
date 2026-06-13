@@ -87,6 +87,26 @@ func (c *Config) ApplySystemConfigs(configs map[string]string) {
 		str("compaction.model", &pc.Model)
 	}
 
+	// Pending media GC
+	if _, ok := configs["pending_media.enabled"]; ok {
+		if c.Channels.PendingMedia == nil {
+			c.Channels.PendingMedia = &PendingMediaConfig{}
+		}
+		boolean("pending_media.enabled", &c.Channels.PendingMedia.Enabled)
+	}
+	if _, ok := configs["pending_media.max_age_hours"]; ok {
+		if c.Channels.PendingMedia == nil {
+			c.Channels.PendingMedia = &PendingMediaConfig{}
+		}
+		integer("pending_media.max_age_hours", &c.Channels.PendingMedia.MaxAgeHours)
+	}
+	if _, ok := configs["pending_media.sweep_interval_minutes"]; ok {
+		if c.Channels.PendingMedia == nil {
+			c.Channels.PendingMedia = &PendingMediaConfig{}
+		}
+		integer("pending_media.sweep_interval_minutes", &c.Channels.PendingMedia.SweepIntervalMinutes)
+	}
+
 	// Allowed paths (JSON array)
 	if v, ok := configs["allowed_paths"]; ok && v != "" {
 		var paths []string
