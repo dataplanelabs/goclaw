@@ -5,10 +5,14 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/nextlevelbuilder/goclaw/internal/pipeline"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
+	"github.com/nextlevelbuilder/goclaw/internal/tracing"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
@@ -235,5 +239,83 @@ func assertToolCallPayload(t *testing.T, ev AgentEvent, tc providers.ToolCall, r
 	}
 	if payload["name"] != tc.Name {
 		t.Errorf("payload.name: got %v, want %q", payload["name"], tc.Name)
+	}
+}
+
+// useSkillExecutor is a minimal ToolExecutor that returns a canned success for use_skill
+// and stubs all other tools. Used to verify the recording path without a real skills FS.
+type useSkillExecutor struct{}
+
+func (e *useSkillExecutor) ExecuteWithContext(_ context.Context, _ string, _ map[string]any, _, _, _, _ string, _ tools.AsyncCallback) *tools.Result {
+	return tools.NewResult(`{"slug":"ck:plan"}`)
+}
+func (e *useSkillExecutor) TryActivateDeferred(string) bool          { return false }
+func (e *useSkillExecutor) ProviderDefs() []providers.ToolDefinition { return nil }
+func (e *useSkillExecutor) Get(name string) (tools.Tool, bool) {
+	if name == "use_skill" {
+		return tools.NewUseSkillTool(nil), true
+	}
+	return nil, false
+}
+func (e *useSkillExecutor) List() []string             { return []string{"use_skill"} }
+func (e *useSkillExecutor) Aliases() map[string]string { return nil }
+
+// TestMakeExecuteToolCall_UseSkillRecordsSkillActivation is the regression guard
+// for the span FK race: use_skill (always instant) previously got a silent FK
+// violation because span_id referenced a not-yet-committed span row.
+// With the fix (span_id omitted from usage_event INSERT), the skill_activation
+// event must fire regardless of whether any span is in DB.
+//
+// Mutation-verify: restore event.SpanID = uuidPtr(spanID) in recordToolUsageEvent
+// and add a real FK-checking store — this test must fail (event not received).
+func TestMakeExecuteToolCall_UseSkillRecordsSkillActivation(t *testing.T) {
+	t.Parallel()
+	col := &eventCollector{}
+	storeSpy := newFakeUsageEventStore()
+
+	registry := tools.NewRegistry()
+	registry.Register(tools.NewUseSkillTool(nil))
+
+	tenantID := uuid.New()
+	l := &Loop{
+		id:          "test-agent",
+		agentUUID:   uuid.New(),
+		tenantID:    tenantID,
+		tools:       &useSkillExecutor{},
+		registry:    registry,
+		usageEvents: storeSpy,
+		onEvent:     col.onEvent,
+	}
+
+	// Provide trace ID in context — required by recordToolUsageEvent guard.
+	ctx := tracing.WithTraceID(store.WithTenantID(context.Background(), tenantID), uuid.New())
+
+	req := &RunRequest{RunID: "run-skill", SessionKey: "sess-skill", Channel: "ws"}
+	state := &pipeline.RunState{RunID: "run-skill"}
+	tc := providers.ToolCall{
+		ID:        "tc-skill-1",
+		Name:      "use_skill",
+		Arguments: map[string]any{"name": "ck:plan"},
+	}
+
+	_, err := l.makeExecuteToolCall(req, &runState{})(ctx, state, tc)
+	if err != nil {
+		t.Fatalf("makeExecuteToolCall returned error: %v", err)
+	}
+
+	event := waitUsageEvent(t, storeSpy)
+	if event.EventType != store.UsageEventTypeSkillActivation {
+		t.Fatalf("event_type = %q, want %q", event.EventType, store.UsageEventTypeSkillActivation)
+	}
+	if event.ResourceName != "ck:plan" {
+		t.Fatalf("resource_name = %q, want ck:plan", event.ResourceName)
+	}
+	if event.Source != store.UsageSourceUseSkill {
+		t.Fatalf("source = %q, want %q", event.Source, store.UsageSourceUseSkill)
+	}
+	// span_id must be nil — setting it would cause a FK violation for fast tools
+	// whose span hasn't been committed to DB yet (collector buffers ~5s).
+	if event.SpanID != nil {
+		t.Fatalf("span_id must be nil to avoid FK race, got %v", *event.SpanID)
 	}
 }
