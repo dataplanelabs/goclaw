@@ -45,17 +45,34 @@ func seedTenant(t *testing.T, db *sql.DB, slug string) uuid.UUID {
 }
 
 // seedBinary inserts a secure_cli_binaries row with the given fields.
-func seedBinary(t *testing.T, db *sql.DB, tenantID uuid.UUID, name string, enabled, isGlobal bool) {
+func seedBinary(t *testing.T, db *sql.DB, tenantID uuid.UUID, name string, enabled, isGlobal bool) uuid.UUID {
 	t.Helper()
+	id := uuid.New()
 	_, err := db.Exec(
 		`INSERT INTO secure_cli_binaries
 		  (id, binary_name, encrypted_env, is_global, enabled, tenant_id)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New(), name, []byte("{}"), isGlobal, enabled, tenantID,
+		id, name, []byte("{}"), isGlobal, enabled, tenantID,
 	)
 	if err != nil {
 		t.Fatalf("seed binary %s: %v", name, err)
 	}
+	return id
+}
+
+// seedAgent inserts a minimal agents row and returns its ID.
+func seedAgent(t *testing.T, db *sql.DB, tenantID uuid.UUID, key string) uuid.UUID {
+	t.Helper()
+	id := uuid.New()
+	_, err := db.Exec(
+		`INSERT INTO agents (id, tenant_id, agent_key, agent_type, status, provider, model, owner_id)
+		 VALUES (?, ?, ?, 'open', 'active', 'openrouter', 'gpt-4o', 'owner1')`,
+		id, tenantID, key,
+	)
+	if err != nil {
+		t.Fatalf("seed agent %s: %v", key, err)
+	}
+	return id
 }
 
 func TestSQLite_IsRegisteredBinary_ReturnsTrueForEnabledNonGlobal(t *testing.T) {
@@ -187,5 +204,61 @@ func TestSQLite_IsRegisteredBinary_CaseInsensitive(t *testing.T) {
 		if !got {
 			t.Fatalf("expected true for %q (case-insensitive)", q)
 		}
+	}
+}
+
+// Gap B regression guard: a grant row with a foreign tenant_id must NOT be
+// returned by LookupByBinary. The AND g.tenant_id = b.tenant_id predicate in
+// the JOIN makes this explicit rather than relying on FK transitivity.
+func TestSQLite_LookupByBinary_CrossTenantGrantNotReturned(t *testing.T) {
+	s, db := newTestSQLiteSecureCLI(t)
+
+	tidA := seedTenant(t, db, "grant-tenant-a")
+	tidB := seedTenant(t, db, "grant-tenant-b")
+
+	// Binary owned by tenant A, is_global=false (requires grant).
+	agentA := seedAgent(t, db, tidA, "coder-a")
+	binA := seedBinary(t, db, tidA, "gh", true, false)
+
+	// Grant row deliberately mismatched: binary belongs to A, grant says tenant B.
+	// This simulates a data-integrity anomaly the predicate should guard against.
+	agentB := seedAgent(t, db, tidB, "coder-b")
+	_, err := db.Exec(
+		`INSERT INTO secure_cli_agent_grants
+		  (id, binary_id, agent_id, tenant_id, encrypted_env, enabled)
+		 VALUES (?, ?, ?, ?, ?, 1)`,
+		uuid.New(), binA, agentB, tidB, []byte("{}"),
+	)
+	if err != nil {
+		t.Fatalf("seed cross-tenant grant: %v", err)
+	}
+
+	// LookupByBinary for agent B against tenant A's binary must return nil
+	// because the JOIN now requires g.tenant_id = b.tenant_id.
+	ctx := store.WithTenantID(context.Background(), tidA)
+	got, err := s.LookupByBinary(ctx, "gh", &agentB, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil (cross-tenant grant must not be returned), got binary %s", got.BinaryName)
+	}
+
+	// Sanity: a correct grant (matching tenant_id) IS returned.
+	_, err = db.Exec(
+		`INSERT INTO secure_cli_agent_grants
+		  (id, binary_id, agent_id, tenant_id, encrypted_env, enabled)
+		 VALUES (?, ?, ?, ?, ?, 1)`,
+		uuid.New(), binA, agentA, tidA, []byte("{}"),
+	)
+	if err != nil {
+		t.Fatalf("seed correct grant: %v", err)
+	}
+	got2, err := s.LookupByBinary(ctx, "gh", &agentA, "")
+	if err != nil {
+		t.Fatalf("unexpected error for valid grant: %v", err)
+	}
+	if got2 == nil {
+		t.Fatal("expected non-nil for valid same-tenant grant")
 	}
 }
