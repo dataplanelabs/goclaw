@@ -499,6 +499,21 @@ func openTestDBAtVersion(t *testing.T, targetVersion int) *sql.DB {
 		db.Exec(`DROP TABLE IF EXISTS usage_event_rollups`)
 	}
 
+	if targetVersion < 52 {
+		// Migration 51→52 creates the skill self-evolution control plane.
+		db.Exec(`DROP INDEX IF EXISTS idx_skill_versions_tenant_skill`)
+		db.Exec(`DROP TABLE IF EXISTS skill_versions`)
+		db.Exec(`DROP INDEX IF EXISTS idx_skill_suggestions_skill_status_created`)
+		db.Exec(`DROP INDEX IF EXISTS idx_skill_suggestions_tenant_created`)
+		db.Exec(`DROP TABLE IF EXISTS skill_improvement_suggestions`)
+		db.Exec(`DROP INDEX IF EXISTS idx_skill_usage_metrics_skill_created`)
+		db.Exec(`DROP INDEX IF EXISTS idx_skill_usage_metrics_tenant_created`)
+		db.Exec(`DROP INDEX IF EXISTS idx_skill_usage_metrics_status`)
+		db.Exec(`DROP TABLE IF EXISTS skill_usage_metrics`)
+		db.Exec(`DROP INDEX IF EXISTS idx_skill_evolution_settings_skill`)
+		db.Exec(`DROP TABLE IF EXISTS skill_evolution_settings`)
+	}
+
 	// Set version back to target.
 	db.Exec("UPDATE schema_version SET version = ?", targetVersion)
 	return db

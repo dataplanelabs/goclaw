@@ -42,6 +42,7 @@ type Stores struct {
 	Episodic               EpisodicStore
 	EvolutionMetrics       EvolutionMetricsStore
 	EvolutionSuggestions   EvolutionSuggestionStore
+	SkillEvolution         SkillEvolutionStore
 	TeamReplyEvals         TeamReplyEvalStore
 	TeamReplyAtomicWriter  AtomicTeamReplyWriter
 	VieneuClonedVoices     VieneuClonedVoicesStore

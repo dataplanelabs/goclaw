@@ -394,5 +394,14 @@ func init() {
 		MsgPackagesUpdatesReasonLocked:             "Package database is locked",
 		MsgPackagesUpdatesReasonDiskFull:           "Disk full",
 		MsgPackagesUpdatesReasonHelperUnavailable:  "Privileged helper unavailable",
+
+		MsgSkillEvolutionNotConfigured: "skill evolution store is not configured",
+		MsgActivityStoreNotConfigured:  "activity store is not configured",
+		MsgInvalidEvolutionMode:        "invalid evolution mode",
+		MsgSystemSkillMutationBlocked:  "system skill mutation is blocked",
+		MsgSuggestionMustBeApproved:    "suggestion must be approved before apply",
+		MsgInvalidDraftPatch:           "invalid draft_patch: %s",
+		MsgDraftPatchRequired:          "draft_patch requires content or find/replace",
+		MsgFindTextNotFound:            "find text not found in target file",
 	})
 }

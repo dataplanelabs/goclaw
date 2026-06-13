@@ -394,5 +394,14 @@ func init() {
 		MsgPackagesUpdatesReasonLocked:             "Cơ sở dữ liệu gói đang bị khóa",
 		MsgPackagesUpdatesReasonDiskFull:           "Đĩa đã đầy",
 		MsgPackagesUpdatesReasonHelperUnavailable:  "Dịch vụ đặc quyền không khả dụng",
+
+		MsgSkillEvolutionNotConfigured: "kho lưu skill evolution chưa được cấu hình",
+		MsgActivityStoreNotConfigured:  "kho lưu activity chưa được cấu hình",
+		MsgInvalidEvolutionMode:        "chế độ evolution không hợp lệ",
+		MsgSystemSkillMutationBlocked:  "không được phép sửa skill hệ thống",
+		MsgSuggestionMustBeApproved:    "phải duyệt đề xuất trước khi áp dụng",
+		MsgInvalidDraftPatch:           "bản vá nháp không hợp lệ: %s",
+		MsgDraftPatchRequired:          "bản vá nháp cần nội dung hoặc tìm/thay",
+		MsgFindTextNotFound:            "không tìm thấy đoạn cần thay trong tệp đích",
 	})
 }

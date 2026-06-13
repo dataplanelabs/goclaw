@@ -394,5 +394,14 @@ func init() {
 		MsgPackagesUpdatesReasonLocked:             "软件包数据库已锁定",
 		MsgPackagesUpdatesReasonDiskFull:           "磁盘已满",
 		MsgPackagesUpdatesReasonHelperUnavailable:  "特权助手不可用",
+
+		MsgSkillEvolutionNotConfigured: "技能演进存储未配置",
+		MsgActivityStoreNotConfigured:  "活动存储未配置",
+		MsgInvalidEvolutionMode:        "无效的演进模式",
+		MsgSystemSkillMutationBlocked:  "禁止修改系统技能",
+		MsgSuggestionMustBeApproved:    "应用前必须先批准建议",
+		MsgInvalidDraftPatch:           "无效的草稿补丁：%s",
+		MsgDraftPatchRequired:          "草稿补丁需要内容或查找/替换",
+		MsgFindTextNotFound:            "在目标文件中未找到要替换的文本",
 	})
 }
