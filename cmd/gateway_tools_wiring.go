@@ -224,6 +224,7 @@ func wireWorkstationTools(
 		domainBus,
 	)
 	claudeRemoteTool := tools.NewClaudeRemoteTool(workstationExecTool)
+	codexRemoteTool := tools.NewCodexRemoteTool(workstationExecTool)
 
 	// Phase 6: wire real permission checker (AllowlistChecker + rate limiter).
 	if pgStores.WorkstationPermissions != nil {
@@ -262,6 +263,7 @@ func wireWorkstationTools(
 
 	toolsReg.Register(workstationExecTool)
 	toolsReg.Register(claudeRemoteTool)
+	toolsReg.Register(codexRemoteTool)
 
 	// Subscribe to workstation update/delete events to evict stale BackendCache entries.
 	if domainBus != nil {
