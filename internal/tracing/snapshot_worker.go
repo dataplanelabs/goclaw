@@ -9,8 +9,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
+
+// snapshotCost prefers an already-computed cost; otherwise prices the aggregated
+// tokens via the provider pricing table. Upstream never populates span/trace
+// total_cost, so this is what makes the usage dashboard show real dollars.
+func snapshotCost(stored float64, provider, model string, in, out int64) float64 {
+	if stored > 0 {
+		return stored
+	}
+	return providers.CostUSD(provider, model, in, out)
+}
 
 // SnapshotWorker periodically aggregates trace/span data into usage_snapshots.
 type SnapshotWorker struct {
@@ -512,7 +523,7 @@ func mergeTraceAndSpanRows(
 			LLMCallCount:      sp.LLMCallCount,
 			InputTokens:       sp.InputTokens,
 			OutputTokens:      sp.OutputTokens,
-			TotalCost:         sp.TotalCost,
+			TotalCost:         snapshotCost(sp.TotalCost, sp.Provider, sp.Model, sp.InputTokens, sp.OutputTokens),
 			CacheReadTokens:   sp.CacheReadTokens,
 			CacheCreateTokens: sp.CacheCreateTokens,
 			ThinkingTokens:    sp.ThinkingTokens,
