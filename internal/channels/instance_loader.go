@@ -44,6 +44,7 @@ type InstanceLoader struct {
 	msgBus            *bus.MessageBus
 	pairingSvc        store.PairingStore
 	defaultTimezone   string // workspace default IANA tz for buffer timestamps (channel config overrides)
+	durableMediaDir   string // PVC-backed dir for persistent pending media across restarts
 	mu                sync.Mutex
 	loaded            map[string]struct{} // channel names managed by this loader
 }
@@ -83,6 +84,12 @@ func (l *InstanceLoader) SetPendingCompactionConfig(cfg *config.PendingCompactio
 // timestamps when a channel has no per-instance timezone. Call before LoadAll/Reload.
 func (l *InstanceLoader) SetDefaultTimezone(tz string) {
 	l.defaultTimezone = tz
+}
+
+// SetDurableMediaDir sets the directory used to persist pending group media
+// files across pod restarts. Call before LoadAll/Reload.
+func (l *InstanceLoader) SetDurableMediaDir(dir string) {
+	l.durableMediaDir = dir
 }
 
 // RegisterFactory registers a factory for a channel type (e.g., "telegram", "discord").
@@ -299,6 +306,10 @@ func (l *InstanceLoader) loadInstance(ctx context.Context, inst store.ChannelIns
 			tz = l.defaultTimezone
 		}
 		ph.SetPendingHistoryTimezone(tz)
+	}
+	// Wire durable media dir so pending inbound media survives pod restarts.
+	if ph, ok := ch.(interface{ SetPendingHistoryDurableMediaDir(string) }); ok && l.durableMediaDir != "" {
+		ph.SetPendingHistoryDurableMediaDir(l.durableMediaDir)
 	}
 
 	// Wire pending message auto-compaction.

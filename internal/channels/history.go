@@ -9,11 +9,15 @@ package channels
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -82,6 +86,10 @@ type PendingHistory struct {
 	// nil → UTC. Set once at load via SetTimezone, read-only thereafter.
 	loc *time.Location
 
+	// durableMediaDir is the directory where temp media files are moved for
+	// persistence across restarts. Empty means RAM-only (no move, no persistence).
+	durableMediaDir string
+
 	// Compaction guard: per-key flag to prevent concurrent compactions
 	compacting sync.Map // historyKey → bool
 }
@@ -123,6 +131,25 @@ func (ph *PendingHistory) SetTimezone(tz string) {
 	if l, err := time.LoadLocation(tz); err == nil {
 		ph.loc = l
 	}
+}
+
+// SetDurableMediaDir configures a PVC-backed directory for persisting inbound
+// media files across restarts. Call once before messages flow.
+// Empty dir disables durability (RAM-only, current behavior).
+func (ph *PendingHistory) SetDurableMediaDir(dir string) {
+	if dir == "" {
+		return
+	}
+	// Refuse symlinks — mirrors persistMedia's Lstat guard.
+	if fi, err := os.Lstat(dir); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		slog.Warn("pending_history: durable media dir is a symlink, ignoring", "dir", dir)
+		return
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		slog.Warn("pending_history: cannot create durable media dir", "dir", dir, "error", err)
+		return
+	}
+	ph.durableMediaDir = dir
 }
 
 // LoadFromDB loads pending history from the database into RAM.
@@ -169,6 +196,26 @@ func (ph *PendingHistory) Record(historyKey string, entry HistoryEntry, limit in
 		return
 	}
 
+	// Move temp media files to the durable dir before taking the lock, so IO
+	// does not block concurrent readers. The moved paths replace entry.Media so
+	// the in-RAM entry and the DB row reference the same durable location.
+	var durablePaths []string
+	if ph.durableMediaDir != "" && len(entry.Media) > 0 {
+		moved := make([]string, 0, len(entry.Media))
+		for _, src := range entry.Media {
+			dst, err := moveToDurable(src, ph.durableMediaDir)
+			if err != nil {
+				slog.Warn("pending_history: media durability move failed, keeping temp path",
+					"src", src, "error", err)
+				moved = append(moved, src)
+			} else {
+				moved = append(moved, dst)
+				durablePaths = append(durablePaths, dst)
+			}
+		}
+		entry.Media = moved
+	}
+
 	var count int
 
 	ph.mu.Lock()
@@ -196,6 +243,7 @@ func (ph *PendingHistory) Record(historyKey string, entry HistoryEntry, limit in
 			Body:          entry.Body,
 			PlatformMsgID: entry.MessageID,
 			CreatedAt:     entry.Timestamp,
+			MediaPaths:    durablePaths,
 		})
 	}
 
@@ -226,6 +274,7 @@ func (ph *PendingHistory) loadFromDB(historyKey string) []HistoryEntry {
 			Sender:    m.Sender,
 			SenderID:  m.SenderID,
 			Body:      m.Body,
+			Media:     m.MediaPaths, // durable paths survive across restarts
 			Timestamp: m.CreatedAt,
 			MessageID: m.PlatformMsgID,
 		})
@@ -430,4 +479,37 @@ func cleanupMedia(entries []HistoryEntry) {
 			}
 		}
 	}
+}
+
+// moveToDurable moves src to a new UUID-named file inside dir.
+// Falls back to copy+remove when os.Rename fails across devices (EXDEV).
+func moveToDurable(src, dir string) (string, error) {
+	ext := filepath.Ext(src)
+	dst := filepath.Join(dir, uuid.New().String()+ext)
+	if err := os.Rename(src, dst); err == nil {
+		return dst, nil
+	} else if !errors.Is(err, syscall.EXDEV) {
+		return "", err
+	}
+	// Cross-device: copy then remove.
+	in, err := os.Open(src)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return "", err
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(dst)
+		return "", err
+	}
+	os.Remove(src) // best-effort; original stays if this fails
+	return dst, nil
 }

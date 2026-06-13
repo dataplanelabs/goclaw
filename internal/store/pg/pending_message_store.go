@@ -3,6 +3,7 @@ package pg
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -27,8 +28,8 @@ func (s *PGPendingMessageStore) AppendBatch(ctx context.Context, msgs []store.Pe
 		return nil
 	}
 
-	// Build multi-row INSERT: VALUES ($1,$2,...,$11), ($12,$13,...,$22), ...
-	const cols = 11
+	// Build multi-row INSERT: VALUES ($1,$2,...,$12), ($13,...,$24), ...
+	const cols = 12
 	placeholders := make([]string, len(msgs))
 	args := make([]any, 0, len(msgs)*cols)
 	now := time.Now()
@@ -39,14 +40,20 @@ func (s *PGPendingMessageStore) AppendBatch(ctx context.Context, msgs []store.Pe
 			msgs[i].ID = uuid.Must(uuid.NewV7())
 		}
 		base := i * cols
-		placeholders[i] = fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d)",
-			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11)
+		placeholders[i] = fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d)",
+			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11, base+12)
+		var mediaPaths any
+		if len(msgs[i].MediaPaths) > 0 {
+			if b, err := json.Marshal(msgs[i].MediaPaths); err == nil {
+				mediaPaths = string(b)
+			}
+		}
 		args = append(args, msgs[i].ID, msgs[i].ChannelName, msgs[i].HistoryKey,
-			msgs[i].Sender, msgs[i].SenderID, msgs[i].Body, msgs[i].PlatformMsgID, msgs[i].IsSummary, now, now, tid)
+			msgs[i].Sender, msgs[i].SenderID, msgs[i].Body, msgs[i].PlatformMsgID, msgs[i].IsSummary, now, now, tid, mediaPaths)
 	}
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO channel_pending_messages (id, channel_name, history_key, sender, sender_id, body, platform_msg_id, is_summary, created_at, updated_at, tenant_id)
+		`INSERT INTO channel_pending_messages (id, channel_name, history_key, sender, sender_id, body, platform_msg_id, is_summary, created_at, updated_at, tenant_id, media_paths)
 		 VALUES `+strings.Join(placeholders, ","),
 		args...,
 	)
@@ -58,15 +65,32 @@ func (s *PGPendingMessageStore) ListByKey(ctx context.Context, channelName, hist
 	if err != nil {
 		return nil, err
 	}
-	var result []store.PendingMessage
-	err = pkgSqlxDB.SelectContext(ctx, &result,
-		`SELECT id, channel_name, history_key, sender, sender_id, body, platform_msg_id, is_summary, created_at, updated_at
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, channel_name, history_key, sender, sender_id, body, platform_msg_id, is_summary, created_at, updated_at, media_paths
 		 FROM channel_pending_messages
 		 WHERE channel_name = $1 AND history_key = $2`+tClause+`
 		 ORDER BY created_at ASC`,
 		append([]any{channelName, historyKey}, tArgs...)...,
 	)
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []store.PendingMessage
+	for rows.Next() {
+		var m store.PendingMessage
+		var mediaPaths sql.NullString
+		if err := rows.Scan(&m.ID, &m.ChannelName, &m.HistoryKey, &m.Sender, &m.SenderID,
+			&m.Body, &m.PlatformMsgID, &m.IsSummary, &m.CreatedAt, &m.UpdatedAt, &mediaPaths); err != nil {
+			return nil, err
+		}
+		if mediaPaths.Valid && mediaPaths.String != "" {
+			_ = json.Unmarshal([]byte(mediaPaths.String), &m.MediaPaths)
+		}
+		result = append(result, m)
+	}
+	return result, rows.Err()
 }
 
 func (s *PGPendingMessageStore) DeleteByKey(ctx context.Context, channelName, historyKey string) error {

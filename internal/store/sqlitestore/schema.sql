@@ -1072,6 +1072,7 @@ CREATE TABLE IF NOT EXISTS channel_pending_messages (
     body            TEXT NOT NULL,
     platform_msg_id VARCHAR(100) NOT NULL DEFAULT '',
     is_summary      BOOLEAN NOT NULL DEFAULT 0,
+    media_paths     TEXT,
     tenant_id       TEXT NOT NULL REFERENCES tenants(id),
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))

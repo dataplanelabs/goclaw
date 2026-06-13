@@ -18,6 +18,7 @@ type PendingMessage struct {
 	Body          string    `json:"body" db:"body"`
 	PlatformMsgID string    `json:"platform_msg_id" db:"platform_msg_id"`
 	IsSummary     bool      `json:"is_summary" db:"is_summary"`
+	MediaPaths    []string  `json:"media_paths,omitempty" db:"-"` // durable file paths; stored as JSON in DB
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
