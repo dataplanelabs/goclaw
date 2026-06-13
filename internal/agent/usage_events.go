@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 	"github.com/nextlevelbuilder/goclaw/internal/tracing"
@@ -92,6 +93,7 @@ func (l *Loop) recordToolUsageEvent(ctx context.Context, req *RunRequest, canoni
 	}
 	event.Provider = result.Provider
 	event.Model = result.Model
+	event.CostUSD = providers.CostUSD(result.Provider, result.Model, event.InputTokens, event.OutputTokens)
 	event.Metadata = usageMetadata(metadata)
 	l.insertUsageEventBestEffort(ctx, event)
 }
