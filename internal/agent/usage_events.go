@@ -76,7 +76,8 @@ func (l *Loop) recordToolUsageEvent(ctx context.Context, req *RunRequest, canoni
 	}
 
 	event := l.baseUsageEvent(ctx, req, start, eventType, resourceType, resourceName, resourceID, source)
-	event.SpanID = uuidPtr(spanID)
+	// span_id omitted: span collector buffers for ~5s before DB commit; setting it
+	// here causes FK violations for fast tools (use_skill, <5s exec) → silent drop.
 	event.Status = "completed"
 	if result.IsError {
 		event.Status = "error"
