@@ -186,6 +186,24 @@ func (s *PGTracingStore) CountTraces(ctx context.Context, opts store.TraceListOp
 	return count, err
 }
 
+const traceRecipientCap = 1000
+
+func (s *PGTracingStore) ListTraceRecipients(ctx context.Context, tenantID uuid.UUID) ([]store.TraceRecipient, error) {
+	if tenantID == uuid.Nil {
+		return nil, nil
+	}
+	q := `SELECT DISTINCT ON (user_id) user_id, COALESCE(session_key, '') AS session_key, COALESCE(channel, '') AS channel
+		FROM traces
+		WHERE tenant_id = $1 AND user_id <> ''
+		ORDER BY user_id, start_time DESC
+		LIMIT $2`
+	var rows []store.TraceRecipient
+	if err := pkgSqlxDB.SelectContext(ctx, &rows, q, tenantID, traceRecipientCap); err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 func (s *PGTracingStore) ListTraces(ctx context.Context, opts store.TraceListOpts) ([]store.TraceData, error) {
 	where, args := buildTraceWhere(ctx, opts)
 

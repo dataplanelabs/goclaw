@@ -18,6 +18,7 @@ import { formatDate, formatDuration, formatTokens, computeDurationMs } from "@/l
 import { formatUserLabel } from "@/lib/format-user-label";
 import { useContactResolver } from "@/hooks/use-contact-resolver";
 import { useTraces, type TraceData } from "./hooks/use-traces";
+import { useTraceRecipients } from "./hooks/use-trace-recipients";
 import { TraceDetailDialog } from "./trace-detail-dialog";
 import { useMinLoading } from "@/hooks/use-min-loading";
 import { useDeferredLoading } from "@/hooks/use-deferred-loading";
@@ -134,10 +135,13 @@ export function TracesPage() {
   }, [traces]);
   const { resolve } = useContactResolver(traceUserIds);
 
-  // Distinct recipients on the current page: user_id → human label. Prefer a real
-  // chat_title (set on group traces) over a slug; a group also appears in cron traces
-  // with empty chat_title, so chat_title must win when any trace provides it.
-  const recipientOptions = useMemo(() => {
+  // Tenant-wide recipients from the backend (not just the current page). Each
+  // recipient's label is the resolved chat_title, falling back to formatUserLabel
+  // for any unlabeled id. While the endpoint loads we use page-derived options so
+  // the dropdown isn't empty.
+  const { recipients: tenantRecipients } = useTraceRecipients();
+
+  const pageRecipientOptions = useMemo(() => {
     const labels = new Map<string, string>();
     for (const tr of traces) {
       if (!tr.user_id) continue;
@@ -150,6 +154,13 @@ export function TracesPage() {
     }
     return [...labels.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [traces, resolve]);
+
+  const recipientOptions = useMemo(() => {
+    if (tenantRecipients.length === 0) return pageRecipientOptions;
+    return tenantRecipients
+      .map((r): [string, string] => [r.user_id, r.label || formatUserLabel(r.user_id, resolve)])
+      .sort((a, b) => a[1].localeCompare(b[1]));
+  }, [tenantRecipients, pageRecipientOptions, resolve]);
 
   const spinning = useMinLoading(fetching);
   const showSkeleton = useDeferredLoading(loading && traces.length === 0);

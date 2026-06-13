@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -63,6 +64,7 @@ func (h *TracesHandler) SetRetryDeps(agents store.AgentStore, replay store.Repla
 // RegisterRoutes registers trace routes on the given mux.
 func (h *TracesHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/traces", h.authMiddleware(h.handleList))
+	mux.HandleFunc("GET /v1/traces/recipients", h.authMiddleware(h.handleRecipients))
 	mux.HandleFunc("GET /v1/traces/{traceID}/export", h.authMiddleware(h.handleExport))
 	mux.HandleFunc("GET /v1/traces/{traceID}", h.authMiddleware(h.handleGet))
 	mux.HandleFunc("GET /v1/costs/summary", h.authMiddleware(h.handleCostSummary))
@@ -143,6 +145,55 @@ func (h *TracesHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// traceRecipientOut is one entry in the tenant-wide recipient filter list.
+type traceRecipientOut struct {
+	UserID string `json:"user_id"`
+	Label  string `json:"label"`
+}
+
+// handleRecipients returns the distinct set of trace recipients tenant-wide so
+// the "Delivered to" filter lists every recipient, not just the current page.
+func (h *TracesHandler) handleRecipients(w http.ResponseWriter, r *http.Request) {
+	tenantID := store.TenantIDFromContext(r.Context())
+
+	// Non-admin callers only ever filter their own traces; expose just themselves.
+	auth := resolveAuth(r)
+	if !permissions.HasMinRole(auth.Role, permissions.RoleAdmin) {
+		callerID := store.UserIDFromContext(r.Context())
+		out := []traceRecipientOut{}
+		if callerID != "" {
+			out = append(out, traceRecipientOut{UserID: callerID})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"recipients": out})
+		return
+	}
+
+	recipients, err := h.tracing.ListTraceRecipients(r.Context(), tenantID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	pairs := make([]channelSession, len(recipients))
+	for i, rec := range recipients {
+		pairs[i] = channelSession{channel: rec.Channel, sessionKey: rec.SessionKey}
+	}
+	titles := h.resolveChatTitles(r.Context(), pairs)
+
+	out := make([]traceRecipientOut, 0, len(recipients))
+	for i, rec := range recipients {
+		out = append(out, traceRecipientOut{UserID: rec.UserID, Label: titles[i]})
+	}
+	sort.Slice(out, func(a, b int) bool {
+		if out[a].Label == out[b].Label {
+			return out[a].UserID < out[b].UserID
+		}
+		return out[a].Label < out[b].Label
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{"recipients": out})
+}
+
 // enrichChatTitles fills TraceData.ChatTitle for the given page by joining
 // (trace.channel → channel_instance.channel_type) × (sender_id from session_key)
 // against channel_contacts.display_name. Best-effort: silent on any lookup miss.
@@ -150,54 +201,73 @@ func (h *TracesHandler) enrichChatTitles(ctx context.Context, traces []store.Tra
 	if len(traces) == 0 || h.channels == nil || h.contacts == nil {
 		return
 	}
-	channelTypes := make(map[string]string, 4)
-	senderIDs := make([]string, 0, len(traces))
-	keys := make([]string, len(traces))
+	pairs := make([]channelSession, len(traces))
 	for i := range traces {
-		t := &traces[i]
-		sid := chatIDFromSessionKey(t.SessionKey)
-		if sid == "" || t.Channel == "" {
+		pairs[i] = channelSession{channel: traces[i].Channel, sessionKey: traces[i].SessionKey}
+	}
+	titles := h.resolveChatTitles(ctx, pairs)
+	for i := range traces {
+		if title, ok := titles[i]; ok {
+			traces[i].ChatTitle = title
+		}
+	}
+}
+
+// channelSession pairs a trace's channel name with its session_key for title resolution.
+type channelSession struct {
+	channel    string
+	sessionKey string
+}
+
+// resolveChatTitles resolves group/DM display names for the given (channel,
+// session_key) pairs, returning a map of index → display name for resolved rows.
+// Shared by enrichChatTitles and the recipients endpoint so labels match the rows.
+func (h *TracesHandler) resolveChatTitles(ctx context.Context, pairs []channelSession) map[int]string {
+	out := make(map[int]string, len(pairs))
+	if len(pairs) == 0 || h.channels == nil || h.contacts == nil {
+		return out
+	}
+	channelTypes := make(map[string]string, 4)
+	senderIDs := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		sid := chatIDFromSessionKey(p.sessionKey)
+		if sid == "" || p.channel == "" {
 			continue
 		}
-		if _, ok := channelTypes[t.Channel]; !ok {
-			inst, err := h.channels.GetByName(ctx, t.Channel)
+		if _, ok := channelTypes[p.channel]; !ok {
+			inst, err := h.channels.GetByName(ctx, p.channel)
 			if err != nil || inst == nil {
-				channelTypes[t.Channel] = ""
+				channelTypes[p.channel] = ""
 				continue
 			}
-			channelTypes[t.Channel] = inst.ChannelType
+			channelTypes[p.channel] = inst.ChannelType
 		}
-		ct := channelTypes[t.Channel]
-		if ct == "" {
+		if channelTypes[p.channel] == "" {
 			continue
 		}
-		keys[i] = ct + ":" + sid
 		senderIDs = append(senderIDs, sid)
 	}
 	if len(senderIDs) == 0 {
-		return
+		return out
 	}
 	byID, err := h.contacts.GetContactsBySenderIDs(ctx, senderIDs)
 	if err != nil {
-		return
+		return out
 	}
-	for i := range traces {
-		t := &traces[i]
-		sid := chatIDFromSessionKey(t.SessionKey)
+	for i, p := range pairs {
+		sid := chatIDFromSessionKey(p.sessionKey)
 		if sid == "" {
 			continue
 		}
 		c, ok := byID[sid]
-		if !ok {
-			continue
-		}
-		if c.ChannelType != channelTypes[t.Channel] {
+		if !ok || c.ChannelType != channelTypes[p.channel] {
 			continue
 		}
 		if c.DisplayName != nil && *c.DisplayName != "" {
-			t.ChatTitle = *c.DisplayName
+			out[i] = *c.DisplayName
 		}
 	}
+	return out
 }
 
 // chatIDFromSessionKey returns the last colon-separated segment, the typical

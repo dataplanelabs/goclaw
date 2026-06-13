@@ -162,6 +162,38 @@ func (s *SQLiteTracingStore) CountTraces(ctx context.Context, opts store.TraceLi
 	return count, err
 }
 
+const traceRecipientCap = 1000
+
+func (s *SQLiteTracingStore) ListTraceRecipients(ctx context.Context, tenantID uuid.UUID) ([]store.TraceRecipient, error) {
+	if tenantID == uuid.Nil {
+		return nil, nil
+	}
+	q := `SELECT user_id, COALESCE(session_key, '') AS session_key, COALESCE(channel, '') AS channel
+		FROM traces t
+		WHERE tenant_id = ? AND user_id IS NOT NULL AND user_id <> ''
+		  AND start_time = (
+			SELECT MAX(t2.start_time) FROM traces t2
+			WHERE t2.tenant_id = t.tenant_id AND t2.user_id = t.user_id
+		  )
+		GROUP BY user_id
+		ORDER BY user_id
+		LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, tenantID, traceRecipientCap)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.TraceRecipient
+	for rows.Next() {
+		var r store.TraceRecipient
+		if err := rows.Scan(&r.UserID, &r.SessionKey, &r.Channel); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func (s *SQLiteTracingStore) ListTraces(ctx context.Context, opts store.TraceListOpts) ([]store.TraceData, error) {
 	where, args := buildTraceWhere(ctx, opts)
 	limit := opts.Limit
