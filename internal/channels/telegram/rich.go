@@ -12,14 +12,19 @@ import (
 	"strings"
 )
 
-// Math-delimiter normalization: Telegram Rich Markdown (Bot API 10.1) uses GFM
-// math — $..$ inline, $$..$$ block — but agents commonly emit standard LaTeX
-// delimiters \(..\) / \[..\]. We rewrite those (outside code spans) so the math
-// renders. Existing $..$ / $$..$$ are already GFM and left untouched.
+// Math-delimiter normalization → GFM ($..$ inline, $$..$$ block), done at the
+// source so any agent renders without per-agent prompting. Handles the three
+// ways agents emit math: \[..\]/\(..\) in prose, ```latex/```math fenced blocks,
+// and `$..$`/`\(..\)`/`\[..\]`-wrapped inline code. Real (non-math) code is left
+// untouched.
+const mathBacktick = "`"
+
 var (
-	codeSpanRe   = regexp.MustCompile("(?s)```.*?```|`[^`]*`")
-	blockMathRe  = regexp.MustCompile(`(?s)\\\[(.*?)\\\]`)
-	inlineMathRe = regexp.MustCompile(`(?s)\\\((.*?)\\\)`)
+	mathFenceRe      = regexp.MustCompile("(?is)```(?:latex|math)[ \\t]*\\r?\\n(.*?)\\r?\\n?```")
+	inlineCodeMathRe = regexp.MustCompile(mathBacktick + `(\\\[.*?\\\]|\\\(.*?\\\)|\$[^` + mathBacktick + `\n]+\$)` + mathBacktick)
+	codeSpanRe       = regexp.MustCompile("(?s)```.*?```|`[^`]*`")
+	blockMathRe      = regexp.MustCompile(`(?s)\\\[(.*?)\\\]`)
+	inlineMathRe     = regexp.MustCompile(`(?s)\\\((.*?)\\\)`)
 )
 
 // telegramAPIBase returns the Bot API base URL (official or self-hosted).
@@ -120,9 +125,16 @@ func (c *Channel) prepareRichMarkdown(text string) string {
 	return normalizeMathDelimiters(strings.TrimSpace(text))
 }
 
-// normalizeMathDelimiters rewrites LaTeX math delimiters to GFM, skipping code
-// spans (fenced ``` blocks and `inline code`) so source examples stay verbatim.
+// normalizeMathDelimiters rewrites the math forms agents emit into GFM math.
 func normalizeMathDelimiters(text string) string {
+	// 1. ```latex / ```math fences → $$ block math (drop the fence + any outer \[..\]).
+	text = mathFenceRe.ReplaceAllStringFunc(text, func(m string) string {
+		inner := stripOuterLatexDelims(strings.TrimSpace(mathFenceRe.FindStringSubmatch(m)[1]))
+		return "$$\n" + inner + "\n$$"
+	})
+	// 2. Unwrap inline code that is purely math: `$x$` / `\(x\)` / `\[x\]` → the math.
+	text = inlineCodeMathRe.ReplaceAllString(text, "${1}")
+	// 3. Prose \[..\] → $$..$$ and \(..\) → $..$, skipping remaining (real) code spans.
 	if !strings.Contains(text, `\[`) && !strings.Contains(text, `\(`) {
 		return text
 	}
@@ -135,6 +147,17 @@ func normalizeMathDelimiters(text string) string {
 	}
 	b.WriteString(convertMath(text[last:]))
 	return b.String()
+}
+
+// stripOuterLatexDelims removes a single outer \[..\] or \(..\) wrapper.
+func stripOuterLatexDelims(s string) string {
+	switch {
+	case strings.HasPrefix(s, `\[`) && strings.HasSuffix(s, `\]`):
+		return strings.TrimSpace(s[2 : len(s)-2])
+	case strings.HasPrefix(s, `\(`) && strings.HasSuffix(s, `\)`):
+		return strings.TrimSpace(s[2 : len(s)-2])
+	}
+	return s
 }
 
 func convertMath(s string) string {
