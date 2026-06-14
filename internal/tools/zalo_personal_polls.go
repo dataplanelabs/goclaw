@@ -63,7 +63,7 @@ func (t *ZaloPersonalCreatePollTool) RequiredChannelTypes() []string {
 func (t *ZaloPersonalCreatePollTool) Name() string { return "zalo_personal_create_poll" }
 
 func (t *ZaloPersonalCreatePollTool) Description() string {
-	return "Create a poll in the current Zalo Personal group chat. Returns the poll ID. Only works in groups, not DMs. Pass expired_time_seconds as a duration in seconds, not a Unix timestamp; do not retry with placeholder options after a validation error."
+	return "Create a poll in the current Zalo Personal group chat. Returns the poll ID. Only works in groups, not DMs. Pass expired_time_seconds as a duration in seconds, not a Unix timestamp. Only set allow_add_new_option when the user explicitly asks voters to add choices; if Zalo returns code 114, retry the same question/options with allow_add_new_option=false before changing expiry or inventing options."
 }
 
 func (t *ZaloPersonalCreatePollTool) Parameters() map[string]any {
@@ -85,7 +85,7 @@ func (t *ZaloPersonalCreatePollTool) Parameters() map[string]any {
 			},
 			"allow_multi_choices":  map[string]any{"type": "boolean", "description": "Allow voters to pick multiple options"},
 			"is_anonymous":         map[string]any{"type": "boolean", "description": "Hide voter identities"},
-			"allow_add_new_option": map[string]any{"type": "boolean", "description": "Let voters add new options"},
+			"allow_add_new_option": map[string]any{"type": "boolean", "description": "Let voters add new options. Leave false unless the user explicitly asks for this; Zalo may reject this flag with error code 114 for otherwise valid polls."},
 			"hide_vote_preview":    map[string]any{"type": "boolean", "description": "Hide results until voter votes"},
 		},
 		"required": []string{"question", "options"},
@@ -146,13 +146,13 @@ func normalizeZaloPollExpiryMillis(seconds int64) (int64, *Result) {
 
 func formatCreatePollError(err error, question string, options []string, expirySeconds int64, settings ZaloPollSettings) string {
 	msg := fmt.Sprintf("create poll: %v", err)
-	lower := strings.ToLower(err.Error())
-	if !strings.Contains(lower, "114") && !strings.Contains(lower, "tham số") && !strings.Contains(lower, "invalid") {
+	if !isZaloInvalidPollParameterError(err) {
 		return msg
 	}
 	return fmt.Sprintf(
-		"%s. Zalo rejected one or more poll parameters. Check expired_time_seconds first: it must be a duration in seconds, not a Unix timestamp or milliseconds. Sent shape: question_chars=%d, options_count=%d, expired_time_seconds=%d, allow_multi_choices=%t, allow_add_new_option=%t, hide_vote_preview=%t, is_anonymous=%t. Do not retry with placeholder options; correct the invalid field or ask the user.",
+		"%s. %s. Sent shape: question_chars=%d, options_count=%d, expired_time_seconds=%d, allow_multi_choices=%t, allow_add_new_option=%t, hide_vote_preview=%t, is_anonymous=%t. Repair order: %s",
 		msg,
+		describeZaloInvalidPollParameterError(err),
 		len([]rune(question)),
 		len(options),
 		expirySeconds,
@@ -160,7 +160,71 @@ func formatCreatePollError(err error, question string, options []string, expiryS
 		settings.AllowAddNewOption,
 		settings.HideVotePreview,
 		settings.IsAnonymous,
+		strings.Join(createPollRepairHints(options, expirySeconds, settings), " "),
 	)
+}
+
+func isZaloInvalidPollParameterError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "114") || strings.Contains(lower, "tham số") || strings.Contains(lower, "invalid parameter")
+}
+
+func describeZaloInvalidPollParameterError(err error) string {
+	if strings.Contains(err.Error(), "114") {
+		return "Zalo returned code 114 (invalid poll parameter)"
+	}
+	return "Zalo rejected one or more poll parameters"
+}
+
+func createPollRepairHints(options []string, expirySeconds int64, settings ZaloPollSettings) []string {
+	hints := make([]string, 0, 5)
+	if settings.AllowAddNewOption {
+		hints = append(hints, "First retry the same user-provided question/options with allow_add_new_option=false unless the user explicitly asked voters to add choices.")
+	}
+	if len(options) > 6 {
+		hints = append(hints, fmt.Sprintf("If that still fails, options_count=%d may be rejected by this Zalo client/account path; ask the user before reducing choices.", len(options)))
+	}
+	if hasBlankPollOption(options) {
+		hints = append(hints, "Remove blank options.")
+	}
+	if hasDuplicatePollOption(options) {
+		hints = append(hints, "Remove duplicate options.")
+	}
+	switch {
+	case expirySeconds > 0:
+		hints = append(hints, fmt.Sprintf("expired_time_seconds=%d already passed local duration validation; keep it unless the user wants a different lifetime.", expirySeconds))
+	default:
+		hints = append(hints, "expired_time_seconds=0 means no expiration and is locally valid.")
+	}
+	hints = append(hints, "Do not retry with placeholder options; correct the invalid field or ask the user.")
+	return hints
+}
+
+func hasBlankPollOption(options []string) bool {
+	for _, option := range options {
+		if strings.TrimSpace(option) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasDuplicatePollOption(options []string) bool {
+	seen := make(map[string]struct{}, len(options))
+	for _, option := range options {
+		normalized := strings.ToLower(strings.TrimSpace(option))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			return true
+		}
+		seen[normalized] = struct{}{}
+	}
+	return false
 }
 
 // --- list_polls ---
