@@ -48,7 +48,7 @@ type TelegramConfig struct {
 	DMStream        *bool               `json:"dm_stream,omitempty"`        // enable streaming for DMs (default false) — edits placeholder progressively
 	GroupStream     *bool               `json:"group_stream,omitempty"`     // enable streaming for groups (default false) — sends new message, edits progressively
 	DraftTransport  *bool               `json:"draft_transport,omitempty"`  // use sendMessageDraft for DM streaming (default true) — stealth preview, no notifications per edit
-	RichMessage     *bool               `json:"rich_message,omitempty"`     // send agent text replies as Bot API 10.1 Rich Markdown (default false)
+	RichMessage     *bool               `json:"rich_message,omitempty"`     // send agent text replies as Bot API 10.1 Rich Markdown (default true; set false to disable)
 	ReasoningStream *bool               `json:"reasoning_stream,omitempty"` // show reasoning as separate message when provider emits thinking events (default true)
 	ReactionLevel   string              `json:"reaction_level,omitempty"`   // "off" (default), "minimal", "full" — status emoji reactions
 	MediaMaxBytes   int64               `json:"media_max_bytes,omitempty"`  // max media download size in bytes (default 20MB)
