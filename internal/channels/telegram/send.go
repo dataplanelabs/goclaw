@@ -202,15 +202,31 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if pID, ok := c.pendingDraftID.LoadAndDelete(localKey); ok {
 		draftID := pID.(int)
 		go func() {
+			bgCtx := context.Background()
+			resolvedThread := resolveThreadIDForSend(threadID)
+			// Always clear via sendMessageDraft (handles plain draft transport).
 			params := &telego.SendMessageDraftParams{
 				ChatID:          chatID,
 				DraftID:         draftID,
 				Text:            "",
-				MessageThreadID: resolveThreadIDForSend(threadID),
+				MessageThreadID: resolvedThread,
 			}
 			// Best-effort with Background ctx — caller ctx may already be cancelled.
-			if err := c.bot.SendMessageDraft(context.Background(), params); err != nil {
+			if err := c.bot.SendMessageDraft(bgCtx, params); err != nil {
 				slog.Debug("telegram: draft clear failed (cosmetic)", "chat_id", chatID, "draft_id", draftID, "error", err)
+			}
+			// If rich drafts were used, also clear via sendRichMessageDraft (empty markdown).
+			// Needed when empty sendMessageDraft does not clear a rich draft on the same draft_id.
+			if c.richMessageEnabled() {
+				rp := sendRichMessageDraftParams{
+					ChatID:          chatID,
+					DraftID:         draftID,
+					RichMessage:     inputRichMessage{Markdown: ""},
+					MessageThreadID: resolvedThread,
+				}
+				if err := c.sendRichMessageDraft(bgCtx, rp); err != nil {
+					slog.Debug("telegram: rich draft clear failed (cosmetic)", "chat_id", chatID, "draft_id", draftID, "error", err)
+				}
 			}
 		}()
 	}
@@ -300,7 +316,14 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		}
 	}
 
-	// Text-only message
+	// Text-only message — try Rich Markdown first when enabled.
+	if c.richMessageEnabled() {
+		if sent := c.trySendRich(ctx, chatID, msg.Content, replyToMsgID, threadID, localKey); sent {
+			return nil
+		}
+		// fall through to HTML path on any failure
+	}
+
 	htmlContent := markdownToTelegramHTML(msg.Content)
 	chunks := chunkHTML(htmlContent, telegramMaxMessageLen)
 

@@ -50,14 +50,18 @@ func allocateDraftID() int {
 // Ref: TS src/telegram/draft-stream.ts fallback patterns.
 var draftFallbackRe = regexp.MustCompile(`(?i)(unknown method|method.*not (found|available|supported)|unsupported|can't be used|can be used only)`)
 
-// shouldFallbackFromDraft returns true if the error indicates sendMessageDraft
-// is permanently unavailable and the stream should fall back to message transport.
+// shouldFallbackFromDraft returns true if the error indicates sendMessageDraft or
+// sendRichMessageDraft is permanently unavailable and the stream should fall back.
 func shouldFallbackFromDraft(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	if !strings.Contains(msg, "sendmessagedraft") && !strings.Contains(msg, "send_message_draft") {
+	isDraftMethod := strings.Contains(msg, "sendmessagedraft") ||
+		strings.Contains(msg, "send_message_draft") ||
+		strings.Contains(msg, "sendrichmessagedraft") ||
+		strings.Contains(msg, "send_rich_message_draft")
+	if !isDraftMethod {
 		return false
 	}
 	return draftFallbackRe.MatchString(err.Error())
@@ -77,20 +81,23 @@ func shouldFallbackFromDraft(err error) bool {
 //	STREAMING   → Stop() → final flush → STOPPED
 //	STREAMING   → Clear() → deleteMessage (message transport only) → DELETED
 type DraftStream struct {
-	bot             *telego.Bot
-	chatID          int64
-	messageThreadID int           // forum topic thread ID (0 = no thread)
-	messageID       int           // 0 = not yet created (message transport only)
-	lastText        string        // last sent text (for dedup)
-	throttle        time.Duration // min delay between edits
-	lastEdit        time.Time
-	mu              sync.Mutex
-	stopped         bool
-	pending         string // pending text to send (buffered during throttle)
-	draftID         int    // sendMessageDraft draft_id (0 = message transport)
-	useDraft        bool   // true = draft transport, false = message transport
-	draftFailed     bool   // true = draft API rejected permanently, using message transport
+	bot               *telego.Bot
+	chatID            int64
+	messageThreadID   int           // forum topic thread ID (0 = no thread)
+	messageID         int           // 0 = not yet created (message transport only)
+	lastText          string        // last sent text (for dedup)
+	throttle          time.Duration // min delay between edits
+	lastEdit          time.Time
+	mu                sync.Mutex
+	stopped           bool
+	pending           string // pending text to send (buffered during throttle)
+	draftID           int    // sendMessageDraft draft_id (0 = message transport)
+	useDraft          bool   // true = draft transport, false = message transport
+	draftFailed       bool   // true = draft API rejected permanently, using message transport
 	sendMayHaveLanded bool   // true = initial sendMessage was attempted and may have landed (even if timed out)
+	// richSender, when non-nil, sends a sendRichMessageDraft instead of sendMessageDraft.
+	// Guarded by the same useDraft/draftFailed flags.
+	richSender func(ctx context.Context, p sendRichMessageDraftParams) error
 }
 
 // NewDraftStream creates a new streaming preview manager.
@@ -163,31 +170,56 @@ func (ds *DraftStream) flush(ctx context.Context) error {
 	text = audio.StripTTSDirectives(text)
 	htmlText := markdownToTelegramHTML(text)
 
-	// --- Draft transport (sendMessageDraft) ---
+	// --- Draft transport (sendMessageDraft / sendRichMessageDraft) ---
 	if ds.useDraft && !ds.draftFailed {
-		params := &telego.SendMessageDraftParams{
-			ChatID:    ds.chatID,
-			DraftID:   ds.draftID,
-			Text:      htmlText,
-			ParseMode: telego.ModeHTML,
-		}
-		if sendThreadID := resolveThreadIDForSend(ds.messageThreadID); sendThreadID > 0 {
-			params.MessageThreadID = sendThreadID
-		}
-		if err := ds.bot.SendMessageDraft(ctx, params); err != nil {
-			if shouldFallbackFromDraft(err) {
-				// Permanent fallback to message transport
-				slog.Warn("stream: sendMessageDraft unavailable, falling back to message transport", "error", err)
-				ds.draftFailed = true
-				// Fall through to message transport below
+		if ds.richSender != nil {
+			// Rich draft path: pass markdown directly (not HTML).
+			rp := sendRichMessageDraftParams{
+				ChatID:      ds.chatID,
+				DraftID:     ds.draftID,
+				RichMessage: inputRichMessage{Markdown: strings.TrimSpace(text)},
+			}
+			if sendThreadID := resolveThreadIDForSend(ds.messageThreadID); sendThreadID > 0 {
+				rp.MessageThreadID = sendThreadID
+			}
+			if err := ds.richSender(ctx, rp); err != nil {
+				if shouldFallbackFromDraft(err) {
+					slog.Warn("stream: sendRichMessageDraft unavailable, falling back to message transport", "error", err)
+					ds.draftFailed = true
+					// Fall through to message transport below
+				} else {
+					slog.Debug("stream: sendRichMessageDraft failed", "error", err)
+					return err
+				}
 			} else {
-				slog.Debug("stream: sendMessageDraft failed", "error", err)
-				return err
+				ds.lastText = text
+				ds.lastEdit = time.Now()
+				return nil
 			}
 		} else {
-			ds.lastText = text
-			ds.lastEdit = time.Now()
-			return nil
+			params := &telego.SendMessageDraftParams{
+				ChatID:    ds.chatID,
+				DraftID:   ds.draftID,
+				Text:      htmlText,
+				ParseMode: telego.ModeHTML,
+			}
+			if sendThreadID := resolveThreadIDForSend(ds.messageThreadID); sendThreadID > 0 {
+				params.MessageThreadID = sendThreadID
+			}
+			if err := ds.bot.SendMessageDraft(ctx, params); err != nil {
+				if shouldFallbackFromDraft(err) {
+					slog.Warn("stream: sendMessageDraft unavailable, falling back to message transport", "error", err)
+					ds.draftFailed = true
+					// Fall through to message transport below
+				} else {
+					slog.Debug("stream: sendMessageDraft failed", "error", err)
+					return err
+				}
+			} else {
+				ds.lastText = text
+				ds.lastEdit = time.Now()
+				return nil
+			}
 		}
 	}
 
@@ -309,6 +341,9 @@ func (c *Channel) CreateStream(ctx context.Context, chatID string, firstStream b
 	// when the answer stream starts.
 	useDraft := isDM && !firstStream && c.draftTransportEnabled()
 	ds := NewDraftStream(c.bot, id, 0, threadID, useDraft)
+	if useDraft && c.richMessageEnabled() {
+		ds.richSender = c.sendRichMessageDraft
+	}
 
 	// No placeholder seeding — DraftStream creates its own message on first flush().
 	// This avoids "reply to deleted/non-existent message" artifacts.
