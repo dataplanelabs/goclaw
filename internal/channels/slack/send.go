@@ -41,12 +41,24 @@ func (c *Channel) Send(_ context.Context, msg bus.OutboundMessage) error {
 
 	content := msg.Content
 
-	// NO_REPLY: delete placeholder, return
+	// NO_REPLY: delete placeholder. If media is also present, fall through to upload.
 	if content == "" {
 		if pTS, ok := c.placeholders.Load(placeholderKey); ok {
 			c.placeholders.Delete(placeholderKey)
 			ts := pTS.(string)
 			_, _, _ = c.api.DeleteMessage(channelID, ts)
+		}
+		if len(msg.Media) == 0 {
+			return nil
+		}
+		// Media-only delivery (e.g. send_file with no final text). Upload the files,
+		// then return without calling sendChunked (content is empty).
+		for _, media := range msg.Media {
+			if err := c.uploadFile(channelID, threadTS, media); err != nil {
+				slog.Warn("slack: file upload failed",
+					"file", media.URL, "error", err)
+				c.sendChunked(channelID, fmt.Sprintf("[File upload failed: %s]", media.URL), threadTS)
+			}
 		}
 		return nil
 	}
