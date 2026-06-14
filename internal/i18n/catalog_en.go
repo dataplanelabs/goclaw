@@ -237,6 +237,7 @@ func init() {
 		MsgInvalidBackend:          "invalid backend type: %s (must be ssh|docker)",
 		MsgWorkstationInactive:     "workstation is inactive: %s",
 		MsgInvalidMetadataShape:    "invalid metadata for %s backend: %s",
+		MsgInvalidDefaultEnvShape: "defaultEnv must be a flat map[string]string: %s",
 		MsgWorkstationRequired:     "no workstation bound to agent; pass workstation_id",
 		MsgWorkstationAccessDenied: "agent %s not authorized for workstation %s",
 		MsgBackendNotReady:         "workstation backend not ready: %s",

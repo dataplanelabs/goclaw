@@ -232,6 +232,30 @@ func (m *WorkstationsMethods) handleUpdate(ctx context.Context, client *gateway.
 		// Replace map[string]any with []byte so the store encrypts correctly (bytea column).
 		params.Updates["metadata"] = metaBytes
 	}
+	// Validate and serialize defaultEnv when present: must be flat map[string]string.
+	if rawEnv, hasEnv := params.Updates["defaultEnv"]; hasEnv {
+		envBytes, err := json.Marshal(rawEnv)
+		if err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidDefaultEnvShape, err.Error())))
+			return
+		}
+		var flat map[string]string
+		if err := json.Unmarshal(envBytes, &flat); err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidDefaultEnvShape, "must be a flat object with string values")))
+			return
+		}
+		// Re-marshal the validated flat map to ensure clean bytes for the store.
+		cleanBytes, err := json.Marshal(flat)
+		if err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidDefaultEnvShape, err.Error())))
+			return
+		}
+		delete(params.Updates, "defaultEnv")
+		params.Updates["default_env"] = cleanBytes
+	}
 	if err := m.wsStore.Update(ctx, id, params.Updates); err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal,
 			i18n.T(locale, i18n.MsgFailedToUpdate, "workstation", "see server logs")))

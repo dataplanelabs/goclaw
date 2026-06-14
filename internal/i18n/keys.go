@@ -313,8 +313,9 @@ const (
 	MsgWorkstationKeyExists  = "error.workstation_key_exists"   // "workstation key already in use: %s"
 	MsgInvalidBackend        = "error.invalid_backend"          // "invalid backend type: %s (must be ssh|docker)"
 	MsgWorkstationInactive   = "error.workstation_inactive"     // "workstation is inactive: %s"
-	MsgInvalidMetadataShape  = "error.invalid_metadata_shape"   // "invalid metadata for %s backend: %s"
-	MsgWorkstationRequired   = "error.workstation_required"     // "no workstation bound to agent; pass workstation_id"
+	MsgInvalidMetadataShape    = "error.invalid_metadata_shape"    // "invalid metadata for %s backend: %s"
+	MsgInvalidDefaultEnvShape = "error.invalid_default_env_shape" // "defaultEnv must be a flat map[string]string: %s"
+	MsgWorkstationRequired    = "error.workstation_required"      // "no workstation bound to agent; pass workstation_id"
 	MsgWorkstationAccessDenied = "error.workstation_access_denied" // "agent %s not authorized for workstation %s"
 	MsgBackendNotReady       = "error.backend_not_ready"        // "workstation backend not ready: %s"
 

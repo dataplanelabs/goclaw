@@ -262,6 +262,7 @@ func init() {
 		MsgInvalidBackend:          "loại backend không hợp lệ: %s (phải là ssh|docker)",
 		MsgWorkstationInactive:     "máy trạm không hoạt động: %s",
 		MsgInvalidMetadataShape:    "metadata không hợp lệ cho backend %s: %s",
+		MsgInvalidDefaultEnvShape: "defaultEnv phải là map[string]string phẳng: %s",
 		MsgWorkstationRequired:     "agent chưa được gắn máy trạm; hãy truyền workstation_id",
 		MsgWorkstationAccessDenied: "agent %s không được phép truy cập máy trạm %s",
 		MsgBackendNotReady:         "backend máy trạm chưa sẵn sàng: %s",

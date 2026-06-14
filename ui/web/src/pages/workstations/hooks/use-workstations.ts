@@ -24,6 +24,7 @@ export interface UpdateWorkstationParams {
   name?: string;
   active?: boolean;
   metadata?: Record<string, unknown>;
+  defaultEnv?: Record<string, string>;
 }
 
 export function useWorkstations() {

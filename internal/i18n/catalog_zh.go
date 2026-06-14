@@ -262,6 +262,7 @@ func init() {
 		MsgInvalidBackend:          "无效的后端类型：%s（必须是 ssh|docker）",
 		MsgWorkstationInactive:     "工作站未激活：%s",
 		MsgInvalidMetadataShape:    "%s 后端的元数据无效：%s",
+		MsgInvalidDefaultEnvShape: "defaultEnv 必须是扁平 map[string]string：%s",
 		MsgWorkstationRequired:     "Agent 未绑定工作站，请提供 workstation_id",
 		MsgWorkstationAccessDenied: "Agent %s 无权访问工作站 %s",
 		MsgBackendNotReady:         "工作站后端未就绪：%s",
