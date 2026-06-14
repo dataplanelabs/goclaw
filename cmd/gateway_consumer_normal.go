@@ -378,27 +378,27 @@ func processNormalMessage(
 	// Schedule through main lane (per-session concurrency controlled by maxConcurrent)
 	chanMgr := deps.ChannelMgr
 	outCh := deps.Sched.ScheduleWithOpts(schedCtx, "main", agent.RunRequest{
-		SessionKey:        sessionKey,
-		Message:           msg.Content,
-		Media:             reqMedia,
-		ForwardMedia:      fwdMedia,
-		Channel:           msg.Channel,
-		ChannelType:       resolveChannelType(deps.ChannelMgr, msg.Channel),
-		ChatTitle:         msg.Metadata[tools.MetaChatTitle],
-		ChatID:            msg.ChatID,
-		WorkspaceChatID:   msg.ChatID,
-		PeerKind:          peerKind,
-		LocalKey:          msg.Metadata["local_key"],
-		UserID:            userID,
-		SenderID:          effectiveSenderID,
-		Role:              effectiveRole,
-		SenderName:        resolveSenderName(msg),
-		RunID:             runID,
-		Stream:            enableStream,
-		HistoryLimit:      msg.HistoryLimit,
-		ToolAllow:         msg.ToolAllow,
-		ExtraSystemPrompt: extraPrompt,
-		SkillFilter:       skillFilter,
+		SessionKey:         sessionKey,
+		Message:            msg.Content,
+		Media:              reqMedia,
+		ForwardMedia:       fwdMedia,
+		Channel:            msg.Channel,
+		ChannelType:        resolveChannelType(deps.ChannelMgr, msg.Channel),
+		ChatTitle:          msg.Metadata[tools.MetaChatTitle],
+		ChatID:             msg.ChatID,
+		WorkspaceChatID:    msg.ChatID,
+		PeerKind:           peerKind,
+		LocalKey:           msg.Metadata["local_key"],
+		UserID:             userID,
+		SenderID:           effectiveSenderID,
+		Role:               effectiveRole,
+		SenderName:         resolveSenderName(msg),
+		RunID:              runID,
+		Stream:             enableStream,
+		HistoryLimit:       msg.HistoryLimit,
+		ToolAllow:          msg.ToolAllow,
+		ExtraSystemPrompt:  extraPrompt,
+		SkillFilter:        skillFilter,
 		EnableNativeStyles: parseBoolMetadata(msg.Metadata, "enable_native_styles"),
 		OnTraceCreated: func(traceID uuid.UUID) {
 			if chanMgr != nil {
@@ -467,21 +467,47 @@ func processNormalMessage(
 		}
 
 		// Suppress empty/NO_REPLY responses (matching TS normalize-reply.ts).
-		// Still publish an empty outbound so channels can clean up placeholder/thinking indicators.
-		if outcome.Result.Content == "" || agent.IsSilentReply(outcome.Result.Content) {
-			slog.Info("inbound: suppressed silent/empty reply",
+		// Still publish so channels can clean up placeholder/thinking indicators.
+		// Media (send_file, write_file deliver=true) must reach the channel even when
+		// the agent produces no text — so only skip when BOTH silent AND no media.
+		isSilent := outcome.Result.Content == "" || agent.IsSilentReply(outcome.Result.Content)
+		if isSilent {
+			if len(outcome.Result.Media) == 0 {
+				slog.Info("inbound: suppressed silent/empty reply (no media)",
+					"channel", channel,
+					"chat_id", chatID,
+					"session", session,
+				)
+				deps.MsgBus.PublishOutbound(bus.OutboundMessage{
+					Channel:  channel,
+					ChatID:   chatID,
+					Content:  "",
+					Metadata: meta,
+					TenantID: tenantID,
+					AgentID:  agentUUID,
+				})
+				return
+			}
+			// Silent text but has media: deliver media with empty content so the
+			// file reaches the channel (e.g. send_file caption already in ForLLM).
+			slog.Info("inbound: silent reply with media — delivering media only",
 				"channel", channel,
 				"chat_id", chatID,
 				"session", session,
+				"media_count", len(outcome.Result.Media),
 			)
-			deps.MsgBus.PublishOutbound(bus.OutboundMessage{
-				Channel:  channel,
-				ChatID:   chatID,
-				Content:  "",
-				Metadata: meta,
-				TenantID: tenantID,
-				AgentID:  agentUUID,
-			})
+			outMsg := bus.OutboundMessage{
+				Channel:          channel,
+				ChatID:           chatID,
+				Content:          "",
+				Metadata:         meta,
+				TenantID:         tenantID,
+				AgentID:          agentUUID,
+				AgentOtherConfig: agentOtherConfig,
+				TraceID:          outcome.Result.TraceID,
+			}
+			appendMediaToOutbound(&outMsg, outcome.Result.Media)
+			deps.MsgBus.PublishOutbound(outMsg)
 			return
 		}
 
