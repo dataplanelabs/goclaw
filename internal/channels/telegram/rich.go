@@ -68,7 +68,10 @@ func (c *Channel) doRawPost(ctx context.Context, method string, payload any) (js
 		return nil, err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("%s: read response (%d): %w", method, resp.StatusCode, err)
+	}
 
 	var env telegramAPIResponse
 	if jsonErr := json.Unmarshal(raw, &env); jsonErr != nil {
