@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 )
@@ -147,6 +148,45 @@ func TestCreatePoll_HappyPath(t *testing.T) {
 	}
 }
 
+func TestCreatePoll_ConvertsExpiryDurationToFutureUnixMillis(t *testing.T) {
+	t.Parallel()
+	fake := &fakeZaloPersonalAction{createReturn: "1234"}
+	tool := NewZaloPersonalCreatePollTool()
+	tool.SetZaloPersonalActionFn(zpFakeFn(fake))
+
+	before := time.Now().Add(24*time.Hour - time.Second).UnixMilli()
+	res := tool.Execute(zpCtx(t), map[string]any{
+		"question":             "Q",
+		"options":              []any{"a", "b"},
+		"expired_time_seconds": float64(86400),
+	})
+	after := time.Now().Add(24*time.Hour + time.Second).UnixMilli()
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", res.ForLLM)
+	}
+	got := fake.createPollCall.settings.ExpireAtMillis
+	if got < before || got > after {
+		t.Fatalf("expire_at_ms=%d, want between %d and %d", got, before, after)
+	}
+	if got == 86400*1000 {
+		t.Fatalf("expire_at_ms must be an absolute future timestamp, got duration milliseconds")
+	}
+}
+
+func TestNormalizeZaloPollExpireAtMillis(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 14, 8, 22, 9, 0, time.UTC)
+
+	got, errRes := normalizeZaloPollExpireAtMillis(86400, now)
+	if errRes != nil {
+		t.Fatalf("unexpected validation error: %s", errRes.ForLLM)
+	}
+	const want = int64(1781511729000)
+	if got != want {
+		t.Fatalf("expire_at_ms=%d, want %d", got, want)
+	}
+}
+
 func TestCreatePoll_MissingOptions(t *testing.T) {
 	t.Parallel()
 	tool := NewZaloPersonalCreatePollTool()
@@ -193,7 +233,7 @@ func TestCreatePoll_Error114AddsFieldGuidance(t *testing.T) {
 	if !res.IsError {
 		t.Fatal("want error")
 	}
-	for _, want := range []string{"code 114", "options_count=2", "expired_time_seconds=3600 already passed local duration validation", "Do not retry with placeholder options"} {
+	for _, want := range []string{"code 114", "options_count=2", "expired_time_seconds=3600", "expire_at_ms=", "future Zalo expire_at_ms", "Do not retry with placeholder options"} {
 		if !strings.Contains(res.ForLLM, want) {
 			t.Fatalf("error missing %q: %s", want, res.ForLLM)
 		}
@@ -225,7 +265,7 @@ func TestCreatePoll_Error114SuggestsDisablingAddOptionFlag(t *testing.T) {
 		"expired_time_seconds=86400",
 		"allow_add_new_option=true",
 		"First retry the same user-provided question/options with allow_add_new_option=false",
-		"expired_time_seconds=86400 already passed local duration validation",
+		"future Zalo expire_at_ms",
 		"Do not retry with placeholder options",
 	} {
 		if !strings.Contains(res.ForLLM, want) {

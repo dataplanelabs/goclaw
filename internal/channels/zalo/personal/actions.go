@@ -26,7 +26,7 @@ func (c *Channel) CreatePoll(ctx context.Context, chatID, question string, optio
 	detail, err := protocol.CreatePoll(ctx, sess, chatID, protocol.CreatePollOptions{
 		Question:          question,
 		Options:           options,
-		ExpiredTime:       settings.ExpiredTimeMillis,
+		ExpiredTime:       settings.ExpireAtMillis,
 		AllowMultiChoices: settings.AllowMultiChoices,
 		AllowAddNewOption: settings.AllowAddNewOption,
 		HideVotePreview:   settings.HideVotePreview,

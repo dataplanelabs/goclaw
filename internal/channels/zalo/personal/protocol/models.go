@@ -145,7 +145,7 @@ type UserInfo struct {
 type CreatePollOptions struct {
 	Question          string   `json:"question"`
 	Options           []string `json:"options"`
-	ExpiredTime       int64    `json:"expired_time,omitempty"` // ms; 0 = no expiration
+	ExpiredTime       int64    `json:"expired_time,omitempty"` // Unix ms; 0 = no expiration
 	AllowMultiChoices bool     `json:"allow_multi_choices,omitempty"`
 	AllowAddNewOption bool     `json:"allow_add_new_option,omitempty"`
 	HideVotePreview   bool     `json:"is_hide_vote_preview,omitempty"`
