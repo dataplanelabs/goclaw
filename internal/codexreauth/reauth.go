@@ -13,6 +13,8 @@ package codexreauth
 import (
 	"bufio"
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -49,6 +51,18 @@ const (
 	pollInterval = 2 * time.Second
 )
 
+// resolveWorkstation looks up the workstation under tenantID, falling back to
+// the master tenant when not found there. The coding-agent pod is a single
+// global resource whose canonical home is the master tenant, so any tenant's
+// caller reaches it without hardcoding the master ID at the call site.
+func resolveWorkstation(ctx context.Context, wsStore store.WorkstationStore, tenantID uuid.UUID, key string) (*store.Workstation, error) {
+	ws, err := wsStore.GetByKey(store.WithTenantID(ctx, tenantID), key)
+	if errors.Is(err, sql.ErrNoRows) && tenantID != store.MasterTenantID {
+		ws, err = wsStore.GetByKey(store.WithTenantID(ctx, store.MasterTenantID), key)
+	}
+	return ws, err
+}
+
 // Trigger launches `codex login --device-auth` in the background on the pod
 // identified by workstationKey (defaults to "coding-agent") within the given tenant,
 // then polls the log file until the verification URL + user-code are available.
@@ -66,8 +80,7 @@ func Trigger(
 		workstationKey = defaultWorkstationKey
 	}
 
-	storeCtx := store.WithTenantID(ctx, tenantID)
-	ws, err := wsStore.GetByKey(storeCtx, workstationKey)
+	ws, err := resolveWorkstation(ctx, wsStore, tenantID, workstationKey)
 	if err != nil {
 		return nil, fmt.Errorf("workstation %q not found: %w", workstationKey, err)
 	}
@@ -185,8 +198,7 @@ func Status(
 		workstationKey = defaultWorkstationKey
 	}
 
-	storeCtx := store.WithTenantID(ctx, tenantID)
-	ws, err := wsStore.GetByKey(storeCtx, workstationKey)
+	ws, err := resolveWorkstation(ctx, wsStore, tenantID, workstationKey)
 	if err != nil {
 		return nil, fmt.Errorf("workstation %q not found: %w", workstationKey, err)
 	}
