@@ -180,7 +180,10 @@ func (t *WorkstationExecTool) Execute(ctx context.Context, args map[string]any) 
 			"agent_id", agentID,
 			"cmd_hash", fmt.Sprintf("%x", sha256.Sum256([]byte(cmd)))[:12],
 		)
-		return ErrorResult(i18n.T(locale, i18n.MsgWorkstationAccessDenied, agentID, ws.WorkstationKey))
+		// Surface the checker's precise reason (e.g. "no allowlist match for: find")
+		// instead of the generic not-authorized msg, which conflated a denied command
+		// with a missing agent→workstation link and made denials undiagnosable.
+		return ErrorResult(permErr.Error())
 	}
 
 	// 3. Get backend from cache.
