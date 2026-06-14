@@ -382,9 +382,11 @@ func (l *InstanceLoader) loadInstance(ctx context.Context, inst store.ChannelIns
 	return nil
 }
 
-// startChannelWithTimeout runs ch.Start(ctx) in a goroutine and waits up to
-// reloadStartTimeout for it to return. On timeout we stop the partially-started
-// channel and record a failure so Reload() can move on to the next instance.
+// startChannelWithTimeout runs ch.Start(ctx) with bounded retries for
+// retryable immediate startup failures. Each attempt waits up to
+// reloadStartTimeout for Start to return. On timeout we stop the
+// partially-started channel and record a failure so Reload() can move on to the
+// next instance.
 //
 // ctx is passed through unchanged: channels routinely derive long-lived
 // goroutines (e.g. Telegram long-polling) from this context and must keep
@@ -393,6 +395,78 @@ func (l *InstanceLoader) loadInstance(ctx context.Context, inst store.ChannelIns
 // block forever on the send to startErr. If it eventually reports success,
 // we've already called Stop, which is idempotent across channel impls.
 func (l *InstanceLoader) startChannelWithTimeout(ctx context.Context, inst store.ChannelInstanceData, ch Channel) {
+	maxAttempts := channelStartMaxAttempts()
+
+	for attempt := 1; ; attempt++ {
+		markChannelStarting(ch)
+		l.manager.RecordHealth(inst.Name, snapshotChannelHealth(ch))
+
+		err, timedOut := l.startChannelAttemptWithTimeout(ctx, inst, ch)
+		if err == nil {
+			l.manager.RecordHealth(inst.Name, snapshotChannelHealth(ch))
+			return
+		}
+
+		info, delay, retry := channelStartRetryDelay(err, attempt)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			l.manager.recordChannelStartFailure(inst.Name, ch, "", err)
+			slog.Error("channel instance start cancelled",
+				"name", inst.Name,
+				"type", inst.ChannelType,
+				"attempt", attempt,
+				"max_attempts", maxAttempts,
+				"error", ctxErr,
+				"last_error", err)
+			return
+		}
+		if timedOut {
+			l.manager.recordChannelStartFailure(inst.Name, ch, "", err)
+			slog.Error("channel instance start timed out",
+				"name", inst.Name,
+				"type", inst.ChannelType,
+				"attempt", attempt,
+				"max_attempts", maxAttempts,
+				"timeout", reloadStartTimeout)
+			return
+		}
+		if !retry {
+			l.manager.recordChannelStartFailure(inst.Name, ch, "", err)
+			slog.Error("channel instance start failed",
+				"name", inst.Name,
+				"type", inst.ChannelType,
+				"attempt", attempt,
+				"max_attempts", maxAttempts,
+				"failure_kind", info.Kind,
+				"retryable", info.Retryable,
+				"error", err)
+			return
+		}
+
+		slog.Warn("channel instance start failed; retrying",
+			"name", inst.Name,
+			"type", inst.ChannelType,
+			"attempt", attempt,
+			"max_attempts", maxAttempts,
+			"next_attempt", attempt+1,
+			"delay", delay,
+			"failure_kind", info.Kind,
+			"error", err)
+
+		if waitErr := waitChannelStartRetry(ctx, delay); waitErr != nil {
+			l.manager.recordChannelStartFailure(inst.Name, ch, "", err)
+			slog.Error("channel instance start retry cancelled",
+				"name", inst.Name,
+				"type", inst.ChannelType,
+				"attempt", attempt,
+				"max_attempts", maxAttempts,
+				"error", waitErr,
+				"last_error", err)
+			return
+		}
+	}
+}
+
+func (l *InstanceLoader) startChannelAttemptWithTimeout(ctx context.Context, inst store.ChannelInstanceData, ch Channel) (error, bool) {
 	startErr := make(chan error, 1)
 	go func() { startErr <- ch.Start(ctx) }()
 
@@ -401,13 +475,7 @@ func (l *InstanceLoader) startChannelWithTimeout(ctx context.Context, inst store
 
 	select {
 	case err := <-startErr:
-		if err != nil {
-			l.manager.recordChannelStartFailure(inst.Name, ch, "", err)
-			slog.Error("channel instance start failed",
-				"name", inst.Name, "type", inst.ChannelType, "error", err)
-			return
-		}
-		l.manager.RecordHealth(inst.Name, snapshotChannelHealth(ch))
+		return err, false
 
 	case <-timer.C:
 		// Stop the channel in a bounded window so we don't trade one hang for another.
@@ -419,9 +487,6 @@ func (l *InstanceLoader) startChannelWithTimeout(ctx context.Context, inst store
 		stopCancel()
 
 		timeoutErr := fmt.Errorf("start timed out after %s (type=%s)", reloadStartTimeout, inst.ChannelType)
-		l.manager.recordChannelStartFailure(inst.Name, ch, "", timeoutErr)
-		slog.Error("channel instance start timed out",
-			"name", inst.Name, "type", inst.ChannelType, "timeout", reloadStartTimeout)
 
 		// Drain the late-returning Start so its goroutine can exit.
 		// Logged so operators can spot channels that ignore context cancellation.
@@ -435,5 +500,6 @@ func (l *InstanceLoader) startChannelWithTimeout(ctx context.Context, inst store
 			slog.Warn("channel instance start succeeded after timeout; already stopped",
 				"name", inst.Name, "type", inst.ChannelType)
 		}()
+		return timeoutErr, true
 	}
 }

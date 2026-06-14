@@ -15,6 +15,8 @@ import (
 type fakeHealthChannel struct {
 	*BaseChannel
 	startErr        error
+	startErrs       []error
+	startCalls      int
 	selfMarkFailure bool
 }
 
@@ -25,12 +27,18 @@ func newFakeHealthChannel(name string) *fakeHealthChannel {
 }
 
 func (c *fakeHealthChannel) Start(context.Context) error {
-	if c.startErr != nil {
+	c.startCalls++
+	startErr := c.startErr
+	if len(c.startErrs) > 0 {
+		startErr = c.startErrs[0]
+		c.startErrs = c.startErrs[1:]
+	}
+	if startErr != nil {
 		if c.selfMarkFailure {
-			info := ClassifyChannelError(c.startErr)
+			info := ClassifyChannelError(startErr)
 			c.MarkFailed(info.Summary, info.Detail, info.Kind, info.Retryable)
 		}
-		return c.startErr
+		return startErr
 	}
 	c.SetRunning(true)
 	return nil
@@ -46,6 +54,8 @@ func (c *fakeHealthChannel) Send(context.Context, bus.OutboundMessage) error { r
 type loaderHealthChannel struct {
 	base            *BaseChannel
 	startErr        error
+	startErrs       []error
+	startCalls      int
 	selfMarkFailure bool
 }
 
@@ -65,12 +75,18 @@ func (c *loaderHealthChannel) Stop(context.Context) error {
 	return nil
 }
 func (c *loaderHealthChannel) Start(context.Context) error {
-	if c.startErr != nil {
+	c.startCalls++
+	startErr := c.startErr
+	if len(c.startErrs) > 0 {
+		startErr = c.startErrs[0]
+		c.startErrs = c.startErrs[1:]
+	}
+	if startErr != nil {
 		if c.selfMarkFailure {
-			info := ClassifyChannelError(c.startErr)
+			info := ClassifyChannelError(startErr)
 			c.base.MarkFailed(info.Summary, info.Detail, info.Kind, info.Retryable)
 		}
-		return c.startErr
+		return startErr
 	}
 	c.base.MarkHealthy("Connected")
 	return nil
@@ -155,6 +171,45 @@ func TestManagerStartAllPromotesHealthyChannels(t *testing.T) {
 	}
 }
 
+func withChannelStartRetryDelays(t *testing.T, delays []time.Duration) {
+	t.Helper()
+	orig := channelStartRetryDelays
+	channelStartRetryDelays = delays
+	t.Cleanup(func() { channelStartRetryDelays = orig })
+}
+
+func TestManagerStartAllRetriesRetryableStartupFailure(t *testing.T) {
+	withChannelStartRetryDelays(t, []time.Duration{time.Millisecond})
+
+	mgr := NewManager(bus.New())
+	channel := newFakeHealthChannel("zalo-shtp")
+	channel.startErrs = []error{
+		errors.New(`zalo_personal auth: lookup wpa.chat.zalo.me on 10.43.0.10:53: i/o timeout`),
+	}
+	mgr.RegisterChannel("zalo-shtp", channel)
+
+	ctx := t.Context()
+
+	if err := mgr.StartAll(ctx); err != nil {
+		t.Fatalf("StartAll returned error: %v", err)
+	}
+
+	if channel.startCalls != 2 {
+		t.Fatalf("expected retryable startup failure to be retried once, got %d starts", channel.startCalls)
+	}
+
+	status := mgr.GetStatus()["zalo-shtp"].(ChannelHealth)
+	if status.State != ChannelHealthStateHealthy {
+		t.Fatalf("expected healthy state after retry, got %q", status.State)
+	}
+	if !status.Running {
+		t.Fatal("expected channel to be running after retry")
+	}
+	if status.ConsecutiveFailures != 0 {
+		t.Fatalf("expected no active failure streak after recovery, got %d", status.ConsecutiveFailures)
+	}
+}
+
 func TestManagerStartAllCapturesStartupFailures(t *testing.T) {
 	mgr := NewManager(bus.New())
 	channel := newFakeHealthChannel("telegram-main")
@@ -186,6 +241,9 @@ func TestManagerStartAllCapturesStartupFailures(t *testing.T) {
 	}
 	if status.ConsecutiveFailures != 1 {
 		t.Fatalf("expected consecutive failures to be 1, got %d", status.ConsecutiveFailures)
+	}
+	if channel.startCalls != 1 {
+		t.Fatalf("expected non-retryable startup failure to be attempted once, got %d starts", channel.startCalls)
 	}
 }
 
@@ -273,6 +331,45 @@ func TestInstanceLoaderAutoStartDoesNotDoubleCountSelfReportedFailure(t *testing
 	}
 	if status.ConsecutiveFailures != 1 {
 		t.Fatalf("expected one consecutive failure, got %d", status.ConsecutiveFailures)
+	}
+}
+
+func TestInstanceLoaderAutoStartRetriesRetryableStartupFailure(t *testing.T) {
+	withChannelStartRetryDelays(t, []time.Duration{time.Millisecond})
+	withShortReloadTimeout(t, time.Second)
+
+	msgBus := bus.New()
+	mgr := NewManager(msgBus)
+	loader := NewInstanceLoader(nil, nil, mgr, msgBus, nil)
+	channel := newLoaderHealthChannel("zalo-auto", TypeZaloPersonal)
+	channel.startErrs = []error{
+		errors.New(`zalo_personal auth: lookup wpa.chat.zalo.me on 10.43.0.10:53: i/o timeout`),
+	}
+
+	loader.RegisterFactory(TypeZaloPersonal, func(string, json.RawMessage, json.RawMessage, *bus.MessageBus, store.PairingStore) (Channel, error) {
+		return channel, nil
+	})
+
+	loader.mu.Lock()
+	err := loader.loadInstance(context.Background(), store.ChannelInstanceData{
+		Name:        "zalo-auto",
+		ChannelType: TypeZaloPersonal,
+	}, true)
+	loader.mu.Unlock()
+	if err != nil {
+		t.Fatalf("loadInstance returned error: %v", err)
+	}
+
+	if channel.startCalls != 2 {
+		t.Fatalf("expected retryable startup failure to be retried once, got %d starts", channel.startCalls)
+	}
+
+	status := mgr.GetStatus()["zalo-auto"].(ChannelHealth)
+	if status.State != ChannelHealthStateHealthy {
+		t.Fatalf("expected healthy state after retry, got %q", status.State)
+	}
+	if !status.Running {
+		t.Fatal("expected channel to be running after retry")
 	}
 }
 

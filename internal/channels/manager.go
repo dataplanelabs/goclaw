@@ -104,21 +104,78 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	slog.Info("starting all channels")
 
 	for name, channel := range m.channels {
-		slog.Info("starting channel", "channel", name)
-		if hc, ok := channel.(interface{ MarkStarting(string) }); ok {
-			hc.MarkStarting("Starting")
-		}
-		m.syncChannelHealthLocked(name, channel)
-		if err := channel.Start(ctx); err != nil {
-			m.recordChannelStartFailureLocked(name, channel, "", err)
-			slog.Error("failed to start channel", "channel", name, "error", err)
-			continue
-		}
-		m.syncChannelHealthLocked(name, channel)
+		_ = m.startChannelLocked(ctx, name, channel)
 	}
 
 	slog.Info("all channels started")
 	return nil
+}
+
+func (m *Manager) startChannelLocked(ctx context.Context, name string, channel Channel) error {
+	maxAttempts := channelStartMaxAttempts()
+
+	for attempt := 1; ; attempt++ {
+		if attempt == 1 {
+			slog.Info("starting channel", "channel", name)
+		} else {
+			slog.Info("retrying channel start",
+				"channel", name,
+				"attempt", attempt,
+				"max_attempts", maxAttempts)
+		}
+
+		markChannelStarting(channel)
+		m.syncChannelHealthLocked(name, channel)
+
+		err := channel.Start(ctx)
+		if err == nil {
+			m.syncChannelHealthLocked(name, channel)
+			return nil
+		}
+
+		info, delay, retry := channelStartRetryDelay(err, attempt)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			m.recordChannelStartFailureLocked(name, channel, "", err)
+			slog.Error("channel start cancelled",
+				"channel", name,
+				"attempt", attempt,
+				"max_attempts", maxAttempts,
+				"error", ctxErr,
+				"last_error", err)
+			return ctxErr
+		}
+		if !retry {
+			m.recordChannelStartFailureLocked(name, channel, "", err)
+			slog.Error("failed to start channel",
+				"channel", name,
+				"attempt", attempt,
+				"max_attempts", maxAttempts,
+				"failure_kind", info.Kind,
+				"retryable", info.Retryable,
+				"error", err)
+			return err
+		}
+
+		slog.Warn("channel start failed; retrying",
+			"channel", name,
+			"attempt", attempt,
+			"max_attempts", maxAttempts,
+			"next_attempt", attempt+1,
+			"delay", delay,
+			"failure_kind", info.Kind,
+			"error", err)
+
+		if waitErr := waitChannelStartRetry(ctx, delay); waitErr != nil {
+			m.recordChannelStartFailureLocked(name, channel, "", err)
+			slog.Error("channel start retry cancelled",
+				"channel", name,
+				"attempt", attempt,
+				"max_attempts", maxAttempts,
+				"error", waitErr,
+				"last_error", err)
+			return waitErr
+		}
+	}
 }
 
 // StopAll gracefully stops all channels and the outbound dispatch loop.
