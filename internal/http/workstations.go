@@ -22,8 +22,9 @@ type WorkstationsHandler struct {
 	wsStore       store.WorkstationStore
 	linkStore     store.AgentWorkstationLinkStore
 	tenantStore   store.TenantStore
-	permStore     store.WorkstationPermissionStore     // Phase 6; may be nil
-	activityStore store.WorkstationActivityStore       // Phase 7; may be nil
+	permStore     store.WorkstationPermissionStore // Phase 6; may be nil
+	activityStore store.WorkstationActivityStore   // Phase 7; may be nil
+	sessionBuf    *workstation.SessionBuffer       // may be nil if not wired
 }
 
 // NewWorkstationsHandler creates a WorkstationsHandler.
@@ -45,6 +46,11 @@ func (h *WorkstationsHandler) SetActivityStore(as store.WorkstationActivityStore
 	h.activityStore = as
 }
 
+// SetSessionBuffer wires the in-memory session buffer for live-output replay endpoints.
+func (h *WorkstationsHandler) SetSessionBuffer(buf *workstation.SessionBuffer) {
+	h.sessionBuf = buf
+}
+
 // RegisterRoutes registers all workstation endpoints onto mux.
 // MUST only be called after edition gate check — never in Lite builds.
 func (h *WorkstationsHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -61,6 +67,9 @@ func (h *WorkstationsHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /v1/workstations/{id}/permissions/{permId}/toggle", h.auth(h.handlePermToggle))
 	// Phase 7: activity audit log
 	mux.HandleFunc("GET /v1/workstations/{id}/activity", h.auth(h.handleActivityList))
+	// Session buffer: live-output replay
+	mux.HandleFunc("GET /v1/workstations/{id}/sessions", h.auth(h.handleSessionsList))
+	mux.HandleFunc("GET /v1/workstations/{id}/sessions/{sessionKey}/output", h.auth(h.handleSessionsOutput))
 }
 
 func (h *WorkstationsHandler) auth(next http.HandlerFunc) http.HandlerFunc {
@@ -471,4 +480,78 @@ func (h *WorkstationsHandler) handleActivityList(w http.ResponseWriter, r *http.
 		resp["nextCursor"] = nextCursor.String()
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// --- Session buffer: live-output replay ---
+
+func (h *WorkstationsHandler) handleSessionsList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	locale := store.LocaleFromContext(ctx)
+	if !requireTenantAdmin(w, r, h.tenantStore) {
+		return
+	}
+	if h.sessionBuf == nil {
+		writeError(w, http.StatusNotImplemented, protocol.ErrNotImplemented,
+			i18n.T(locale, i18n.MsgNotImplemented, "workstations sessions"))
+		return
+	}
+	wsID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest,
+			i18n.T(locale, i18n.MsgInvalidID, "workstation"))
+		return
+	}
+	if _, err := h.wsStore.GetByID(ctx, wsID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, protocol.ErrNotFound,
+				i18n.T(locale, i18n.MsgWorkstationNotFound, wsID.String()))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, protocol.ErrInternal,
+			i18n.T(locale, i18n.MsgInternalError, err.Error()))
+		return
+	}
+	sessions := h.sessionBuf.ListSessions(wsID.String())
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
+}
+
+func (h *WorkstationsHandler) handleSessionsOutput(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	locale := store.LocaleFromContext(ctx)
+	if !requireTenantAdmin(w, r, h.tenantStore) {
+		return
+	}
+	if h.sessionBuf == nil {
+		writeError(w, http.StatusNotImplemented, protocol.ErrNotImplemented,
+			i18n.T(locale, i18n.MsgNotImplemented, "workstations sessions"))
+		return
+	}
+	wsID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest,
+			i18n.T(locale, i18n.MsgInvalidID, "workstation"))
+		return
+	}
+	sessionKey := r.PathValue("sessionKey")
+	if sessionKey == "" {
+		writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest,
+			i18n.T(locale, i18n.MsgRequired, "sessionKey"))
+		return
+	}
+	if _, err := h.wsStore.GetByID(ctx, wsID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, protocol.ErrNotFound,
+				i18n.T(locale, i18n.MsgWorkstationNotFound, wsID.String()))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, protocol.ErrInternal,
+			i18n.T(locale, i18n.MsgInternalError, err.Error()))
+		return
+	}
+	out, ok := h.sessionBuf.GetOutput(wsID.String(), sessionKey)
+	if !ok {
+		writeError(w, http.StatusNotFound, protocol.ErrNotFound, "session not found in buffer")
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }

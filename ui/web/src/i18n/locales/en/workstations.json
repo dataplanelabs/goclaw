@@ -80,6 +80,7 @@
     "columns": {
       "action": "Action",
       "cmdPreview": "Command",
+      "output": "Output",
       "exitCode": "Exit Code",
       "duration": "Duration",
       "agent": "Agent",
@@ -89,7 +90,24 @@
       "exec": "Exec",
       "deny": "Denied"
     },
+    "detail": {
+      "fullCommand": "Full Command",
+      "outputTail": "Output (last ~8KB)"
+    },
     "loadMore": "Load more"
+  },
+  "sessions": {
+    "selectSession": "Select run…",
+    "empty": "No runs yet. Runs initiated via goclaw agents will appear here.",
+    "statusRunning": "Running",
+    "statusDone": "Done",
+    "statusFailed": "Failed",
+    "agentLabel": "Agent",
+    "refreshSessions": "Refresh runs",
+    "loadingOutput": "Loading output…",
+    "waitingForOutput": "Running — waiting for output…",
+    "noOutput": "No output captured.",
+    "goclawOnly": "Only runs initiated via goclaw (workstation_exec / codex_remote / claude_remote) appear here."
   },
   "codexReauth": {
     "title": "Codex Re-authentication",

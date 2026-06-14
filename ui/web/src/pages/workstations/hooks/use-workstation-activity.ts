@@ -10,6 +10,8 @@ export interface WorkstationActivity {
   action: "exec" | "deny";
   cmdHash: string;
   cmdPreview: string;
+  cmdFull?: string | null;
+  outputTail?: string | null;
   exitCode: number | null;
   durationMs: number | null;
   denyReason: string;

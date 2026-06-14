@@ -58,10 +58,14 @@ func WireActivitySink(bus eventbus.DomainEventBus, activityStore store.Workstati
 		// (e.g. events from older tool versions).
 		cmdRaw, _ := payload["command"].(string)
 		if cmdRaw == "" {
-			// Fallback for events without the command field.
 			cmdRaw = "session:" + sessionKey
 		}
 		cmdPreview := redactSensitive(cmdRaw)
+		cmdFullRedacted := redactFull(cmdRaw)
+
+		stdoutTail, _ := payload["stdout_tail"].(string)
+		stderrTail, _ := payload["stderr_tail"].(string)
+		combinedTail := buildOutputTail(stdoutTail, stderrTail)
 
 		exitCodeF, _ := payload["exit_code"].(int)
 		durationF, _ := payload["duration_ms"].(int64)
@@ -86,6 +90,8 @@ func WireActivitySink(bus eventbus.DomainEventBus, activityStore store.Workstati
 			Action:        "exec",
 			CmdHash:       cmdHash,
 			CmdPreview:    cmdPreview,
+			CmdFull:       &cmdFullRedacted,
+			OutputTail:    &combinedTail,
 			ExitCode:      &exitCodeVal,
 			DurationMS:    &durationVal,
 			CreatedAt:     time.Now().UTC(),
@@ -137,9 +143,41 @@ func redactSensitive(cmd string) string {
 	for _, re := range sensitivePatterns {
 		result = re.ReplaceAllString(result, "[REDACTED]")
 	}
-	// Truncate to 200 chars.
 	if len(result) > 200 {
 		result = result[:200]
 	}
 	return strings.TrimSpace(result)
+}
+
+// redactFull applies secret redaction without length truncation (for cmd_full column).
+func redactFull(cmd string) string {
+	result := cmd
+	for _, re := range sensitivePatterns {
+		result = re.ReplaceAllString(result, "[REDACTED]")
+	}
+	return strings.TrimSpace(result)
+}
+
+const outputTailMaxBytes = 8 * 1024
+
+// buildOutputTail combines stdout and stderr tails, redacts secrets, caps at 8KB.
+func buildOutputTail(stdout, stderr string) string {
+	var b strings.Builder
+	if stdout != "" {
+		b.WriteString(stdout)
+	}
+	if stderr != "" {
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(stderr)
+	}
+	result := b.String()
+	for _, re := range sensitivePatterns {
+		result = re.ReplaceAllString(result, "[REDACTED]")
+	}
+	if len(result) > outputTailMaxBytes {
+		result = result[len(result)-outputTailMaxBytes:]
+	}
+	return result
 }

@@ -242,6 +242,10 @@ const (
 
 	// Workstation activity audit log (Phase 7)
 	MethodWorkstationsListActivity = "workstations.activity.list"
+
+	// Workstation session buffer (live-output replay)
+	MethodWorkstationsSessionsList   = "workstations.sessions.list"
+	MethodWorkstationsSessionsOutput = "workstations.sessions.output"
 )
 
 // Agent hooks (Phase 3)

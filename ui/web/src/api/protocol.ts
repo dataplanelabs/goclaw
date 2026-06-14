@@ -215,6 +215,9 @@ export const Methods = {
   WORKSTATIONS_PERMS_TOGGLE: "workstations.permissions.toggle",
   // Phase 7: activity audit log
   WORKSTATIONS_LIST_ACTIVITY: "workstations.activity.list",
+  // Session buffer: live-output replay
+  WORKSTATIONS_SESSIONS_LIST: "workstations.sessions.list",
+  WORKSTATIONS_SESSIONS_OUTPUT: "workstations.sessions.output",
 
   // Phase 3+ - NICE TO HAVE
   LOGS_TAIL: "logs.tail",

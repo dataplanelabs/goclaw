@@ -294,6 +294,7 @@ func runGateway() {
 	cleanupWorkstation, wsBackendCache := wireWorkstationTools(pgStores, toolsReg, domainBus)
 	defer cleanupWorkstation()
 	wireWorkstationExecEvents(domainBus, msgBus)
+	wsSessionBuf := wireWorkstationSessionBuffer(domainBus)
 
 	// Create all agents — resolved lazily from database by the managed resolver.
 	agentRouter := agent.NewRouter()
@@ -392,6 +393,7 @@ func runGateway() {
 		domainBus:        domainBus,
 		audioMgr:         audioMgr,
 		wsBackendCache:   wsBackendCache,
+		wsSessionBuf:     wsSessionBuf,
 	}
 
 	gatewayAddr := loopbackAddr(cfg.Gateway.Host, cfg.Gateway.Port)
@@ -503,6 +505,9 @@ func runGateway() {
 		}
 		if pgStores.WorkstationActivity != nil {
 			wsMethods.SetActivityStore(pgStores.WorkstationActivity)
+		}
+		if wsSessionBuf != nil {
+			wsMethods.SetSessionBuffer(wsSessionBuf)
 		}
 		wsMethods.Register(server.Router())
 		slog.Info("registered workstations RPC methods")

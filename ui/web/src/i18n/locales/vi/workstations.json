@@ -80,6 +80,7 @@
     "columns": {
       "action": "Hành động",
       "cmdPreview": "Lệnh",
+      "output": "Đầu ra",
       "exitCode": "Mã thoát",
       "duration": "Thời gian",
       "agent": "Agent",
@@ -89,7 +90,24 @@
       "exec": "Thực thi",
       "deny": "Từ chối"
     },
+    "detail": {
+      "fullCommand": "Lệnh đầy đủ",
+      "outputTail": "Đầu ra (khoảng 8KB cuối)"
+    },
     "loadMore": "Tải thêm"
+  },
+  "sessions": {
+    "selectSession": "Chọn lần chạy…",
+    "empty": "Chưa có lần chạy nào. Các lần chạy qua goclaw agent sẽ hiện ở đây.",
+    "statusRunning": "Đang chạy",
+    "statusDone": "Hoàn thành",
+    "statusFailed": "Thất bại",
+    "agentLabel": "Agent",
+    "refreshSessions": "Làm mới",
+    "loadingOutput": "Đang tải đầu ra…",
+    "waitingForOutput": "Đang chạy — chờ đầu ra…",
+    "noOutput": "Không có đầu ra.",
+    "goclawOnly": "Chỉ hiển thị các lần chạy qua goclaw (workstation_exec / codex_remote / claude_remote)."
   },
   "codexReauth": {
     "title": "Xác thực lại Codex",

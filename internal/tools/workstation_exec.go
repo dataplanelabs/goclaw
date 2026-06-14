@@ -214,11 +214,32 @@ func (t *WorkstationExecTool) Execute(ctx context.Context, args map[string]any) 
 	// Build exec request with defaults from workstation.
 	req := buildExecRequest(cmd, execArgs, cwd, envMap, ws, timeoutSec)
 
+	cmdFull := cmd
+	if len(execArgs) > 0 {
+		cmdFull = cmd + " " + strings.Join(execArgs, " ")
+	}
+
 	slog.Info("workstation.exec.start",
 		"workstation_id", ws.ID,
 		"agent_id", agentID,
 		"session_key", sessionKey,
 	)
+
+	if t.eventBus != nil {
+		t.eventBus.Publish(eventbus.DomainEvent{
+			ID:       uuid.New().String(),
+			Type:     eventbus.EventType(protocol.EventWorkstationExecStart),
+			SourceID: sessionKey,
+			TenantID: ws.TenantID.String(),
+			AgentID:  agentID,
+			Payload: map[string]any{
+				"workstation_id": ws.ID.String(),
+				"agent_id":       agentID,
+				"session_key":    sessionKey,
+				"command":        cmdFull,
+			},
+		})
+	}
 
 	stream, err := sess.Exec(execCtx, req)
 	if err != nil {
@@ -226,11 +247,6 @@ func (t *WorkstationExecTool) Execute(ctx context.Context, args map[string]any) 
 	}
 
 	// 6. Stream output and collect result.
-	// I3 fix: pass full command string so activity sink can compute meaningful cmd_hash/preview.
-	cmdFull := cmd
-	if len(execArgs) > 0 {
-		cmdFull = cmd + " " + strings.Join(execArgs, " ")
-	}
 	result := t.streamAndCollect(execCtx, stream, ws, agentID, sessionKey, cmdFull)
 
 	slog.Info("workstation.exec.done",

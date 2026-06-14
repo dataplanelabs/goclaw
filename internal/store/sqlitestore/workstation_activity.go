@@ -61,7 +61,7 @@ func (s *SQLiteWorkstationActivityStore) List(ctx context.Context, workstationID
 	if cursor == nil {
 		rows, err = s.db.QueryContext(ctx,
 			`SELECT id, tenant_id, workstation_id, agent_id, action, cmd_hash, cmd_preview,
-			        exit_code, duration_ms, deny_reason, created_at
+			        cmd_full, output_tail, exit_code, duration_ms, deny_reason, created_at
 			 FROM workstation_activity
 			 WHERE workstation_id = ?
 			 ORDER BY created_at DESC
@@ -71,7 +71,7 @@ func (s *SQLiteWorkstationActivityStore) List(ctx context.Context, workstationID
 	} else {
 		rows, err = s.db.QueryContext(ctx,
 			`SELECT id, tenant_id, workstation_id, agent_id, action, cmd_hash, cmd_preview,
-			        exit_code, duration_ms, deny_reason, created_at
+			        cmd_full, output_tail, exit_code, duration_ms, deny_reason, created_at
 			 FROM workstation_activity
 			 WHERE workstation_id = ?
 			   AND created_at < (SELECT created_at FROM workstation_activity WHERE id = ?)
@@ -92,7 +92,8 @@ func (s *SQLiteWorkstationActivityStore) List(ctx context.Context, workstationID
 		var createdAtStr string
 		if err := rows.Scan(
 			&idStr, &tenantStr, &wsStr, &a.AgentID, &a.Action,
-			&a.CmdHash, &a.CmdPreview, &a.ExitCode, &a.DurationMS, &a.DenyReason, &createdAtStr,
+			&a.CmdHash, &a.CmdPreview, &a.CmdFull, &a.OutputTail,
+			&a.ExitCode, &a.DurationMS, &a.DenyReason, &createdAtStr,
 		); err != nil {
 			return nil, nil, err
 		}
@@ -183,8 +184,8 @@ func (s *SQLiteWorkstationActivityStore) insertBatch(ctx context.Context, rows [
 	stmt, err := tx.PrepareContext(ctx,
 		`INSERT OR IGNORE INTO workstation_activity
 		   (id, tenant_id, workstation_id, agent_id, action, cmd_hash, cmd_preview,
-		    exit_code, duration_ms, deny_reason, created_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		    cmd_full, output_tail, exit_code, duration_ms, deny_reason, created_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 	)
 	if err != nil {
 		_ = tx.Rollback()
@@ -196,7 +197,7 @@ func (s *SQLiteWorkstationActivityStore) insertBatch(ctx context.Context, rows [
 		ts := r.CreatedAt.UTC().Format(time.RFC3339Nano)
 		if _, err := stmt.ExecContext(ctx,
 			r.ID.String(), r.TenantID.String(), r.WorkstationID.String(),
-			r.AgentID, r.Action, r.CmdHash, r.CmdPreview,
+			r.AgentID, r.Action, r.CmdHash, r.CmdPreview, r.CmdFull, r.OutputTail,
 			r.ExitCode, r.DurationMS, r.DenyReason, ts,
 		); err != nil {
 			_ = tx.Rollback()
