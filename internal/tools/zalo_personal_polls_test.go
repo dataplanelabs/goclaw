@@ -356,6 +356,32 @@ func TestListPolls_HappyPath(t *testing.T) {
 	}
 }
 
+func TestListPolls_StatusFiltersReturnedPage(t *testing.T) {
+	t.Parallel()
+	fake := &fakeZaloPersonalAction{listReturn: ZaloPollList{
+		Page:  1,
+		Count: 2,
+		Polls: []ZaloPollState{
+			{PollID: "open", Question: "Open?"},
+			{PollID: "closed", Question: "Closed?", Closed: true},
+		},
+	}}
+	tool := NewZaloPersonalListPollsTool()
+	tool.SetZaloPersonalActionFn(zpFakeFn(fake))
+
+	res := tool.Execute(zpCtx(t), map[string]any{"status": "closed"})
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", res.ForLLM)
+	}
+	var out ZaloPollList
+	if err := json.Unmarshal([]byte(res.ForLLM), &out); err != nil {
+		t.Fatalf("decode list result: %v", err)
+	}
+	if out.Count != 1 || len(out.Polls) != 1 || out.Polls[0].PollID != "closed" {
+		t.Fatalf("unexpected filtered list: %+v", out)
+	}
+}
+
 func TestGetPoll_StringIDParses(t *testing.T) {
 	t.Parallel()
 	fake := &fakeZaloPersonalAction{getReturn: ZaloPollState{

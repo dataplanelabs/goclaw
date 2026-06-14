@@ -14,6 +14,9 @@ const (
 	maxZaloPollExpirationSeconds = int64(10 * 365 * 24 * 60 * 60)
 	defaultZaloPollListCount     = 20
 	maxZaloPollListCount         = 20
+	zaloPollListStatusAll        = "all"
+	zaloPollListStatusOpen       = "open"
+	zaloPollListStatusClosed     = "closed"
 )
 
 func isZaloPersonalChannel(ctx context.Context) bool {
@@ -242,14 +245,15 @@ func (t *ZaloPersonalListPollsTool) RequiredChannelTypes() []string {
 }
 func (t *ZaloPersonalListPollsTool) Name() string { return "zalo_personal_list_polls" }
 func (t *ZaloPersonalListPollsTool) Description() string {
-	return "List recent polls from the current Zalo Personal group board with vote counts. Use this before answering questions like 'show the poll result' when the poll was created outside the current context window; call zalo_personal_get_poll with a returned poll_id to refresh one poll exactly."
+	return "List recent polls from the current Zalo Personal group board with vote counts and voter IDs/names when available. Supports page/count pagination and optional status filtering over the returned board page. Use this before answering questions like 'show the poll result' when the poll was created outside the current context window; call zalo_personal_get_poll with a returned poll_id to refresh one poll exactly."
 }
 func (t *ZaloPersonalListPollsTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"page":  map[string]any{"type": "integer", "description": "Board page to read, default 1"},
-			"count": map[string]any{"type": "integer", "description": "Number of board items to inspect, default 20, max 20"},
+			"page":   map[string]any{"type": "integer", "description": "Board page to read, default 1"},
+			"count":  map[string]any{"type": "integer", "description": "Number of board items to inspect, default 20, max 20"},
+			"status": map[string]any{"type": "string", "enum": []string{zaloPollListStatusAll, zaloPollListStatusOpen, zaloPollListStatusClosed}, "description": "Filter polls on the returned board page: all (default), open, or closed"},
 		},
 		"required": []string{},
 	}
@@ -268,6 +272,7 @@ func (t *ZaloPersonalListPollsTool) Execute(ctx context.Context, args map[string
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("list polls: %v", err))
 	}
+	list = filterZaloPollListByStatus(list, normalizedPollListStatus(args))
 	blob, _ := json.Marshal(list)
 	return NewResult(string(blob))
 }
@@ -282,6 +287,41 @@ func normalizedPollListPageCount(args map[string]any) (int, int) {
 		count = maxZaloPollListCount
 	}
 	return page, count
+}
+
+func normalizedPollListStatus(args map[string]any) string {
+	switch strings.ToLower(argString(args, "status")) {
+	case "", zaloPollListStatusAll:
+		return zaloPollListStatusAll
+	case zaloPollListStatusOpen:
+		return zaloPollListStatusOpen
+	case zaloPollListStatusClosed:
+		return zaloPollListStatusClosed
+	default:
+		return zaloPollListStatusAll
+	}
+}
+
+func filterZaloPollListByStatus(list ZaloPollList, status string) ZaloPollList {
+	if status == "" || status == zaloPollListStatusAll {
+		return list
+	}
+	filtered := list.Polls[:0]
+	for _, poll := range list.Polls {
+		switch status {
+		case zaloPollListStatusOpen:
+			if !poll.Closed {
+				filtered = append(filtered, poll)
+			}
+		case zaloPollListStatusClosed:
+			if poll.Closed {
+				filtered = append(filtered, poll)
+			}
+		}
+	}
+	list.Polls = filtered
+	list.Count = len(filtered)
+	return list
 }
 
 // --- get_poll ---
