@@ -174,8 +174,8 @@ func (m *WorkstationsMethods) handleCreate(ctx context.Context, client *gateway.
 		CreatedBy:      client.UserID(),
 	}
 	if err := m.wsStore.Create(ctx, ws); err != nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
-			i18n.T(locale, i18n.MsgFailedToCreate, "workstation", err.Error())))
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal,
+			i18n.T(locale, i18n.MsgFailedToCreate, "workstation", "see server logs")))
 		return
 	}
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"workstation": ws.SanitizedView()}))
@@ -229,10 +229,12 @@ func (m *WorkstationsMethods) handleUpdate(ctx context.Context, client *gateway.
 				i18n.T(locale, i18n.MsgInvalidMetadataShape, string(current.BackendType), err.Error())))
 			return
 		}
+		// Replace map[string]any with []byte so the store encrypts correctly (bytea column).
+		params.Updates["metadata"] = metaBytes
 	}
 	if err := m.wsStore.Update(ctx, id, params.Updates); err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal,
-			i18n.T(locale, i18n.MsgFailedToUpdate, "workstation", err.Error())))
+			i18n.T(locale, i18n.MsgFailedToUpdate, "workstation", "see server logs")))
 		return
 	}
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"id": id}))
