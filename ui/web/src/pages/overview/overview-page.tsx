@@ -8,6 +8,7 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useAuthStore } from "@/stores/use-auth-store";
 import { useWsCall } from "@/hooks/use-ws-call";
+import { CodexReauthCard } from "./codex-reauth-card";
 import { useWsEvent } from "@/hooks/use-ws-event";
 import { useProviders } from "@/pages/providers/hooks/use-providers";
 import { useTraces } from "@/pages/traces/hooks/use-traces";
@@ -47,6 +48,7 @@ const MAX_OVERVIEW_CHANNEL_INSTANCES = 200;
 export function OverviewPage() {
   const { t } = useTranslation("overview");
   const connected = useAuthStore((s) => s.connected);
+  const isMasterScope = useAuthStore((s) => s.isMasterScope);
   const { call: fetchHealth, data: health } =
     useWsCall<HealthPayload>(Methods.HEALTH);
   const { call: fetchStatus, data: status } =
@@ -282,6 +284,9 @@ export function OverviewPage() {
           {quota?.enabled && quota.entries.length > 0 && (
             <QuotaUsageCard quota={quota} />
           )}
+
+          {/* Codex re-auth — master scope only */}
+          {isMasterScope && <CodexReauthCard />}
         </TabsContent>
 
         <TabsContent value="usage">

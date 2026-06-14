@@ -162,6 +162,91 @@ func readLog(ctx context.Context, backend workstation.Backend, path string) (str
 	return string(out), nil
 }
 
+// authJSONPath is the location codex writes its auth token on successful login.
+const authJSONPath = "/root/.codex/auth.json"
+
+// StatusResult is returned by Status.
+type StatusResult struct {
+	Authenticated bool      `json:"authenticated"`
+	AuthAt        time.Time `json:"auth_at,omitempty"`
+}
+
+// Status checks whether codex auth.json exists and is fresh (written within maxAge).
+// A missing or old file means the pod needs re-auth.
+func Status(
+	ctx context.Context,
+	wsStore store.WorkstationStore,
+	backendCache *workstation.BackendCache,
+	tenantID uuid.UUID,
+	workstationKey string,
+	maxAge time.Duration,
+) (*StatusResult, error) {
+	if workstationKey == "" {
+		workstationKey = defaultWorkstationKey
+	}
+
+	storeCtx := store.WithTenantID(ctx, tenantID)
+	ws, err := wsStore.GetByKey(storeCtx, workstationKey)
+	if err != nil {
+		return nil, fmt.Errorf("workstation %q not found: %w", workstationKey, err)
+	}
+	if !ws.Active {
+		return &StatusResult{Authenticated: false}, nil
+	}
+
+	backend, err := backendCache.Get(ctx, ws.ID)
+	if err != nil {
+		return nil, fmt.Errorf("backend not ready: %w", err)
+	}
+
+	// stat the auth.json file on the pod to read its mtime
+	out, err := readLog(ctx, backend, authJSONPath)
+	if err != nil || strings.TrimSpace(out) == "" {
+		return &StatusResult{Authenticated: false}, nil
+	}
+
+	// Get mtime via stat
+	mtimeOut, err := statMtime(ctx, backend, authJSONPath)
+	if err != nil {
+		return &StatusResult{Authenticated: false}, nil
+	}
+
+	authAt, err := time.Parse(time.RFC3339, strings.TrimSpace(mtimeOut))
+	if err != nil {
+		return &StatusResult{Authenticated: false}, nil
+	}
+
+	fresh := time.Since(authAt) <= maxAge
+	return &StatusResult{Authenticated: fresh, AuthAt: authAt}, nil
+}
+
+// statMtime reads the modification time of a file on the pod via `date -r`.
+func statMtime(ctx context.Context, backend workstation.Backend, path string) (string, error) {
+	sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	sess, err := backend.OpenSession(sctx, "codex-reauth-stat-"+uuid.New().String())
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = sess.Close(context.Background()) }()
+
+	req := workstation.ExecRequest{
+		// Use `date -r <path> +%Y-%m-%dT%H:%M:%SZ` on Linux (GNU coreutils)
+		Cmd:     "date",
+		Args:    []string{"-r", path, "+%Y-%m-%dT%H:%M:%SZ"},
+		Timeout: 4 * time.Second,
+	}
+	stream, err := sess.Exec(sctx, req)
+	if err != nil {
+		return "", err
+	}
+	out, _ := io.ReadAll(stream.Stdout())
+	_, _ = io.ReadAll(stream.Stderr())
+	_, _ = stream.Wait()
+	return string(out), nil
+}
+
 // parseDeviceAuth scans the log output for the verification URL and user code.
 // Returns nil if both have not appeared yet.
 func parseDeviceAuth(output string) *DeviceAuthInfo {
