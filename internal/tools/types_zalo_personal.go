@@ -60,10 +60,17 @@ type ZaloReminderSettings struct {
 }
 
 type ZaloPollStateOption struct {
-	OptionID  int64  `json:"option_id"`
-	Content   string `json:"content"`
-	VoteCount int    `json:"vote_count"`
-	Voted     bool   `json:"voted,omitempty"`
+	OptionID  int64           `json:"option_id"`
+	Content   string          `json:"content"`
+	VoteCount int             `json:"vote_count"`
+	Voted     bool            `json:"voted,omitempty"`
+	VoterIDs  []string        `json:"voter_ids,omitempty"`
+	Voters    []ZaloPollVoter `json:"voters,omitempty"`
+}
+
+type ZaloPollVoter struct {
+	UserID      string `json:"user_id"`
+	DisplayName string `json:"display_name,omitempty"`
 }
 
 // ZaloPersonalActionAware is the DI setter implemented by every tool that

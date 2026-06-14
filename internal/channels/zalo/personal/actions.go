@@ -59,7 +59,7 @@ func (c *Channel) ListPolls(ctx context.Context, chatID string, page, count int)
 		Page:  page,
 	}
 	for _, p := range list.Polls {
-		out.Polls = append(out.Polls, pollDetailToState(&p))
+		out.Polls = append(out.Polls, c.pollDetailToState(ctx, &p))
 	}
 	return out, nil
 }
@@ -73,7 +73,7 @@ func (c *Channel) GetPoll(ctx context.Context, pollID int64) (tools.ZaloPollStat
 	if err != nil {
 		return tools.ZaloPollState{}, err
 	}
-	return pollDetailToState(d), nil
+	return c.pollDetailToState(ctx, d), nil
 }
 
 func (c *Channel) VotePoll(ctx context.Context, pollID int64, optionIDs []int64) (tools.ZaloPollState, error) {
@@ -87,7 +87,7 @@ func (c *Channel) VotePoll(ctx context.Context, pollID int64, optionIDs []int64)
 	}
 	return tools.ZaloPollState{
 		PollID:  fmt.Sprintf("%d", pollID),
-		Options: optionsToState(opts),
+		Options: optionsToState(opts, nil),
 	}, nil
 }
 
@@ -114,7 +114,7 @@ func (c *Channel) AddPollOptions(ctx context.Context, pollID int64, newOptions [
 	}
 	return tools.ZaloPollState{
 		PollID:  fmt.Sprintf("%d", pollID),
-		Options: optionsToState(opts),
+		Options: optionsToState(opts, nil),
 	}, nil
 }
 
@@ -177,7 +177,13 @@ func (c *Channel) guardPoll() (*protocol.Session, error) {
 	return sess, nil
 }
 
-func pollDetailToState(d *protocol.PollDetail) tools.ZaloPollState {
+func (c *Channel) pollDetailToState(ctx context.Context, d *protocol.PollDetail) tools.ZaloPollState {
+	var resolve pollVoterNameResolver
+	if d.GroupID != "" {
+		resolve = func(uid string) (string, bool) {
+			return c.LookupGroupMember(ctx, d.GroupID, uid)
+		}
+	}
 	return tools.ZaloPollState{
 		PollID:      d.PollID.String(),
 		Question:    d.Question,
@@ -188,19 +194,52 @@ func pollDetailToState(d *protocol.PollDetail) tools.ZaloPollState {
 		UpdatedTime: d.UpdatedTime,
 		ExpiredTime: d.ExpiredTime,
 		TotalVotes:  d.TotalVotes,
-		Options:     optionsToState(d.Options),
+		Options:     optionsToState(d.Options, resolve),
 	}
 }
 
-func optionsToState(opts []protocol.PollOption) []tools.ZaloPollStateOption {
+type pollVoterNameResolver func(uid string) (displayName string, ok bool)
+
+func optionsToState(opts []protocol.PollOption, resolve pollVoterNameResolver) []tools.ZaloPollStateOption {
 	out := make([]tools.ZaloPollStateOption, 0, len(opts))
 	for _, o := range opts {
+		voterIDs := pollOptionVoterIDs(o)
+		voters := make([]tools.ZaloPollVoter, 0, len(voterIDs))
+		for _, id := range voterIDs {
+			voter := tools.ZaloPollVoter{UserID: id}
+			if resolve != nil {
+				if displayName, ok := resolve(id); ok {
+					voter.DisplayName = displayName
+				}
+			}
+			voters = append(voters, voter)
+		}
 		out = append(out, tools.ZaloPollStateOption{
 			OptionID:  o.OptionID,
 			Content:   o.Content,
 			VoteCount: o.CountVotes(),
 			Voted:     o.Voted,
+			VoterIDs:  voterIDs,
+			Voters:    voters,
 		})
 	}
 	return out
+}
+
+func pollOptionVoterIDs(o protocol.PollOption) []string {
+	ids := make([]string, 0, len(o.Voters)+len(o.VotedUsers))
+	seen := make(map[string]struct{}, len(o.Voters)+len(o.VotedUsers))
+	for _, src := range [][]string{o.Voters, o.VotedUsers} {
+		for _, id := range src {
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
