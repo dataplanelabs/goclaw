@@ -1,0 +1,17 @@
+{
+  "rules": [
+    {
+      "path": "**/*.go",
+      "rule": "Go: wrap errors with %w and handle every returned error, propagate context.Context through call chains, guard against goroutine leaks and nil dereferences, avoid panics in library code, and never hardcode secrets. Keep comments terse (why, not what)."
+    },
+    {
+      "path": "ui/**/*.{ts,tsx,js,jsx,vue,svelte}",
+      "rule": "Frontend: validate/escape user input, never leak tokens or secrets to client code, handle loading and error states, and keep components focused and typed."
+    },
+    {
+      "path": "**/{docker-compose*.yml,docker-compose*.yaml,Dockerfile*}",
+      "rule": "Flag :latest image tags, unnecessary exposed ports, running as root, and plaintext secrets baked into images or compose env."
+    }
+  ],
+  "exclude": ["**/vendor/**", "**/node_modules/**", "**/*_gen.go", "**/*.pb.go", "go.sum", "ui/**/dist/**"]
+}
