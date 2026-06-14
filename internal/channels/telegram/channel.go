@@ -333,9 +333,9 @@ func (c *Channel) draftTransportEnabled() bool {
 }
 
 // richMessageEnabled returns whether Bot API 10.1 sendRichMessage should be used for agent text replies.
-// Default: false (opt-in per instance).
+// Default: true (on unless explicitly disabled). Any send error falls back to the HTML path.
 func (c *Channel) richMessageEnabled() bool {
-	return c.config.RichMessage != nil && *c.config.RichMessage
+	return c.config.RichMessage == nil || *c.config.RichMessage
 }
 
 // ReasoningStreamEnabled returns whether reasoning should be shown as a separate message.

@@ -237,18 +237,19 @@ func TestSend_RichFlagOff_UsesHTML(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Build channel with flag explicitly off (nil → false).
+	// Build channel with the flag explicitly off (default is now on).
+	off := false
 	c := &Channel{
 		config: config.TelegramConfig{
 			Token:       "TEST",
 			APIServer:   srv.URL,
-			RichMessage: nil, // disabled
+			RichMessage: &off, // explicitly disabled
 		},
 		httpClient: srv.Client(),
 	}
 
 	if c.richMessageEnabled() {
-		t.Error("richMessageEnabled() should be false when RichMessage is nil")
+		t.Error("richMessageEnabled() should be false when RichMessage is explicitly false")
 	}
 	if richHit != 0 {
 		t.Errorf("sendRichMessage endpoint hit %d times, want 0 when flag is off", richHit)
@@ -265,7 +266,7 @@ func TestRichMessageEnabled(t *testing.T) {
 		ptr  *bool
 		want bool
 	}{
-		{"nil (default off)", nil, false},
+		{"nil (default on)", nil, true},
 		{"explicit false", &f, false},
 		{"explicit true", &tr, true},
 	}

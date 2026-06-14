@@ -279,6 +279,10 @@
       "label": "Draft Preview",
       "help": "Use stealth draft preview for answer stream in DMs — no notification per edit (requires DM Streaming)"
     },
+    "rich_message": {
+      "label": "Rich Message",
+      "help": "Send replies as Bot API 10.1 rich markdown — headings, tables, code & math render natively (falls back to HTML on older clients)"
+    },
     "reasoning_stream": {
       "label": "Show Reasoning",
       "help": "Display AI thinking as a separate message before the answer (requires streaming)"
