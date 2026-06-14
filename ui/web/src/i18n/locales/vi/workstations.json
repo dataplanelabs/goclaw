@@ -61,6 +61,18 @@
     "success": "Kết nối thành công",
     "notImplemented": "Tính năng kiểm tra kết nối chưa khả dụng"
   },
+  "allowlist": {
+    "title": "Danh sách cho phép",
+    "description": "Các lệnh mà agent được phép chạy trên workstation này. Mặc định từ chối: lệnh không có trong danh sách sẽ bị chặn. Được quản lý qua cấu hình (goclaw-config / gcplane) đối với workstation được quản lý.",
+    "empty": "Chưa có lệnh nào được cho phép — mọi lệnh đều bị từ chối.",
+    "disabledHint": "Đã tắt — hiện đang bị từ chối.",
+    "config": {
+      "backend": "Backend",
+      "host": "Host",
+      "user": "Người dùng",
+      "defaultCwd": "Thư mục mặc định"
+    }
+  },
   "activity": {
     "title": "Hoạt động gần đây",
     "emptyTitle": "Chưa có hoạt động",

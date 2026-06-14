@@ -15,6 +15,7 @@ import { formatDate } from "@/lib/format";
 import { useWorkstations, type Workstation } from "./hooks/use-workstations";
 import { WorkstationCreateDialog } from "./workstation-create-dialog";
 import { WorkstationActivityTab } from "./workstation-activity-tab";
+import { WorkstationAllowlistTab } from "./workstation-allowlist-tab";
 import { CodexReauthCard } from "./codex-reauth-card";
 import { WorkstationDefaultEnvDialog } from "./workstation-defaultenv-dialog";
 
@@ -136,10 +137,14 @@ export function WorkstationsPage() {
                       {isExpanded && (
                         <tr key={`${ws.id}-detail`} className="bg-muted/10">
                           <td colSpan={7} className="px-4 py-4">
-                            <Tabs defaultValue="activity">
+                            <Tabs defaultValue="allowlist">
                               <TabsList className="mb-3">
+                                <TabsTrigger value="allowlist">{t("allowlist.title")}</TabsTrigger>
                                 <TabsTrigger value="activity">{t("activity.title")}</TabsTrigger>
                               </TabsList>
+                              <TabsContent value="allowlist">
+                                <WorkstationAllowlistTab workstation={ws} />
+                              </TabsContent>
                               <TabsContent value="activity">
                                 <WorkstationActivityTab workstationId={ws.id} />
                               </TabsContent>

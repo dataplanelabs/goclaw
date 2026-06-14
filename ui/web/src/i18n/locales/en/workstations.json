@@ -61,6 +61,18 @@
     "success": "Connection successful",
     "notImplemented": "Connection test is not yet available"
   },
+  "allowlist": {
+    "title": "Allowlist",
+    "description": "Commands an agent may run on this workstation. Default-deny: anything not listed is rejected. Managed via config (goclaw-config / gcplane) for managed workstations.",
+    "empty": "No commands allowlisted — all exec is denied.",
+    "disabledHint": "Disabled — currently rejected.",
+    "config": {
+      "backend": "Backend",
+      "host": "Host",
+      "user": "User",
+      "defaultCwd": "Default directory"
+    }
+  },
   "activity": {
     "title": "Recent Activity",
     "emptyTitle": "No activity yet",
