@@ -29,6 +29,8 @@ const (
 	circuitFailThreshold = 3
 	// circuitLockoutDuration is the lockout period after circuit opens.
 	circuitLockoutDuration = 10 * time.Minute
+	// probeTimeout is the deadline for the keepalive probe in Get.
+	probeTimeout = 2 * time.Second
 )
 
 // ErrPoolExhausted is returned when no client slot is available within poolQueueTimeout.
@@ -88,6 +90,26 @@ func (p *clientPool) semFor(wsID uuid.UUID) chan struct{} {
 	return ch
 }
 
+// probeClient sends a keepalive request and returns true if the transport is alive.
+// A reused cached client holds no semaphore slot, so a failed probe just closes+removes
+// it without touching the semaphore; Evict handles that correctly.
+func probeClient(c *ssh.Client) bool {
+	type result struct{ ok bool }
+	ch := make(chan result, 1)
+	go func() {
+		_, _, err := c.SendRequest("keepalive@openssh.com", true, nil)
+		// err == nil means server replied; io.EOF / "connection closed" means dead.
+		// Any response (even "unknown request") means the transport is alive.
+		ch <- result{ok: err == nil}
+	}()
+	select {
+	case r := <-ch:
+		return r.ok
+	case <-time.After(probeTimeout):
+		return false
+	}
+}
+
 // Get borrows an *ssh.Client from the pool, dialing a new one if needed.
 // Returns a release function that must be called when done.
 func (p *clientPool) Get(
@@ -108,17 +130,33 @@ func (p *clientPool) Get(
 		cs.isOpen = false
 		cs.failures = 0
 	}
-	// Try to reuse an existing client with free capacity.
+
+	// Try to reuse an existing client with free capacity. Probe each candidate with a
+	// keepalive before handing it out; dead transports (e.g. after pod restart) are
+	// evicted so the caller never receives a client that will immediately fail NewSession.
+	// A reused client holds no semaphore slot — the slot was consumed when it was dialed.
+	// Evict closes+removes such a client without touching the semaphore (correct: returning
+	// a slot it never consumed would inflate capacity beyond maxClientsPerWorkstation).
 	for _, pc := range p.clients[ws.ID] {
 		if pc.refCnt < maxClientsPerWorkstation {
 			pc.refCnt++
 			pc.lastUse = time.Now()
 			client := pc.client
 			p.mu.Unlock()
+
+			if alive := probeClient(client); !alive {
+				// Dead transport: undo the refCnt bump via decRef, then evict.
+				p.decRef(ws.ID, client)
+				p.Evict(ws.ID, client)
+				// Fall through to dial a fresh client below.
+				p.mu.Lock()
+				break
+			}
 			release := func() { p.decRef(ws.ID, client) }
 			return client, release, nil
 		}
 	}
+
 	// Need a new client — acquire semaphore slot.
 	sem := p.semFor(ws.ID)
 	p.mu.Unlock()
@@ -156,6 +194,37 @@ func (p *clientPool) Get(
 		})
 	}
 	return client, release, nil
+}
+
+// Evict removes a specific dead client from the pool. It closes the underlying
+// connection, removes the pooledClient entry, and returns its semaphore slot so
+// a fresh dial can proceed immediately.
+//
+// Semaphore invariant: every dialed client consumed exactly one slot from sem.
+// Evict returns that slot iff the entry is found (i.e. it was dialed and not yet
+// removed). A reused borrow incremented refCnt but consumed no slot, so Evict
+// must NOT return a slot for a client that was already evicted (double-call guard).
+func (p *clientPool) Evict(wsID uuid.UUID, client *ssh.Client) {
+	p.mu.Lock()
+	pcs := p.clients[wsID]
+	for i, pc := range pcs {
+		if pc.client != client {
+			continue
+		}
+		// Remove from slice.
+		p.clients[wsID] = append(pcs[:i], pcs[i+1:]...)
+		if len(p.clients[wsID]) == 0 {
+			delete(p.clients, wsID)
+		}
+		sem := p.semFor(wsID)
+		p.mu.Unlock()
+		_ = client.Close()
+		// Return the slot this dialed client originally consumed.
+		sem <- struct{}{}
+		return
+	}
+	// Client not found — already evicted; do nothing (no semaphore change).
+	p.mu.Unlock()
 }
 
 // decRef decrements the reference count for a client. Closes if refCnt reaches 0

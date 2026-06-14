@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"strings"
 
 	"github.com/nextlevelbuilder/goclaw/internal/workstation"
@@ -19,10 +20,30 @@ type SSHSession struct {
 	client  *ssh.Client
 	release func()
 	wsKey   string
+	backend *SSHBackend // back-ref for evict+reborrow on dead transport
 }
 
 // ID returns the session identifier.
 func (s *SSHSession) ID() string { return s.id }
+
+// isDeadConn reports whether err indicates a dead/closed transport rather than a
+// legitimate session or command error. Only these errors trigger the retry-once path.
+func isDeadConn(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "connection closed") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "use of closed network connection")
+}
 
 // Exec opens a new ssh.Session on the pooled client, runs the command, and returns a Stream.
 // The command string is composed from req.Cmd, req.Args, and optional req.CWD prefix.
@@ -31,7 +52,34 @@ func (s *SSHSession) ID() string { return s.id }
 func (s *SSHSession) Exec(ctx context.Context, req workstation.ExecRequest) (workstation.Stream, error) {
 	sess, err := s.client.NewSession()
 	if err != nil {
-		return nil, fmt.Errorf("ssh[%s]: new session: %w", s.wsKey, err)
+		if !isDeadConn(err) || s.backend == nil {
+			return nil, fmt.Errorf("ssh[%s]: new session: %w", s.wsKey, err)
+		}
+
+		// Dead transport (e.g. pod restart): evict the stale client, borrow a fresh one,
+		// and retry NewSession exactly once. Only dead-transport errors trigger this path —
+		// genuine session/command errors propagate immediately.
+		origErr := err
+		b := s.backend
+		b.pool.Evict(b.ws.ID, s.client)
+		// Release the old borrow. The old client is already evicted (closed+removed), so
+		// decRef will find no matching entry — that is safe and intentional.
+		if s.release != nil {
+			s.release()
+			s.release = nil
+		}
+		newClient, newRelease, rerr := b.pool.Get(ctx, b.ws, b.meta, b.keyMaterial)
+		if rerr != nil {
+			return nil, fmt.Errorf("ssh[%s]: new session: %w (reborrow: %v)", s.wsKey, origErr, rerr)
+		}
+		s.client = newClient
+		s.release = newRelease
+
+		sess, err = s.client.NewSession()
+		if err != nil {
+			return nil, fmt.Errorf("ssh[%s]: new session (retry): %w", s.wsKey, err)
+		}
+		slog.Info("workstation.ssh_stale_client_evicted_and_recovered", "workstation_key", s.wsKey)
 	}
 
 	// Attempt Setenv for each env var. OpenSSH rejects Setenv without AcceptEnv server config.
