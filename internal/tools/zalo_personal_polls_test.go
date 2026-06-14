@@ -193,10 +193,65 @@ func TestCreatePoll_Error114AddsFieldGuidance(t *testing.T) {
 	if !res.IsError {
 		t.Fatal("want error")
 	}
-	for _, want := range []string{"expired_time_seconds", "duration in seconds", "options_count=2", "Do not retry with placeholder options"} {
+	for _, want := range []string{"code 114", "options_count=2", "expired_time_seconds=3600 already passed local duration validation", "Do not retry with placeholder options"} {
 		if !strings.Contains(res.ForLLM, want) {
 			t.Fatalf("error missing %q: %s", want, res.ForLLM)
 		}
+	}
+	if strings.Contains(res.ForLLM, "Check expired_time_seconds first") {
+		t.Fatalf("error should not prioritize expiry after local validation: %s", res.ForLLM)
+	}
+}
+
+func TestCreatePoll_Error114SuggestsDisablingAddOptionFlag(t *testing.T) {
+	t.Parallel()
+	fake := &fakeZaloPersonalAction{
+		createErr: fmt.Errorf("zalo_personal: decrypt /api/poll/create response: zalo_personal: inner error code 114: Tham số không hợp lệ"),
+	}
+	tool := NewZaloPersonalCreatePollTool()
+	tool.SetZaloPersonalActionFn(zpFakeFn(fake))
+
+	res := tool.Execute(zpCtx(t), map[string]any{
+		"question":             "Example poll question text",
+		"options":              []any{"Option 1", "Option 2", "Option 3", "Option 4", "Option 5", "Option 6", "Option 7", "Option 8"},
+		"expired_time_seconds": float64(86400),
+		"allow_add_new_option": true,
+	})
+	if !res.IsError {
+		t.Fatal("want error")
+	}
+	for _, want := range []string{
+		"options_count=8",
+		"expired_time_seconds=86400",
+		"allow_add_new_option=true",
+		"First retry the same user-provided question/options with allow_add_new_option=false",
+		"expired_time_seconds=86400 already passed local duration validation",
+		"Do not retry with placeholder options",
+	} {
+		if !strings.Contains(res.ForLLM, want) {
+			t.Fatalf("error missing %q: %s", want, res.ForLLM)
+		}
+	}
+	if strings.Contains(res.ForLLM, "Check expired_time_seconds first") {
+		t.Fatalf("error should not prioritize expiry after local validation: %s", res.ForLLM)
+	}
+}
+
+func TestCreatePoll_GenericInvalidErrorDoesNotAddParameterRepairHints(t *testing.T) {
+	t.Parallel()
+	fake := &fakeZaloPersonalAction{createErr: fmt.Errorf("zalo_personal: invalid session")}
+	tool := NewZaloPersonalCreatePollTool()
+	tool.SetZaloPersonalActionFn(zpFakeFn(fake))
+
+	res := tool.Execute(zpCtx(t), map[string]any{
+		"question": "Q",
+		"options":  []any{"a", "b"},
+	})
+	if !res.IsError {
+		t.Fatal("want error")
+	}
+	if strings.Contains(res.ForLLM, "Repair order") {
+		t.Fatalf("generic invalid error should not receive poll parameter hints: %s", res.ForLLM)
 	}
 }
 

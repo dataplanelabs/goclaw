@@ -60,6 +60,13 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Zalo Personal poll create errors now point agents at the likely invalid
+  parameter** — Zalo code 114 no longer tells the agent to check
+  `expired_time_seconds` first when the duration already passed local validation.
+  The tool now preserves the sent shape, prioritizes retrying without
+  `allow_add_new_option` when that flag was optional, and warns not to invent
+  placeholder options.
+
 - **WhatsApp reactions now preserve the reacted message context** — inbound
   reaction events are stored as feedback with the reactor, emoji, platform
   timestamp, target message id, and short message/file preview. The agent now
