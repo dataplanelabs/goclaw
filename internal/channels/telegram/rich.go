@@ -127,9 +127,15 @@ func (c *Channel) prepareRichMarkdown(text string) string {
 
 // normalizeMathDelimiters rewrites the math forms agents emit into GFM math.
 func normalizeMathDelimiters(text string) string {
-	// 1. ```latex / ```math fences → $$ block math (drop the fence + any outer \[..\]).
+	// 1. ```latex / ```math fences. Mixed content (already has $ / \[ / \() is a
+	//    prose+multi-formula block — strip the fence and let step 3 convert each
+	//    region (wrapping the whole thing in $$ would render prose as math). Only a
+	//    single bare formula (no delimiters) is wrapped as one $$ block.
 	text = mathFenceRe.ReplaceAllStringFunc(text, func(m string) string {
-		inner := stripOuterLatexDelims(strings.TrimSpace(mathFenceRe.FindStringSubmatch(m)[1]))
+		inner := strings.TrimSpace(mathFenceRe.FindStringSubmatch(m)[1])
+		if strings.ContainsAny(inner, "$") || strings.Contains(inner, `\[`) || strings.Contains(inner, `\(`) {
+			return inner
+		}
 		return "$$\n" + inner + "\n$$"
 	})
 	// 2. Unwrap inline code that is purely math: `$x$` / `\(x\)` / `\[x\]` → the math.
@@ -147,17 +153,6 @@ func normalizeMathDelimiters(text string) string {
 	}
 	b.WriteString(convertMath(text[last:]))
 	return b.String()
-}
-
-// stripOuterLatexDelims removes a single outer \[..\] or \(..\) wrapper.
-func stripOuterLatexDelims(s string) string {
-	switch {
-	case strings.HasPrefix(s, `\[`) && strings.HasSuffix(s, `\]`):
-		return strings.TrimSpace(s[2 : len(s)-2])
-	case strings.HasPrefix(s, `\(`) && strings.HasSuffix(s, `\)`):
-		return strings.TrimSpace(s[2 : len(s)-2])
-	}
-	return s
 }
 
 func convertMath(s string) string {
