@@ -103,7 +103,16 @@
     "waiting": "Đang chờ phê duyệt…",
     "done": "Codex đã xác thực lại thành công",
     "retry": "Thử lại",
-    "reset": "Bắt đầu lại"
+    "reset": "Bắt đầu lại",
+    "reauthAction": "Xác thực lại Codex"
+  },
+  "liveLog": {
+    "title": "Đầu ra trực tiếp",
+    "live": "Trực tiếp",
+    "idle": "Rảnh",
+    "empty": "Chưa có đầu ra. Chạy lệnh để xem đầu ra trực tiếp tại đây.",
+    "followTail": "Cuộn theo",
+    "clear": "Xóa"
   },
   "defaultEnvDialog": {
     "title": "Biến môi trường",

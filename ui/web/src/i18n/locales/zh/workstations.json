@@ -103,7 +103,16 @@
     "waiting": "等待授权…",
     "done": "Codex 重新认证成功",
     "retry": "重试",
-    "reset": "重新开始"
+    "reset": "重新开始",
+    "reauthAction": "重新认证 Codex"
+  },
+  "liveLog": {
+    "title": "实时输出",
+    "live": "实时",
+    "idle": "空闲",
+    "empty": "暂无输出。开始运行后将在此显示实时输出。",
+    "followTail": "跟随末尾",
+    "clear": "清除"
   },
   "defaultEnvDialog": {
     "title": "环境变量",
