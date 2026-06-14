@@ -456,6 +456,8 @@ func isReadMethod(method string) bool {
 		protocol.MethodWorkstationsGet,
 		protocol.MethodWorkstationsPermList,
 		protocol.MethodWorkstationsListActivity,
+		protocol.MethodWorkstationsSessionsList,
+		protocol.MethodWorkstationsSessionsOutput,
 	}
 	return slices.Contains(readMethods, method)
 }
