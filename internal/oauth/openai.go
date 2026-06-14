@@ -4,10 +4,10 @@ package oauth
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -16,16 +16,16 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
-	"sync"
 	"runtime"
+	"sync"
 	"time"
 )
 
 const (
-	OpenAIAuthURL    = "https://auth.openai.com/oauth/authorize"
-	OpenAITokenURL   = "https://auth.openai.com/oauth/token"
-	OpenAIClientID   = "app_EMoamEEZ73f0CkXaXp7hrann"
-	OpenAIScopes     = "openid profile email offline_access api.connectors.read api.connectors.invoke"
+	OpenAIAuthURL     = "https://auth.openai.com/oauth/authorize"
+	OpenAITokenURL    = "https://auth.openai.com/oauth/token"
+	OpenAIClientID    = "app_EMoamEEZ73f0CkXaXp7hrann"
+	OpenAIScopes      = "openid profile email offline_access api.connectors.read api.connectors.invoke"
 	OpenAIRedirectURI = "http://localhost:1455/auth/callback"
 
 	callbackPort = "1455"
@@ -44,6 +44,69 @@ type OpenAITokenResponse struct {
 	TokenType    string `json:"token_type"`
 	Scope        string `json:"scope"`
 	IDToken      string `json:"id_token,omitempty"`
+}
+
+// OpenAITokenError captures structured errors returned by OpenAI's OAuth
+// token endpoint while preserving the historical raw body in Error().
+type OpenAITokenError struct {
+	Operation  string
+	StatusCode int
+	Code       string
+	Message    string
+	Type       string
+	Body       string
+}
+
+func (e *OpenAITokenError) Error() string {
+	if e == nil {
+		return ""
+	}
+	op := e.Operation
+	if op == "" {
+		op = "token request"
+	}
+	if e.Body != "" {
+		return fmt.Sprintf("%s failed (HTTP %d): %s", op, e.StatusCode, e.Body)
+	}
+	if e.Message != "" {
+		return fmt.Sprintf("%s failed (HTTP %d): %s", op, e.StatusCode, e.Message)
+	}
+	return fmt.Sprintf("%s failed (HTTP %d)", op, e.StatusCode)
+}
+
+func openAITokenHTTPError(operation string, statusCode int, body []byte) error {
+	err := &OpenAITokenError{
+		Operation:  operation,
+		StatusCode: statusCode,
+		Body:       string(body),
+	}
+
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &payload) == nil {
+		err.Code = payload.Error.Code
+		err.Message = payload.Error.Message
+		err.Type = payload.Error.Type
+	}
+
+	return err
+}
+
+func isOpenAIReauthRequired(err error) bool {
+	var tokenErr *OpenAITokenError
+	if !errors.As(err, &tokenErr) {
+		return false
+	}
+	switch tokenErr.Code {
+	case "refresh_token_invalidated", "invalid_grant", "token_revoked":
+		return true
+	}
+	return tokenErr.StatusCode == http.StatusUnauthorized && tokenErr.Operation == "token refresh"
 }
 
 // generatePKCE generates a PKCE code verifier and S256 challenge.
@@ -133,15 +196,15 @@ func StartLoginOpenAI() (*PendingLogin, error) {
 
 	params := url.Values{
 		"client_id":                  {OpenAIClientID},
-		"redirect_uri":              {OpenAIRedirectURI},
-		"response_type":             {"code"},
-		"scope":                     {OpenAIScopes},
-		"code_challenge":            {challenge},
+		"redirect_uri":               {OpenAIRedirectURI},
+		"response_type":              {"code"},
+		"scope":                      {OpenAIScopes},
+		"code_challenge":             {challenge},
 		"code_challenge_method":      {"S256"},
-		"state":                     {state},
+		"state":                      {state},
 		"codex_cli_simplified_flow":  {"true"},
 		"id_token_add_organizations": {"true"},
-		"originator":                {"pi"},
+		"originator":                 {"pi"},
 	}
 	authURL := OpenAIAuthURL + "?" + params.Encode()
 
@@ -233,7 +296,7 @@ func exchangeOpenAICode(code, verifier string) (*OpenAITokenResponse, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token exchange failed (HTTP %d): %s", resp.StatusCode, string(body))
+		return nil, openAITokenHTTPError("token exchange", resp.StatusCode, body)
 	}
 
 	var tokenResp OpenAITokenResponse
@@ -259,7 +322,7 @@ func RefreshOpenAIToken(refreshToken string) (*OpenAITokenResponse, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token refresh failed (HTTP %d): %s", resp.StatusCode, string(body))
+		return nil, openAITokenHTTPError("token refresh", resp.StatusCode, body)
 	}
 
 	var tokenResp OpenAITokenResponse

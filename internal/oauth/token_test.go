@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -208,6 +210,135 @@ func TestDBTokenSourceCaching(t *testing.T) {
 
 	// Restore for cleanup
 	provStore.providers[DefaultProviderName] = p
+}
+
+func TestDBTokenSourceTokenDoesNotReuseTokenAfterInvalidatedRefresh(t *testing.T) {
+	oldRefresh := refreshOpenAITokenFunc
+	t.Cleanup(func() { refreshOpenAITokenFunc = oldRefresh })
+	refreshOpenAITokenFunc = func(refreshToken string) (*OpenAITokenResponse, error) {
+		if refreshToken != "revoked-refresh" {
+			t.Fatalf("refresh token = %q, want revoked-refresh", refreshToken)
+		}
+		return nil, &OpenAITokenError{
+			Operation:  "token refresh",
+			StatusCode: http.StatusUnauthorized,
+			Code:       "refresh_token_invalidated",
+			Message:    "Your session has ended. Please log in again.",
+			Body:       `{"error":{"code":"refresh_token_invalidated"}}`,
+		}
+	}
+
+	provStore := newMockProviderStore()
+	secretStore := newMockSecretsStore()
+	ctx := context.Background()
+	expiresAt := time.Now().Add(-time.Minute).Unix()
+	if err := provStore.CreateProvider(ctx, &store.LLMProviderData{
+		BaseModel:    store.BaseModel{ID: uuid.New()},
+		Name:         DefaultProviderName,
+		ProviderType: store.ProviderChatGPTOAuth,
+		APIBase:      DefaultProviderAPIBase,
+		APIKey:       "stale-access-token",
+		Enabled:      true,
+		Settings:     json.RawMessage(fmt.Sprintf(`{"expires_at":%d}`, expiresAt)),
+	}); err != nil {
+		t.Fatalf("CreateProvider: %v", err)
+	}
+	if err := secretStore.Set(ctx, RefreshTokenSecretKey(DefaultProviderName), "revoked-refresh"); err != nil {
+		t.Fatalf("Set refresh token: %v", err)
+	}
+
+	ts := NewDBTokenSource(provStore, secretStore, DefaultProviderName)
+	token, err := ts.Token()
+	if err == nil {
+		t.Fatal("Token() error = nil, want reauth error")
+	}
+	if token != "" {
+		t.Fatalf("Token() token = %q, want empty", token)
+	}
+	if !isOpenAIReauthRequired(err) {
+		t.Fatalf("Token() error = %v, want reauth-required error", err)
+	}
+	if ts.cachedToken != "" {
+		t.Fatalf("cachedToken = %q, want cleared", ts.cachedToken)
+	}
+	if ts.cachedRouteEligibility.Class != providers.RouteEligibilityBlocked || ts.cachedRouteEligibility.Reason != "reauth" {
+		t.Fatalf("cachedRouteEligibility = %#v, want blocked/reauth", ts.cachedRouteEligibility)
+	}
+}
+
+func TestDBTokenSourceTokenReusesTokenAfterTransientRefreshFailure(t *testing.T) {
+	oldRefresh := refreshOpenAITokenFunc
+	t.Cleanup(func() { refreshOpenAITokenFunc = oldRefresh })
+	refreshOpenAITokenFunc = func(string) (*OpenAITokenResponse, error) {
+		return nil, fmt.Errorf("temporary refresh outage")
+	}
+
+	provStore := newMockProviderStore()
+	secretStore := newMockSecretsStore()
+	ctx := context.Background()
+	expiresAt := time.Now().Add(-time.Minute).Unix()
+	if err := provStore.CreateProvider(ctx, &store.LLMProviderData{
+		BaseModel:    store.BaseModel{ID: uuid.New()},
+		Name:         DefaultProviderName,
+		ProviderType: store.ProviderChatGPTOAuth,
+		APIBase:      DefaultProviderAPIBase,
+		APIKey:       "stale-access-token",
+		Enabled:      true,
+		Settings:     json.RawMessage(fmt.Sprintf(`{"expires_at":%d}`, expiresAt)),
+	}); err != nil {
+		t.Fatalf("CreateProvider: %v", err)
+	}
+	if err := secretStore.Set(ctx, RefreshTokenSecretKey(DefaultProviderName), "refresh-token"); err != nil {
+		t.Fatalf("Set refresh token: %v", err)
+	}
+
+	ts := NewDBTokenSource(provStore, secretStore, DefaultProviderName)
+	token, err := ts.Token()
+	if err != nil {
+		t.Fatalf("Token() error = %v, want nil", err)
+	}
+	if token != "stale-access-token" {
+		t.Fatalf("Token() token = %q, want stale-access-token", token)
+	}
+}
+
+func TestDBTokenSourceInvalidateTokenClearsStoredExpiry(t *testing.T) {
+	provStore := newMockProviderStore()
+	secretStore := newMockSecretsStore()
+	ctx := context.Background()
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	if err := provStore.CreateProvider(ctx, &store.LLMProviderData{
+		BaseModel:    store.BaseModel{ID: uuid.New()},
+		Name:         DefaultProviderName,
+		ProviderType: store.ProviderChatGPTOAuth,
+		APIBase:      DefaultProviderAPIBase,
+		APIKey:       "revoked-access-token",
+		Enabled:      true,
+		Settings:     json.RawMessage(fmt.Sprintf(`{"expires_at":%d,"account_id":"acct","plan_type":"team"}`, expiresAt)),
+	}); err != nil {
+		t.Fatalf("CreateProvider: %v", err)
+	}
+
+	ts := NewDBTokenSource(provStore, secretStore, DefaultProviderName)
+	ts.InvalidateToken(ctx, "reauth")
+
+	updated, err := provStore.GetProviderByName(ctx, DefaultProviderName)
+	if err != nil {
+		t.Fatalf("GetProviderByName: %v", err)
+	}
+	settings := parseOAuthSettings(updated.Settings)
+	if settings.ExpiresAt != 0 {
+		t.Fatalf("ExpiresAt = %d, want 0", settings.ExpiresAt)
+	}
+	if settings.AccountID != "acct" || settings.PlanType != "team" {
+		t.Fatalf("settings metadata = %#v, want account_id/plan_type preserved", settings)
+	}
+	if ts.cachedToken != "" {
+		t.Fatalf("cachedToken = %q, want cleared", ts.cachedToken)
+	}
+	if ts.cachedRouteEligibility.Class != providers.RouteEligibilityBlocked || ts.cachedRouteEligibility.Reason != "reauth" {
+		t.Fatalf("cachedRouteEligibility = %#v, want blocked/reauth", ts.cachedRouteEligibility)
+	}
 }
 
 func TestDBTokenSourceSaveOAuthResultPreservesCodexPoolSettings(t *testing.T) {

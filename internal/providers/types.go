@@ -31,6 +31,10 @@ type TokenSource interface {
 	Token() (string, error)
 }
 
+type TokenInvalidator interface {
+	InvalidateToken(ctx context.Context, reason string)
+}
+
 type RouteEligibilityClass string
 
 const (

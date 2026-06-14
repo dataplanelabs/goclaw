@@ -313,6 +313,13 @@ func (ts *DBTokenSource) Token() (string, error) {
 	// Refresh if expired or expiring soon
 	if time.Until(ts.expiresAt) < refreshMargin {
 		if err := ts.refresh(ctx); err != nil {
+			if isOpenAIReauthRequired(err) {
+				ts.cachedToken = ""
+				ts.expiresAt = time.Time{}
+				ts.cachedRouteEligibility = providers.RouteEligibility{Class: providers.RouteEligibilityBlocked, Reason: "reauth"}
+				ts.cachedRouteEligibilityAt = time.Now()
+				return "", fmt.Errorf("refresh oauth token: %w", err)
+			}
 			// If refresh fails but we still have a token, return it (might still work)
 			if ts.cachedToken != "" {
 				slog.Warn("oauth token refresh failed, using existing token", "error", err)
@@ -323,6 +330,34 @@ func (ts *DBTokenSource) Token() (string, error) {
 	}
 
 	return ts.cachedToken, nil
+}
+
+func (ts *DBTokenSource) InvalidateToken(ctx context.Context, reason string) {
+	ctx = ts.withTenantContext(ctx)
+	if strings.TrimSpace(reason) == "" {
+		reason = "reauth"
+	}
+
+	ts.mu.Lock()
+	ts.cachedToken = ""
+	ts.expiresAt = time.Time{}
+	ts.cachedRouteEligibility = providers.RouteEligibility{Class: providers.RouteEligibilityBlocked, Reason: reason}
+	ts.cachedRouteEligibilityAt = time.Now()
+	ts.mu.Unlock()
+
+	p, err := ts.loadOAuthProvider(ctx)
+	if err != nil {
+		slog.Warn("oauth token invalidation failed to load provider", "provider", ts.providerName, "error", err)
+		return
+	}
+
+	settings := parseOAuthSettings(p.Settings)
+	settings.ExpiresAt = 0
+	if err := ts.providerStore.UpdateProvider(ctx, p.ID, map[string]any{
+		"settings": marshalOAuthSettingsInto(p.Settings, settings),
+	}); err != nil {
+		slog.Warn("oauth token invalidation failed to persist settings", "provider", ts.providerName, "error", err)
+	}
 }
 
 // refresh gets the refresh token from config_secrets, calls RefreshOpenAIToken, and updates DB.

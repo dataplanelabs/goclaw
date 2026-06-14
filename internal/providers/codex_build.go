@@ -171,6 +171,11 @@ func (p *CodexProvider) doRequest(ctx context.Context, body any) (io.ReadCloser,
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
+		if isCodexOAuthTokenRevoked(resp.StatusCode, respBody) {
+			if invalidator, ok := p.tokenSource.(TokenInvalidator); ok {
+				invalidator.InvalidateToken(ctx, "reauth")
+			}
+		}
 		retryAfter := ParseRetryAfter(resp.Header.Get("Retry-After"))
 		return nil, &HTTPError{
 			Status:     resp.StatusCode,
@@ -180,6 +185,33 @@ func (p *CodexProvider) doRequest(ctx context.Context, body any) (io.ReadCloser,
 	}
 
 	return resp.Body, nil
+}
+
+func isCodexOAuthTokenRevoked(statusCode int, body []byte) bool {
+	if statusCode != http.StatusUnauthorized {
+		return false
+	}
+
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &payload) == nil {
+		switch payload.Error.Code {
+		case "token_revoked", "refresh_token_invalidated", "invalid_grant":
+			return true
+		}
+		if strings.Contains(strings.ToLower(payload.Error.Message), "invalidated oauth token") {
+			return true
+		}
+	}
+
+	bodyText := strings.ToLower(string(body))
+	return strings.Contains(bodyText, "token_revoked") ||
+		strings.Contains(bodyText, "refresh_token_invalidated") ||
+		strings.Contains(bodyText, "invalidated oauth token")
 }
 
 // toFcID ensures a tool call ID starts with "fc_" and contains only

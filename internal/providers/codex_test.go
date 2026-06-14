@@ -19,6 +19,21 @@ func (s *staticTokenSource) Token() (string, error) {
 	return s.token, nil
 }
 
+type invalidatingTokenSource struct {
+	token       string
+	reason      string
+	invalidated bool
+}
+
+func (s *invalidatingTokenSource) Token() (string, error) {
+	return s.token, nil
+}
+
+func (s *invalidatingTokenSource) InvalidateToken(_ context.Context, reason string) {
+	s.invalidated = true
+	s.reason = reason
+}
+
 // mustJSON marshals v to JSON string; panics on error.
 func mustJSON(v any) string {
 	b, err := json.Marshal(v)
@@ -804,6 +819,31 @@ func TestCodexProviderHTTPError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "rate limited") {
 		t.Errorf("error = %q, expected to contain 'rate limited'", err.Error())
+	}
+}
+
+func TestCodexProviderInvalidatesTokenSourceOnRevokedToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":{"message":"Encountered invalidated oauth token for user, failing request","code":"token_revoked"},"status":401}`))
+	}))
+	defer server.Close()
+
+	tokenSource := &invalidatingTokenSource{token: "revoked-token"}
+	p := NewCodexProvider("codex", tokenSource, server.URL, "gpt-5.5")
+	p.retryConfig.Attempts = 1
+
+	_, err := p.Chat(context.Background(), ChatRequest{
+		Messages: []Message{{Role: "user", Content: "Hi"}},
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !tokenSource.invalidated {
+		t.Fatal("token source was not invalidated")
+	}
+	if tokenSource.reason != "reauth" {
+		t.Fatalf("invalidation reason = %q, want reauth", tokenSource.reason)
 	}
 }
 
