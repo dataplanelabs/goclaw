@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-// CodexRemoteTool runs codex exec on a remote workstation (the sandbox-codex pod)
+// CodexRemoteTool runs codex exec on a remote workstation (the coding-agent pod)
 // by composing a workstation_exec call. Session continuity is file-based on the PVC:
 // the default path uses `resume --last`; pass fresh:true to start a new session.
 //
