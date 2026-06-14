@@ -1,7 +1,13 @@
 package codexreauth
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 func TestParseDeviceAuth_BothPresent(t *testing.T) {
@@ -87,5 +93,44 @@ func TestParseDeviceAuth_CodeFormats(t *testing.T) {
 				t.Errorf("got %q, want %q", info.UserCode, tc.wantCode)
 			}
 		})
+	}
+}
+
+// fakeWsStore returns its workstation only when the ctx tenant matches wantTenant.
+type fakeWsStore struct {
+	wantTenant uuid.UUID
+	ws         *store.Workstation
+}
+
+func (f *fakeWsStore) GetByKey(ctx context.Context, _ string) (*store.Workstation, error) {
+	if store.TenantIDFromContext(ctx) == f.wantTenant {
+		return f.ws, nil
+	}
+	return nil, sql.ErrNoRows
+}
+func (f *fakeWsStore) Create(context.Context, *store.Workstation) error { return nil }
+func (f *fakeWsStore) GetByID(context.Context, uuid.UUID) (*store.Workstation, error) {
+	return nil, sql.ErrNoRows
+}
+func (f *fakeWsStore) List(context.Context) ([]store.Workstation, error)       { return nil, nil }
+func (f *fakeWsStore) Update(context.Context, uuid.UUID, map[string]any) error { return nil }
+func (f *fakeWsStore) SetActive(context.Context, uuid.UUID, bool) error        { return nil }
+func (f *fakeWsStore) Delete(context.Context, uuid.UUID) error                 { return nil }
+
+func TestResolveWorkstation_MasterFallback(t *testing.T) {
+	ws := &store.Workstation{}
+	tenant := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+
+	// Workstation lives under master; a non-master caller still resolves it via fallback.
+	if got, err := resolveWorkstation(context.Background(), &fakeWsStore{wantTenant: store.MasterTenantID, ws: ws}, tenant, "coding-agent"); err != nil || got != ws {
+		t.Fatalf("master fallback: got (%v, %v), want (ws, nil)", got, err)
+	}
+	// Workstation under the caller's own tenant: no fallback needed.
+	if got, err := resolveWorkstation(context.Background(), &fakeWsStore{wantTenant: tenant, ws: ws}, tenant, "coding-agent"); err != nil || got != ws {
+		t.Fatalf("own tenant: got (%v, %v), want (ws, nil)", got, err)
+	}
+	// Found under neither caller nor master: ErrNoRows surfaces.
+	if _, err := resolveWorkstation(context.Background(), &fakeWsStore{wantTenant: uuid.New()}, tenant, "coding-agent"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("not found: want sql.ErrNoRows, got %v", err)
 	}
 }

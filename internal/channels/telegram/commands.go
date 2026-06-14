@@ -293,9 +293,7 @@ func (c *Channel) handleLoginCommand(
 	// Run in background goroutine so we don't block the Telegram handler.
 	go func() {
 		bgCtx := context.Background()
-		// coding-agent is a master-scoped global workstation; look it up under
-		// the master tenant regardless of which tenant's bot invoked /login.
-		info, err := codexreauth.Trigger(bgCtx, c.wsStore, c.wsBackendCache, store.MasterTenantID, "coding-agent")
+		info, err := codexreauth.Trigger(bgCtx, c.wsStore, c.wsBackendCache, c.TenantID(), "coding-agent")
 		if err != nil {
 			slog.Warn("telegram.login_codex.failed", "sender", senderID, "error", err)
 			reply := i18n.T(locale, i18n.MsgLoginCodexFailed, err.Error())
