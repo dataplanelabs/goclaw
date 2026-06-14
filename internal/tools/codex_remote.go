@@ -27,6 +27,11 @@ func (t *CodexRemoteTool) Description() string {
 		"Streams output as workstation.exec.chunk events."
 }
 
+const (
+	codexDefaultTimeoutSec = float64(14400) // 4h — codex tasks often run for hours
+	codexMaxTimeoutSec     = float64(21600) // 6h ceiling
+)
+
 func (t *CodexRemoteTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
@@ -46,6 +51,10 @@ func (t *CodexRemoteTool) Parameters() map[string]any {
 			"workstation_id": map[string]any{
 				"type":        "string",
 				"description": "Workstation UUID or key (optional if agent has a default binding)",
+			},
+			"timeout_sec": map[string]any{
+				"type":        "number",
+				"description": "Maximum seconds to wait for codex to finish. Default 14400 (4h), max 21600 (6h).",
 			},
 		},
 		"required": []string{"prompt"},
@@ -74,10 +83,17 @@ func (t *CodexRemoteTool) Execute(ctx context.Context, args map[string]any) *Res
 	}
 	cmdArgs = append(cmdArgs, prompt)
 
+	timeoutSec, _ := args["timeout_sec"].(float64)
+	if timeoutSec <= 0 {
+		timeoutSec = codexDefaultTimeoutSec
+	} else if timeoutSec > codexMaxTimeoutSec {
+		timeoutSec = codexMaxTimeoutSec
+	}
+
 	passthrough := map[string]any{
 		"command":     "codex",
 		"args":        cmdArgs,
-		"timeout_sec": float64(3600),
+		"timeout_sec": timeoutSec,
 	}
 	if repo != "" {
 		passthrough["cwd"] = repo
