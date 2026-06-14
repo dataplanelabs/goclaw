@@ -61,6 +61,18 @@
     "success": "连接成功",
     "notImplemented": "连接测试功能暂未开放"
   },
+  "allowlist": {
+    "title": "白名单",
+    "description": "Agent 可在此工作站运行的命令。默认拒绝：未列出的命令一律拒绝。受管工作站通过配置（goclaw-config / gcplane）管理。",
+    "empty": "白名单为空 — 所有命令均被拒绝。",
+    "disabledHint": "已禁用 — 当前被拒绝。",
+    "config": {
+      "backend": "后端",
+      "host": "主机",
+      "user": "用户",
+      "defaultCwd": "默认目录"
+    }
+  },
   "activity": {
     "title": "近期活动",
     "emptyTitle": "暂无活动",

@@ -11,6 +11,8 @@ export interface Workstation {
   active: boolean;
   createdAt: string;
   updatedAt: string;
+  defaultCwd?: string;
+  metadataSummary?: Record<string, unknown>;
 }
 
 export interface CreateWorkstationParams {
