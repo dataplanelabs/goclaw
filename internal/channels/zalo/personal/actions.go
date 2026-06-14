@@ -73,7 +73,7 @@ func (c *Channel) GetPoll(ctx context.Context, pollID int64) (tools.ZaloPollStat
 	if err != nil {
 		return tools.ZaloPollState{}, err
 	}
-	return c.pollDetailToState(ctx, d, tools.ToolChatIDFromCtx(ctx)), nil
+	return c.pollDetailToState(ctx, d, c.pollFallbackGroupID(ctx)), nil
 }
 
 func (c *Channel) VotePoll(ctx context.Context, pollID int64, optionIDs []int64) (tools.ZaloPollState, error) {
@@ -205,6 +205,14 @@ func (c *Channel) pollDetailToState(ctx context.Context, d *protocol.PollDetail,
 		TotalVotes:  d.TotalVotes,
 		Options:     optionsToState(d.Options, resolve),
 	}
+}
+
+func (c *Channel) pollFallbackGroupID(ctx context.Context) string {
+	chatID := tools.ToolChatIDFromCtx(ctx)
+	if chatID == "" || !c.IsGroupApproved(chatID) {
+		return ""
+	}
+	return chatID
 }
 
 type pollVoterNameResolver func(uid string) (displayName string, ok bool)

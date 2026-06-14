@@ -113,6 +113,20 @@ func TestPollDetailToStateUsesFallbackGroupAndContactsForVoterNames(t *testing.T
 	}
 }
 
+func TestPollFallbackGroupIDRequiresApprovedGroup(t *testing.T) {
+	t.Parallel()
+	ch := newReminderTestChannel(t)
+
+	ctx := tools.WithToolChatID(context.Background(), "group-1")
+	if got := ch.pollFallbackGroupID(ctx); got != "" {
+		t.Fatalf("unapproved fallback group_id=%q, want empty", got)
+	}
+	ch.MarkGroupApproved("group-1")
+	if got := ch.pollFallbackGroupID(ctx); got != "group-1" {
+		t.Fatalf("fallback group_id=%q, want group-1", got)
+	}
+}
+
 func newReminderTestChannel(t *testing.T) *Channel {
 	t.Helper()
 	mb := bus.New()
