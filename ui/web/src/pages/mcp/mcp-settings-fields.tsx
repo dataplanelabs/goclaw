@@ -1,5 +1,6 @@
 import type { UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -24,6 +25,8 @@ export function McpSettingsFields({ form }: McpSettingsFieldsProps) {
   const name = watch("name");
   const enabled = watch("enabled");
   const requireUserCreds = watch("requireUserCreds");
+  const oauthEnabled = watch("oauthEnabled");
+  const oauthGrantType = watch("oauthGrantType");
 
   return (
     <>
@@ -89,6 +92,53 @@ export function McpSettingsFields({ form }: McpSettingsFieldsProps) {
           <Label htmlFor="mcp-require-creds">{t("form.requireUserCredentials")}</Label>
         </div>
         <p className="text-xs text-muted-foreground pl-9">{t("form.requireUserCredentialsHint")}</p>
+      </div>
+
+      <div className="space-y-3 rounded-md border p-3">
+        <div className="flex items-center gap-2">
+          <Switch
+            id="mcp-oauth-enabled"
+            checked={oauthEnabled}
+            onCheckedChange={(v) => setValue("oauthEnabled", v)}
+          />
+          <Label htmlFor="mcp-oauth-enabled">{t("form.oauth.enabled")}</Label>
+        </div>
+
+        {oauthEnabled && (
+          <>
+            <div className="grid gap-1.5">
+              <Label>{t("form.oauth.grantType")}</Label>
+              <div className="flex flex-wrap gap-2">
+                {(["pkce", "authorization_code", "client_credentials"] as const).map((grant) => (
+                  <Button
+                    key={grant}
+                    type="button"
+                    variant={oauthGrantType === grant ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setValue("oauthGrantType", grant)}
+                  >
+                    {t(`form.oauth.grants.${grant}`)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="mcp-oauth-client-id">{t("form.oauth.clientId")}</Label>
+              <Input id="mcp-oauth-client-id" className="font-mono" {...form.register("oauthClientId")} />
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="mcp-oauth-client-secret">{t("form.oauth.clientSecret")}</Label>
+              <Input id="mcp-oauth-client-secret" type="password" className="font-mono" {...form.register("oauthClientSecret")} />
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="mcp-oauth-scope">{t("form.oauth.scope")}</Label>
+              <Input id="mcp-oauth-scope" className="font-mono" placeholder="read write" {...form.register("oauthScope")} />
+            </div>
+          </>
+        )}
       </div>
     </>
   );

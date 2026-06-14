@@ -63,7 +63,32 @@
       "connectionFailed": "连接失败"
     },
     "requireUserCredentials": "要求用户凭据",
-    "requireUserCredentialsHint": "每个用户必须配置自己的凭据。未设置凭据的用户将无法使用此服务器。"
+    "requireUserCredentialsHint": "每个用户必须配置自己的凭据。未设置凭据的用户将无法使用此服务器。",
+    "oauth": {
+      "enabled": "OAuth 2.1",
+      "title": "MCP OAuth",
+      "grantType": "授权类型",
+      "grants": {
+        "pkce": "PKCE",
+        "authorization_code": "授权码",
+        "client_credentials": "客户端凭据"
+      },
+      "clientId": "客户端 ID",
+      "clientSecret": "客户端 Secret",
+      "scope": "Scope",
+      "loading": "正在加载状态...",
+      "authorized": "已授权",
+      "expired": "已过期",
+      "notAuthorized": "未授权",
+      "authorize": "授权",
+      "reauthorize": "重新授权",
+      "authorizing": "授权中...",
+      "revoke": "撤销",
+      "authFailed": "OAuth 授权失败",
+      "revokeFailed": "撤销 token 失败",
+      "noUrl": "服务器未配置 URL",
+      "popupBlocked": "弹窗被阻止"
+    }
   },
   "grants": {
     "title": "Agent授权 - {{name}}",

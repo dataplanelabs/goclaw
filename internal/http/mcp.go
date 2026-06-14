@@ -1,10 +1,12 @@
 package http
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -24,15 +26,23 @@ type MCPToolLister interface {
 // MCPPoolEvictor evicts pooled connections for a tenant+server (called on credential rotation).
 type MCPPoolEvictor interface {
 	Evict(tenantID uuid.UUID, serverName string)
+	EvictServer(tenantID uuid.UUID, serverName string)
 }
 
 // MCPHandler handles MCP server management HTTP endpoints.
 type MCPHandler struct {
-	store       store.MCPServerStore
-	msgBus      *bus.MessageBus
-	mgr         MCPToolLister  // optional, nil when Manager not available
-	poolEvictor MCPPoolEvictor // optional, nil when pool not available
-	db          *sql.DB        // for export/import direct queries
+	store         store.MCPServerStore
+	msgBus        *bus.MessageBus
+	mgr           MCPToolLister  // optional, nil when Manager not available
+	poolEvictor   MCPPoolEvictor // optional, nil when pool not available
+	db            *sql.DB        // for export/import direct queries
+	oauthProvider MCPOAuthTokenProvider
+	oauthStore    store.MCPOAuthTokenStore
+}
+
+// MCPOAuthTokenProvider retrieves a valid OAuth Bearer token for an MCP server.
+type MCPOAuthTokenProvider interface {
+	GetValidToken(ctx context.Context, serverID, tenantID uuid.UUID, userID string) (string, error)
 }
 
 // NewMCPHandler creates a handler for MCP server management endpoints.
@@ -42,6 +52,12 @@ func NewMCPHandler(s store.MCPServerStore, msgBus *bus.MessageBus, mgr MCPToolLi
 
 // SetPoolEvictor sets the pool evictor for credential rotation handling.
 func (h *MCPHandler) SetPoolEvictor(e MCPPoolEvictor) { h.poolEvictor = e }
+
+// SetOAuthProvider wires a token provider for OAuth-protected MCP discovery.
+func (h *MCPHandler) SetOAuthProvider(p MCPOAuthTokenProvider) { h.oauthProvider = p }
+
+// SetOAuthStore wires token storage so stale tokens can be purged on config changes.
+func (h *MCPHandler) SetOAuthStore(s store.MCPOAuthTokenStore) { h.oauthStore = s }
 
 func (h *MCPHandler) emitCacheInvalidate() {
 	if h.msgBus == nil {
@@ -105,6 +121,39 @@ func (h *MCPHandler) adminAuth(next http.HandlerFunc) http.HandlerFunc {
 type mcpServerWithCounts struct {
 	store.MCPServerData
 	AgentCount int `json:"agent_count"`
+}
+
+type oauthFingerprint struct {
+	AuthType      string
+	ClientID      string
+	TokenEndpoint string
+	GrantType     string
+	Scope         string
+}
+
+func extractOAuthFingerprint(settings json.RawMessage) oauthFingerprint {
+	if len(settings) == 0 {
+		return oauthFingerprint{}
+	}
+	var s struct {
+		OAuth struct {
+			AuthType      string `json:"auth_type"`
+			ClientID      string `json:"client_id"`
+			TokenEndpoint string `json:"token_endpoint"`
+			GrantType     string `json:"grant_type"`
+			Scope         string `json:"scope"`
+		} `json:"oauth"`
+	}
+	if err := json.Unmarshal(settings, &s); err != nil {
+		return oauthFingerprint{}
+	}
+	return oauthFingerprint{
+		AuthType:      s.OAuth.AuthType,
+		ClientID:      s.OAuth.ClientID,
+		TokenEndpoint: s.OAuth.TokenEndpoint,
+		GrantType:     s.OAuth.GrantType,
+		Scope:         s.OAuth.Scope,
+	}
 }
 
 func (h *MCPHandler) handleListServers(w http.ResponseWriter, r *http.Request) {
@@ -273,14 +322,44 @@ func (h *MCPHandler) handleUpdateServer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Evict pool connections when credentials change (force reconnect with new creds)
-	if h.poolEvictor != nil && serverName != "" {
+	tid := store.TenantIDFromContext(r.Context())
+	oauthInvalidated := false
+	if existingSrv != nil {
+		urlChanged := false
+		if newURL, ok := updates["url"].(string); ok && strings.TrimSpace(newURL) != existingSrv.URL {
+			urlChanged = true
+		}
+		oauthChanged := false
+		if rawSettings, ok := updates["settings"]; ok {
+			newSettings, _ := json.Marshal(rawSettings)
+			if extractOAuthFingerprint(newSettings) != extractOAuthFingerprint(existingSrv.Settings) {
+				oauthChanged = true
+			}
+		}
+		if urlChanged || oauthChanged {
+			if h.oauthStore != nil {
+				if err := h.oauthStore.DeleteServerOAuthTokens(r.Context(), id, tid); err != nil {
+					slog.Warn("mcp.oauth_purge_on_config_change_failed", "server_id", id, "error", err)
+				}
+			}
+			if inv, ok := h.oauthProvider.(interface{ InvalidateServer(uuid.UUID) }); ok {
+				inv.InvalidateServer(id)
+			}
+			if h.poolEvictor != nil && serverName != "" {
+				h.poolEvictor.EvictServer(tid, serverName)
+			}
+			oauthInvalidated = true
+			slog.Info("mcp.oauth_tokens_purged_on_config_change", "server_id", id, "url_changed", urlChanged, "oauth_changed", oauthChanged)
+		}
+	}
+
+	// Evict pool connections when credentials change (force reconnect with new creds).
+	if !oauthInvalidated && h.poolEvictor != nil && serverName != "" {
 		_, hasKey := updates["api_key"]
 		_, hasHeaders := updates["headers"]
 		_, hasEnv := updates["env"]
 		if hasKey || hasHeaders || hasEnv {
-			tid := store.TenantIDFromContext(r.Context())
-			h.poolEvictor.Evict(tid, serverName)
+			h.poolEvictor.EvictServer(tid, serverName)
 		}
 	}
 

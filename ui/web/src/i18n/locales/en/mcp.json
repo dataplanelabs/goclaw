@@ -63,7 +63,32 @@
       "connectionFailed": "Connection failed"
     },
     "requireUserCredentials": "Require User Credentials",
-    "requireUserCredentialsHint": "Each user must configure their own credentials. Server is disabled for users without personal credentials."
+    "requireUserCredentialsHint": "Each user must configure their own credentials. Server is disabled for users without personal credentials.",
+    "oauth": {
+      "enabled": "OAuth 2.1",
+      "title": "MCP OAuth",
+      "grantType": "Grant type",
+      "grants": {
+        "pkce": "PKCE",
+        "authorization_code": "Auth code",
+        "client_credentials": "Client credentials"
+      },
+      "clientId": "Client ID",
+      "clientSecret": "Client Secret",
+      "scope": "Scope",
+      "loading": "Loading status...",
+      "authorized": "Authorized",
+      "expired": "Expired",
+      "notAuthorized": "Not authorized",
+      "authorize": "Authorize",
+      "reauthorize": "Reauthorize",
+      "authorizing": "Authorizing...",
+      "revoke": "Revoke",
+      "authFailed": "OAuth authorization failed",
+      "revokeFailed": "Failed to revoke token",
+      "noUrl": "Server has no URL configured",
+      "popupBlocked": "Popup was blocked"
+    }
   },
   "grants": {
     "title": "Agent Grants - {{name}}",

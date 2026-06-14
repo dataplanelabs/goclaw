@@ -51,9 +51,9 @@ type poolEntry struct {
 // Per-user connections are keyed by tenantID/serverName/user:userID.
 type Pool struct {
 	mu          sync.Mutex
-	servers     map[string]*poolEntry            // shared connections: tenantID/serverName
-	userServers map[string]*poolEntry            // user connections: tenantID/serverName/user:userID
-	userSlots   map[string]chan struct{}          // per-server semaphores: tenantID/serverName → capacity MaxUserConns
+	servers     map[string]*poolEntry    // shared connections: tenantID/serverName
+	userServers map[string]*poolEntry    // user connections: tenantID/serverName/user:userID
+	userSlots   map[string]chan struct{} // per-server semaphores: tenantID/serverName → capacity MaxUserConns
 	cfg         PoolConfig
 	slot        chan struct{} // semaphore for MaxSize
 	stopCh      chan struct{}
@@ -432,6 +432,70 @@ func (p *Pool) Evict(tenantID uuid.UUID, serverName string) {
 	default:
 	}
 	slog.Info("mcp.pool.evicted_on_rotation", "key", key)
+}
+
+// EvictAllUsers closes and removes all per-user pool connections.
+func (p *Pool) EvictAllUsers() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for key, entry := range p.userServers {
+		if entry.state.cancel != nil {
+			entry.state.cancel()
+		}
+		if client := entry.state.clientPtr.Load(); client != nil {
+			_ = client.Close()
+		}
+		delete(p.userServers, key)
+	}
+	p.userSlots = make(map[string]chan struct{})
+	slog.Info("mcp.pool.all_user_connections_evicted")
+}
+
+// EvictServer evicts both the shared and all per-user pool entries for a server.
+func (p *Pool) EvictServer(tenantID uuid.UUID, serverName string) {
+	sharedKey := poolKey(tenantID, serverName)
+	userPrefix := tenantID.String() + "/" + serverName + "/user:"
+	slotKey := userSlotKey(tenantID, serverName)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if entry, ok := p.servers[sharedKey]; ok {
+		if entry.state.cancel != nil {
+			entry.state.cancel()
+		}
+		if client := entry.state.clientPtr.Load(); client != nil {
+			_ = client.Close()
+		}
+		delete(p.servers, sharedKey)
+		select {
+		case <-p.slot:
+		default:
+		}
+	}
+
+	sem := p.userSlots[slotKey]
+	for key, entry := range p.userServers {
+		if !strings.HasPrefix(key, userPrefix) {
+			continue
+		}
+		if entry.state.cancel != nil {
+			entry.state.cancel()
+		}
+		if client := entry.state.clientPtr.Load(); client != nil {
+			_ = client.Close()
+		}
+		delete(p.userServers, key)
+		if sem != nil {
+			select {
+			case <-sem:
+			default:
+			}
+		}
+	}
+	delete(p.userSlots, slotKey)
+	slog.Info("mcp.pool.server_evicted", "tenant", tenantID, "server", serverName)
 }
 
 // evictLoop runs periodically to close idle connections over MaxIdle count.

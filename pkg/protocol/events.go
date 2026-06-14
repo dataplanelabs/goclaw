@@ -123,6 +123,10 @@ const (
 	EventWorkstationExecDone = "workstation.exec.done"
 )
 
+// MCP OAuth flow completion after callback token exchange.
+// Payload: MCPOAuthCompletePayload.
+const EventMCPOAuthComplete = "mcp.oauth_complete"
+
 // Agent event subtypes (in payload.type)
 const (
 	AgentEventRunStarted   = "run.started"

@@ -38,9 +38,11 @@ import (
 	httpapi "github.com/nextlevelbuilder/goclaw/internal/http"
 	kg "github.com/nextlevelbuilder/goclaw/internal/knowledgegraph"
 	mcpbridge "github.com/nextlevelbuilder/goclaw/internal/mcp"
+	mcpoauth "github.com/nextlevelbuilder/goclaw/internal/mcp/oauth"
 	"github.com/nextlevelbuilder/goclaw/internal/media"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/scheduler"
+	"github.com/nextlevelbuilder/goclaw/internal/security"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
@@ -351,7 +353,12 @@ func runGateway() {
 	var mediaStore *media.Store
 	var postTurn tools.PostTurnProcessor
 	var standbyRegistry *schedule.ScheduleRegistry
-	contextFileInterceptor, mcpPool, mediaStore, postTurn, standbyRegistry = wireExtras(pgStores, agentRouter, providerRegistry, modelReg, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, redisClient, domainBus)
+	mcpOAuthHTTPClient := security.NewSafeClient(15 * time.Second)
+	var mcpOAuthRefresher *mcpoauth.Refresher
+	if pgStores.MCPOAuthTokens != nil {
+		mcpOAuthRefresher = mcpoauth.NewRefresher(pgStores.MCPOAuthTokens, mcpOAuthHTTPClient)
+	}
+	contextFileInterceptor, mcpPool, mediaStore, postTurn, standbyRegistry = wireExtras(pgStores, agentRouter, providerRegistry, modelReg, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, redisClient, domainBus, mcpOAuthRefresher)
 
 	// Wire push-reload into the enter_standby tool — registry is built in wireExtras,
 	// tool was registered in setupToolRegistry; close the loop here.
@@ -413,6 +420,24 @@ func runGateway() {
 		wakeH.SetPostTurnProcessor(postTurn)
 	}
 
+	var mcpOAuthH *httpapi.MCPOAuthHandler
+	if pgStores.MCP != nil && pgStores.MCPOAuthTokens != nil {
+		mcpOAuthH = httpapi.NewMCPOAuthHandler(httpapi.MCPOAuthHandlerDeps{
+			MCPStore:   pgStores.MCP,
+			OAuthStore: pgStores.MCPOAuthTokens,
+			Discoverer: mcpoauth.NewDiscoverer(mcpOAuthHTTPClient),
+			FlowMgr:    mcpoauth.NewFlowManager(mcpOAuthHTTPClient),
+			Refresher:  mcpOAuthRefresher,
+			EventBus:   msgBus,
+			PublicURL:  cfg.Gateway.UIBaseURL,
+			Port:       cfg.Gateway.Port,
+		})
+		if mcpH != nil && mcpOAuthRefresher != nil {
+			mcpH.SetOAuthProvider(mcpOAuthRefresher)
+			mcpH.SetOAuthStore(pgStores.MCPOAuthTokens)
+		}
+	}
+
 	// Wire all server.Set*Handler() calls via extracted helper.
 	deps.wireHTTPHandlersOnServer(
 		httpHandlers{
@@ -428,6 +453,7 @@ func runGateway() {
 			secureCLI:        secureCLIH,
 			secureCLIGrant:   secureCLIGrantH,
 			mcpUserCreds:     mcpUserCredsH,
+			mcpOAuth:         mcpOAuthH,
 		},
 		wakeH,
 		mcpPool,

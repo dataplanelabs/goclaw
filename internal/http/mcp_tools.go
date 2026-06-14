@@ -16,6 +16,7 @@ import (
 func (h *MCPHandler) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 	locale := store.LocaleFromContext(r.Context())
 	var req struct {
+		ServerID  *uuid.UUID        `json:"server_id,omitempty"`
 		Transport string            `json:"transport"`
 		Command   string            `json:"command"`
 		Args      []string          `json:"args"`
@@ -30,6 +31,21 @@ func (h *MCPHandler) handleTestConnection(w http.ResponseWriter, r *http.Request
 	if req.Transport == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgRequired, "transport")})
 		return
+	}
+
+	if req.ServerID != nil && h.store != nil {
+		if srv, err := h.store.GetServer(r.Context(), *req.ServerID); err == nil && srv != nil && mcpbridge.IsOAuthActive(srv.Settings) {
+			delete(req.Headers, "Authorization")
+			if h.oauthProvider != nil {
+				tenantID := store.TenantIDFromContext(r.Context())
+				if token, err := h.oauthProvider.GetValidToken(r.Context(), *req.ServerID, tenantID, ""); err == nil && token != "" {
+					if req.Headers == nil {
+						req.Headers = make(map[string]string)
+					}
+					req.Headers["Authorization"] = "Bearer " + token
+				}
+			}
+		}
 	}
 
 	tools, err := mcpbridge.DiscoverTools(r.Context(), req.Transport, req.Command, req.Args, req.Env, req.URL, req.Headers)
@@ -81,11 +97,30 @@ func (h *MCPHandler) handleListServerTools(w http.ResponseWriter, r *http.Reques
 		_ = json.Unmarshal(srv.Env, &env)
 		_ = json.Unmarshal(srv.Headers, &headers)
 
-		discovered, err := mcpbridge.DiscoverTools(r.Context(), srv.Transport, srv.Command, args, env, srv.URL, headers)
-		if err != nil {
-			slog.Warn("mcp.discover_tools", "server", srv.Name, "error", err)
-		} else {
-			tools = discovered
+		discover := true
+		if mcpbridge.IsOAuthActive(srv.Settings) {
+			token := ""
+			if h.oauthProvider != nil {
+				tenantID := store.TenantIDFromContext(r.Context())
+				token, _ = h.oauthProvider.GetValidToken(r.Context(), srv.ID, tenantID, "")
+			}
+			if token == "" {
+				discover = false
+			} else {
+				if headers == nil {
+					headers = make(map[string]string)
+				}
+				headers["Authorization"] = "Bearer " + token
+			}
+		}
+
+		if discover {
+			discovered, err := mcpbridge.DiscoverTools(r.Context(), srv.Transport, srv.Command, args, env, srv.URL, headers)
+			if err != nil {
+				slog.Warn("mcp.discover_tools", "server", srv.Name, "error", err)
+			} else {
+				tools = discovered
+			}
 		}
 	}
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
-import { Plug, Plus, RefreshCw, RotateCcw, Pencil, Trash2, Users, Wrench, KeyRound } from "lucide-react";
+import { Plug, Plus, RefreshCw, RotateCcw, Pencil, Trash2, Users, Wrench, KeyRound, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/page-header";
@@ -22,6 +22,9 @@ const MCPGrantsDialog = lazy(() =>
 const MCPUserCredentialsDialog = lazy(() =>
   import("./mcp-user-credentials-dialog").then((m) => ({ default: m.MCPUserCredentialsDialog }))
 );
+const MCPOAuthDialog = lazy(() =>
+  import("./mcp-oauth-dialog").then((m) => ({ default: m.MCPOAuthDialog }))
+);
 
 const transportBadge: Record<string, string> = {
   stdio: "default",
@@ -32,7 +35,7 @@ const transportBadge: Record<string, string> = {
 export function MCPPage() {
   const { t } = useTranslation("mcp");
   const { t: tc } = useTranslation("common");
-  const { servers, loading, fetching, refresh, createServer, updateServer, deleteServer, grantAgent, revokeAgent, listAgentGrants, testConnection, reconnectServer, listServerTools, getUserCredentials, setUserCredentials, deleteUserCredentials } = useMCP();
+  const { servers, loading, fetching, refresh, createServer, updateServer, deleteServer, grantAgent, revokeAgent, listAgentGrants, testConnection, reconnectServer, listServerTools, getUserCredentials, setUserCredentials, deleteUserCredentials, startOAuth, getOAuthStatus, revokeOAuth } = useMCP();
   const spinning = useMinLoading(fetching);
   const showSkeleton = useDeferredLoading(loading && servers.length === 0);
   const [search, setSearch] = useState("");
@@ -43,6 +46,7 @@ export function MCPPage() {
   const [deleteTarget, setDeleteTarget] = useState<MCPServerData | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [credentialsServer, setCredentialsServer] = useState<MCPServerData | null>(null);
+  const [oauthServer, setOAuthServer] = useState<MCPServerData | null>(null);
   const [reconnectingId, setReconnectingId] = useState<string | null>(null);
 
   const filtered = servers.filter(
@@ -198,6 +202,16 @@ export function MCPPage() {
                         >
                           <KeyRound className="h-3.5 w-3.5" />
                         </Button>
+                        {srv.settings?.oauth?.auth_type === "oauth" && !srv.settings?.require_user_credentials && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setOAuthServer(srv)}
+                            title={t("form.oauth.title")}
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -283,6 +297,19 @@ export function MCPPage() {
             onGetCredentials={getUserCredentials}
             onSetCredentials={setUserCredentials}
             onDeleteCredentials={deleteUserCredentials}
+          />
+        </Suspense>
+      )}
+
+      {oauthServer && (
+        <Suspense fallback={null}>
+          <MCPOAuthDialog
+            open={!!oauthServer}
+            onOpenChange={(open) => !open && setOAuthServer(null)}
+            server={oauthServer}
+            onStartOAuth={startOAuth}
+            onGetStatus={getOAuthStatus}
+            onRevoke={revokeOAuth}
           />
         </Suspense>
       )}
