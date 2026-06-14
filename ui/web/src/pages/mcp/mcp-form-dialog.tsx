@@ -40,6 +40,7 @@ interface MCPFormDialogProps {
     url?: string;
     headers?: Record<string, string>;
     env?: Record<string, string>;
+    server_id?: string;
   }) => Promise<{ success: boolean; tool_count?: number; error?: string }>;
 }
 
@@ -66,6 +67,11 @@ export function MCPFormDialog({ open, onOpenChange, server, onSubmit, onTest }: 
       timeout: 60,
       enabled: true,
       requireUserCreds: false,
+      oauthEnabled: false,
+      oauthGrantType: "pkce",
+      oauthClientId: "",
+      oauthClientSecret: "",
+      oauthScope: "",
     },
   });
 
@@ -93,6 +99,11 @@ export function MCPFormDialog({ open, onOpenChange, server, onSubmit, onTest }: 
         timeout: server?.timeout_sec ?? 60,
         enabled: server?.enabled ?? true,
         requireUserCreds: server?.settings?.require_user_credentials ?? false,
+        oauthEnabled: server?.settings?.oauth?.auth_type === "oauth",
+        oauthGrantType: server?.settings?.oauth?.grant_type ?? "pkce",
+        oauthClientId: server?.settings?.oauth?.client_id ?? "",
+        oauthClientSecret: server?.settings?.oauth?.client_secret ?? "",
+        oauthScope: server?.settings?.oauth?.scope ?? "",
       });
       setError("");
       setTestResult(null);
@@ -122,6 +133,7 @@ export function MCPFormDialog({ open, onOpenChange, server, onSubmit, onTest }: 
       url: !isStdio ? url.trim() : undefined,
       headers: !isStdio && Object.keys(headers).length > 0 ? headers : undefined,
       env: Object.keys(env).length > 0 ? env : undefined,
+      server_id: server?.id,
     };
   };
 
@@ -155,7 +167,20 @@ export function MCPFormDialog({ open, onOpenChange, server, onSubmit, onTest }: 
         ...buildConnectionData(),
         tool_prefix: data.toolPrefix.trim() || undefined,
         timeout_sec: data.timeout,
-        settings: { require_user_credentials: data.requireUserCreds },
+        settings: {
+          require_user_credentials: data.requireUserCreds,
+          ...(data.oauthEnabled
+            ? {
+                oauth: {
+                  auth_type: "oauth",
+                  grant_type: data.oauthGrantType,
+                  client_id: data.oauthClientId.trim() || undefined,
+                  client_secret: data.oauthClientSecret.trim() || undefined,
+                  scope: data.oauthScope.trim() || undefined,
+                },
+              }
+            : {}),
+        },
         enabled: data.enabled,
       });
       onOpenChange(false);

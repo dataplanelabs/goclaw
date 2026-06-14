@@ -10,7 +10,7 @@ export interface MCPServerData {
   env: Record<string, string> | null;
   tool_prefix: string;
   timeout_sec: number;
-  settings?: { require_user_credentials?: boolean };
+  settings?: MCPServerSettings;
   enabled: boolean;
   created_by: string;
   agent_count?: number;
@@ -29,8 +29,35 @@ export interface MCPServerInput {
   env?: Record<string, string>;
   tool_prefix?: string;
   timeout_sec?: number;
-  settings?: { require_user_credentials?: boolean };
+  settings?: MCPServerSettings;
   enabled?: boolean;
+}
+
+export interface MCPServerSettings {
+  require_user_credentials?: boolean;
+  oauth?: {
+    auth_type?: "oauth" | "";
+    grant_type?: "pkce" | "authorization_code" | "client_credentials";
+    client_id?: string;
+    client_secret?: string;
+    scope?: string;
+  };
+}
+
+export interface MCPOAuthStatus {
+  has_token: boolean;
+  client_id?: string;
+  issuer?: string;
+  expires_at?: string;
+  expired?: boolean;
+}
+
+export interface MCPOAuthStartResponse {
+  auth_url?: string;
+  state?: string;
+  client_id?: string;
+  issuer?: string;
+  completed?: boolean;
 }
 
 export interface MCPToolInfo {

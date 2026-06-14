@@ -140,11 +140,12 @@ type Loop struct {
 	userSetups        sync.Map            // userID → *userSetup (workspace + seeding state, per Loop instance)
 
 	// Per-user MCP tools: servers requiring user credentials get connected per-request.
-	mcpStore        store.MCPServerStore   // for credential lookup
-	mcpPool         *mcpbridge.Pool        // user-keyed connection pool
-	mcpUserCredSrvs []store.MCPAccessInfo  // servers needing per-user creds
-	mcpUserTools    sync.Map               // userID → []tools.Tool (cached per-user tools)
-	mcpGrantChecker mcpbridge.GrantChecker // runtime grant verification (nil = skip)
+	mcpStore              store.MCPServerStore   // for credential lookup
+	mcpPool               *mcpbridge.Pool        // user-keyed connection pool
+	mcpUserCredSrvs       []store.MCPAccessInfo  // servers needing per-user creds
+	mcpUserTools          sync.Map               // userID → []tools.Tool (cached per-user tools)
+	mcpGrantChecker       mcpbridge.GrantChecker // runtime grant verification (nil = skip)
+	mcpOAuthTokenProvider mcpbridge.OAuthTokenProvider
 
 	// Compaction config (memory flush settings)
 	compactionCfg *config.CompactionConfig
@@ -461,10 +462,11 @@ type LoopConfig struct {
 	MemoryStore store.MemoryStore
 
 	// Per-user MCP tools (servers requiring per-user credentials)
-	MCPStore        store.MCPServerStore   // for credential lookup
-	MCPPool         *mcpbridge.Pool        // user-keyed connection pool
-	MCPUserCredSrvs []store.MCPAccessInfo  // servers needing per-user creds
-	MCPGrantChecker mcpbridge.GrantChecker // runtime grant verification (nil = skip)
+	MCPStore              store.MCPServerStore   // for credential lookup
+	MCPPool               *mcpbridge.Pool        // user-keyed connection pool
+	MCPUserCredSrvs       []store.MCPAccessInfo  // servers needing per-user creds
+	MCPGrantChecker       mcpbridge.GrantChecker // runtime grant verification (nil = skip)
+	MCPOAuthTokenProvider mcpbridge.OAuthTokenProvider
 
 	// V3 orchestration mode (resolved by resolver, controls tool visibility)
 	OrchMode        OrchestrationMode
@@ -612,6 +614,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		mcpPool:                cfg.MCPPool,
 		mcpUserCredSrvs:        cfg.MCPUserCredSrvs,
 		mcpGrantChecker:        cfg.MCPGrantChecker,
+		mcpOAuthTokenProvider:  cfg.MCPOAuthTokenProvider,
 		orchMode:               cfg.OrchMode,
 		delegateTargets:        cfg.DelegateTargets,
 		evolutionMetricsStore:  cfg.EvolutionMetricsStore,

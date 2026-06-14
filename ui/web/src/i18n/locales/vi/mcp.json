@@ -63,7 +63,32 @@
       "connectionFailed": "Kết nối thất bại"
     },
     "requireUserCredentials": "Yêu cầu Credentials riêng",
-    "requireUserCredentialsHint": "Mỗi user phải cấu hình credentials riêng. Server bị vô hiệu cho user chưa có credentials."
+    "requireUserCredentialsHint": "Mỗi user phải cấu hình credentials riêng. Server bị vô hiệu cho user chưa có credentials.",
+    "oauth": {
+      "enabled": "OAuth 2.1",
+      "title": "MCP OAuth",
+      "grantType": "Loại grant",
+      "grants": {
+        "pkce": "PKCE",
+        "authorization_code": "Auth code",
+        "client_credentials": "Client credentials"
+      },
+      "clientId": "Client ID",
+      "clientSecret": "Client Secret",
+      "scope": "Scope",
+      "loading": "Đang tải trạng thái...",
+      "authorized": "Đã ủy quyền",
+      "expired": "Đã hết hạn",
+      "notAuthorized": "Chưa ủy quyền",
+      "authorize": "Ủy quyền",
+      "reauthorize": "Ủy quyền lại",
+      "authorizing": "Đang ủy quyền...",
+      "revoke": "Thu hồi",
+      "authFailed": "Ủy quyền OAuth thất bại",
+      "revokeFailed": "Thu hồi token thất bại",
+      "noUrl": "Server chưa cấu hình URL",
+      "popupBlocked": "Popup bị chặn"
+    }
   },
   "grants": {
     "title": "Quyền agent - {{name}}",

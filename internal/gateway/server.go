@@ -413,6 +413,9 @@ func (s *Server) SetMCPHandler(h *httpapi.MCPHandler) { s.handlers = append(s.ha
 func (s *Server) SetMCPUserCredentialsHandler(h *httpapi.MCPUserCredentialsHandler) {
 	s.handlers = append(s.handlers, h)
 }
+func (s *Server) SetMCPOAuthHandler(h *httpapi.MCPOAuthHandler) {
+	s.handlers = append(s.handlers, h)
+}
 
 // SetChannelInstancesHandler sets the channel instance CRUD handler.
 func (s *Server) SetChannelInstancesHandler(h *httpapi.ChannelInstancesHandler) {

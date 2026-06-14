@@ -78,9 +78,41 @@ type MCPAccessInfo struct {
 
 // MCPUserCredentials holds per-user credential overrides for an MCP server.
 type MCPUserCredentials struct {
-	APIKey  string            `json:"api_key,omitempty" db:"-"`  // decrypted
-	Headers map[string]string `json:"headers,omitempty" db:"-"`  // decrypted
-	Env     map[string]string `json:"env,omitempty" db:"-"`      // decrypted
+	APIKey  string            `json:"api_key,omitempty" db:"-"` // decrypted
+	Headers map[string]string `json:"headers,omitempty" db:"-"` // decrypted
+	Env     map[string]string `json:"env,omitempty" db:"-"`     // decrypted
+}
+
+// MCPOAuthToken holds OAuth tokens for an MCP server, either global (UserID="")
+// or per-user (UserID set). Sensitive fields are decrypted by the store layer.
+type MCPOAuthToken struct {
+	ID              uuid.UUID  `db:"id"`
+	ServerID        uuid.UUID  `db:"server_id"`
+	TenantID        uuid.UUID  `db:"tenant_id"`
+	UserID          string     `db:"user_id"` // empty = global
+	AccessToken     string     `db:"access_token"`
+	RefreshToken    string     `db:"refresh_token"`
+	TokenType       string     `db:"token_type"`
+	Scopes          string     `db:"scopes"`
+	ExpiresAt       *time.Time `db:"expires_at"`
+	IssuedAt        *time.Time `db:"issued_at"`
+	DCRClientID     string     `db:"dcr_client_id"`
+	DCRClientSecret string     `db:"dcr_client_secret"`
+	DCRIssuer       string     `db:"dcr_issuer"`
+	TokenEndpoint   string     `db:"token_endpoint"`
+	ResourceURI     string     `db:"resource_uri"`
+	CreatedAt       time.Time  `db:"created_at"`
+	UpdatedAt       time.Time  `db:"updated_at"`
+}
+
+// MCPOAuthTokenStore manages OAuth tokens for MCP servers.
+type MCPOAuthTokenStore interface {
+	GetOAuthToken(ctx context.Context, serverID, tenantID uuid.UUID) (*MCPOAuthToken, error)
+	GetUserOAuthToken(ctx context.Context, serverID, tenantID uuid.UUID, userID string) (*MCPOAuthToken, error)
+	UpsertOAuthToken(ctx context.Context, token *MCPOAuthToken) error
+	DeleteOAuthToken(ctx context.Context, serverID, tenantID uuid.UUID) error
+	DeleteUserOAuthToken(ctx context.Context, serverID, tenantID uuid.UUID, userID string) error
+	DeleteServerOAuthTokens(ctx context.Context, serverID, tenantID uuid.UUID) error
 }
 
 // MCPServerStore manages MCP server configs and access grants.

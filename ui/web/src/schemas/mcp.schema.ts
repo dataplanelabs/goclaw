@@ -13,6 +13,11 @@ export const mcpFormSchema = z.object({
   timeout: z.number().min(1),
   enabled: z.boolean(),
   requireUserCreds: z.boolean(),
+  oauthEnabled: z.boolean(),
+  oauthGrantType: z.enum(["pkce", "authorization_code", "client_credentials"]),
+  oauthClientId: z.string(),
+  oauthClientSecret: z.string(),
+  oauthScope: z.string(),
 });
 
 export type MCPFormData = z.infer<typeof mcpFormSchema>;

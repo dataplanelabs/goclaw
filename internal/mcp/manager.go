@@ -62,7 +62,7 @@ type connParams struct {
 type serverState struct {
 	name       string
 	transport  string
-	client     *mcpclient.Client               // direct ref for health checks (single-goroutine access)
+	client     *mcpclient.Client                // direct ref for health checks (single-goroutine access)
 	clientPtr  atomic.Pointer[mcpclient.Client] // shared atomic ref for BridgeTools (multi-goroutine safe)
 	connected  atomic.Bool
 	toolNames  []string // registered tool names in the registry
@@ -70,10 +70,10 @@ type serverState struct {
 	cancel     context.CancelFunc
 	conn       connParams // connection params for reconnect
 
-	mu              sync.Mutex
-	reconnAttempts  int
-	healthFailures  int // consecutive ping failures (resets on success)
-	lastErr         string
+	mu             sync.Mutex
+	reconnAttempts int
+	healthFailures int // consecutive ping failures (resets on success)
+	lastErr        string
 }
 
 // Manager orchestrates MCP server connections and tool registration.
@@ -102,19 +102,26 @@ type Manager struct {
 
 	// Shared connection pool (nil = config-only mode)
 	pool          *Pool
-	poolServers   map[string]struct{}  // server names acquired from pool (for cleanup)
-	poolToolNames map[string][]string  // per-agent tool names for pool-backed servers
+	poolServers   map[string]struct{} // server names acquired from pool (for cleanup)
+	poolToolNames map[string][]string // per-agent tool names for pool-backed servers
 	poolKeys      map[string]string   // server name → pool compound key (tenantID/name) for Release
 
 	// Search mode: deferred tools not registered in registry
 	deferredTools  map[string]*BridgeTool // registeredName → BridgeTool
-	activatedTools map[string]struct{}     // tracks activated tool names for group:mcp
+	activatedTools map[string]struct{}    // tracks activated tool names for group:mcp
 	searchMode     bool
 
 	// User-credential servers: servers requiring per-user credentials, stored during
 	// LoadForAgent("") for later per-request tool resolution. These servers are NOT
 	// connected at startup — connections are created per-user via pool.AcquireUser().
 	userCredServers []store.MCPAccessInfo
+
+	oauthTokenProvider OAuthTokenProvider
+}
+
+// OAuthTokenProvider retrieves a valid OAuth Bearer token for an MCP server.
+type OAuthTokenProvider interface {
+	GetValidToken(ctx context.Context, serverID, tenantID uuid.UUID, userID string) (string, error)
 }
 
 // ManagerOption configures the Manager.
@@ -147,6 +154,13 @@ func WithPool(p *Pool) ManagerOption {
 func WithGrantChecker(gc GrantChecker) ManagerOption {
 	return func(m *Manager) {
 		m.grantChecker = gc
+	}
+}
+
+// WithOAuthTokenProvider sets the OAuth token provider for Bearer token injection.
+func WithOAuthTokenProvider(p OAuthTokenProvider) ManagerOption {
+	return func(m *Manager) {
+		m.oauthTokenProvider = p
 	}
 }
 
@@ -211,14 +225,21 @@ func (m *Manager) resolveServerCredentials(ctx context.Context, info store.MCPAc
 	if !srv.Enabled {
 		return nil
 	}
+	oauthActive := IsOAuthActive(srv.Settings)
 
 	// Skip server if it requires per-user credentials and user has none
 	if requireUserCreds(srv.Settings) {
 		if userID == "" {
 			return nil
 		}
-		uc, _ := m.store.GetUserCredentials(ctx, srv.ID, userID)
-		if uc == nil || (uc.APIKey == "" && len(uc.Headers) == 0 && len(uc.Env) == 0) {
+		if !oauthActive {
+			uc, _ := m.store.GetUserCredentials(ctx, srv.ID, userID)
+			if uc == nil || (uc.APIKey == "" && len(uc.Headers) == 0 && len(uc.Env) == 0) {
+				slog.Debug("mcp.skip_no_user_credentials", "server", srv.Name, "user", userID)
+				return nil
+			}
+		}
+		if oauthActive && m.oauthTokenProvider == nil {
 			slog.Debug("mcp.skip_no_user_credentials", "server", srv.Name, "user", userID)
 			return nil
 		}
@@ -232,8 +253,9 @@ func (m *Manager) resolveServerCredentials(ctx context.Context, info store.MCPAc
 		return nil
 	}
 
-	// Inject APIKey into headers if present (bug fix: was never passed to connections)
-	if srv.APIKey != "" && headers["Authorization"] == "" {
+	// Inject APIKey into headers for non-OAuth servers only. OAuth servers must
+	// not fall back to static Authorization before the OAuth flow succeeds.
+	if !oauthActive && srv.APIKey != "" && headers["Authorization"] == "" {
 		if headers == nil {
 			headers = make(map[string]string)
 		}
@@ -241,7 +263,7 @@ func (m *Manager) resolveServerCredentials(ctx context.Context, info store.MCPAc
 	}
 
 	// Merge per-user credentials (user overrides server defaults)
-	if userID != "" && m.store != nil {
+	if !oauthActive && userID != "" && m.store != nil {
 		if userCreds, err := m.store.GetUserCredentials(ctx, srv.ID, userID); err == nil && userCreds != nil {
 			if userCreds.APIKey != "" {
 				if headers == nil {
@@ -264,14 +286,35 @@ func (m *Manager) resolveServerCredentials(ctx context.Context, info store.MCPAc
 		}
 	}
 
-	// Per-user credentials change connection params → can't share pool connection.
-	// Fall back to per-agent mode when user has custom credentials.
-	hasUserCreds := userID != "" && m.store != nil
-	if hasUserCreds {
+	if oauthActive {
+		if m.oauthTokenProvider == nil {
+			slog.Debug("mcp.skip_oauth_no_provider", "server", srv.Name)
+			return nil
+		}
+		tenantID := store.TenantIDFromContext(ctx)
+		oauthUserID := ""
+		if requireUserCreds(srv.Settings) {
+			oauthUserID = userID
+		}
+		token, err := m.oauthTokenProvider.GetValidToken(ctx, srv.ID, tenantID, oauthUserID)
+		if err != nil || token == "" {
+			slog.Debug("mcp.skip_oauth_no_token", "server", srv.Name, "user", oauthUserID, "error", err)
+			return nil
+		}
+		if headers == nil {
+			headers = make(map[string]string)
+		}
+		headers["Authorization"] = "Bearer " + token
+	}
+
+	// Per-user credentials change connection params, so those connections must
+	// not share the tenant-global pool entry.
+	hasUserCreds := false
+	if userID != "" && oauthActive && requireUserCreds(srv.Settings) {
+		hasUserCreds = true
+	} else if userID != "" && !oauthActive && m.store != nil {
 		if uc, _ := m.store.GetUserCredentials(ctx, srv.ID, userID); uc != nil && (uc.APIKey != "" || len(uc.Headers) > 0 || len(uc.Env) > 0) {
 			hasUserCreds = true
-		} else {
-			hasUserCreds = false
 		}
 	}
 
@@ -594,4 +637,18 @@ func requireUserCreds(settings json.RawMessage) bool {
 	}
 	_ = json.Unmarshal(settings, &s)
 	return s.RequireUserCredentials
+}
+
+// IsOAuthActive reports whether an MCP server is configured to authenticate via OAuth.
+func IsOAuthActive(settings json.RawMessage) bool {
+	if len(settings) == 0 {
+		return false
+	}
+	var s struct {
+		OAuth struct {
+			AuthType string `json:"auth_type"`
+		} `json:"oauth"`
+	}
+	_ = json.Unmarshal(settings, &s)
+	return s.OAuth.AuthType == "oauth"
 }
