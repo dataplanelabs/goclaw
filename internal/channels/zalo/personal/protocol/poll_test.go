@@ -139,6 +139,26 @@ func TestCreatePoll_HappyPath(t *testing.T) {
 	}
 }
 
+func TestCreatePoll_SendsAbsoluteExpiryMillis(t *testing.T) {
+	t.Parallel()
+	srv, cap := pollCaptureServer(t,
+		`{"poll_id":42,"question":"q","options":[{"option_id":1,"content":"a","vote_count":0},{"option_id":2,"content":"b","vote_count":0}],"group_id":"g","creator_id":"self-uid","created_time":1700000000}`,
+		0)
+	sess := newQuoteTestSession(t, srv)
+
+	const expireAtMillis = int64(1781511729000)
+	_, err := CreatePoll(context.Background(), sess, "g", CreatePollOptions{
+		Question: "q", Options: []string{"a", "b"}, ExpiredTime: expireAtMillis,
+	})
+	if err != nil {
+		t.Fatalf("CreatePoll: %v", err)
+	}
+	payload := decryptCapturedFormParams(t, (*cap)[0].body)
+	if got := int64(payload["expired_time"].(float64)); got != expireAtMillis {
+		t.Fatalf("expired_time=%d, want %d", got, expireAtMillis)
+	}
+}
+
 func TestCreatePoll_Validation(t *testing.T) {
 	t.Parallel()
 	srv, _ := pollCaptureServer(t, "{}", 0)

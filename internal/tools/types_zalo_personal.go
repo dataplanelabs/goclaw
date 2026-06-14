@@ -23,7 +23,7 @@ type ZaloPersonalAction interface {
 }
 
 type ZaloPollSettings struct {
-	ExpiredTimeMillis int64
+	ExpireAtMillis    int64 // Unix ms; 0 = no expiration
 	AllowMultiChoices bool
 	AllowAddNewOption bool
 	HideVotePreview   bool

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 )
@@ -110,12 +111,12 @@ func (t *ZaloPersonalCreatePollTool) Execute(ctx context.Context, args map[strin
 		return ErrorResult("at least 2 options required")
 	}
 	expirySeconds := argInt64(args, "expired_time_seconds")
-	expiryMillis, expiryErr := normalizeZaloPollExpiryMillis(expirySeconds)
+	expireAtMillis, expiryErr := normalizeZaloPollExpireAtMillis(expirySeconds, time.Now())
 	if expiryErr != nil {
 		return expiryErr
 	}
 	settings := ZaloPollSettings{
-		ExpiredTimeMillis: expiryMillis,
+		ExpireAtMillis:    expireAtMillis,
 		AllowMultiChoices: argBool(args, "allow_multi_choices"),
 		AllowAddNewOption: argBool(args, "allow_add_new_option"),
 		HideVotePreview:   argBool(args, "hide_vote_preview"),
@@ -128,7 +129,7 @@ func (t *ZaloPersonalCreatePollTool) Execute(ctx context.Context, args map[strin
 	return jsonResult(map[string]any{"poll_id": pollID, "status": "created"})
 }
 
-func normalizeZaloPollExpiryMillis(seconds int64) (int64, *Result) {
+func normalizeZaloPollExpireAtMillis(seconds int64, now time.Time) (int64, *Result) {
 	switch {
 	case seconds < 0:
 		return 0, ErrorResult("expired_time_seconds must be 0 or a positive duration in seconds")
@@ -140,7 +141,7 @@ func normalizeZaloPollExpiryMillis(seconds int64) (int64, *Result) {
 			seconds, maxZaloPollExpirationSeconds,
 		))
 	default:
-		return seconds * 1000, nil
+		return now.Add(time.Duration(seconds) * time.Second).UnixMilli(), nil
 	}
 }
 
@@ -150,12 +151,13 @@ func formatCreatePollError(err error, question string, options []string, expiryS
 		return msg
 	}
 	return fmt.Sprintf(
-		"%s. %s. Sent shape: question_chars=%d, options_count=%d, expired_time_seconds=%d, allow_multi_choices=%t, allow_add_new_option=%t, hide_vote_preview=%t, is_anonymous=%t. Repair order: %s",
+		"%s. %s. Sent shape: question_chars=%d, options_count=%d, expired_time_seconds=%d, expire_at_ms=%d, allow_multi_choices=%t, allow_add_new_option=%t, hide_vote_preview=%t, is_anonymous=%t. Repair order: %s",
 		msg,
 		describeZaloInvalidPollParameterError(err),
 		len([]rune(question)),
 		len(options),
 		expirySeconds,
+		settings.ExpireAtMillis,
 		settings.AllowMultiChoices,
 		settings.AllowAddNewOption,
 		settings.HideVotePreview,
@@ -195,7 +197,7 @@ func createPollRepairHints(options []string, expirySeconds int64, settings ZaloP
 	}
 	switch {
 	case expirySeconds > 0:
-		hints = append(hints, fmt.Sprintf("expired_time_seconds=%d already passed local duration validation; keep it unless the user wants a different lifetime.", expirySeconds))
+		hints = append(hints, fmt.Sprintf("expired_time_seconds=%d was converted to future Zalo expire_at_ms=%d; if Zalo still rejects it, retry once without expiry or ask the user.", expirySeconds, settings.ExpireAtMillis))
 	default:
 		hints = append(hints, "expired_time_seconds=0 means no expiration and is locally valid.")
 	}

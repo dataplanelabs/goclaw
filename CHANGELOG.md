@@ -60,6 +60,11 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Zalo Personal poll expiry now sends Zalo's absolute expiration timestamp** —
+  `expired_time_seconds` remains an agent-friendly duration, but the channel now
+  converts it to the future Unix millisecond `expired_time` value expected by
+  Zalo instead of sending duration milliseconds.
+
 - **Zalo Personal poll create errors now point agents at the likely invalid
   parameter** — Zalo code 114 no longer tells the agent to check
   `expired_time_seconds` first when the duration already passed local validation.
