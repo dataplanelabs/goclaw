@@ -59,7 +59,7 @@ func (c *Channel) ListPolls(ctx context.Context, chatID string, page, count int)
 		Page:  page,
 	}
 	for _, p := range list.Polls {
-		out.Polls = append(out.Polls, c.pollDetailToState(ctx, &p))
+		out.Polls = append(out.Polls, c.pollDetailToState(ctx, &p, chatID))
 	}
 	return out, nil
 }
@@ -73,7 +73,7 @@ func (c *Channel) GetPoll(ctx context.Context, pollID int64) (tools.ZaloPollStat
 	if err != nil {
 		return tools.ZaloPollState{}, err
 	}
-	return c.pollDetailToState(ctx, d), nil
+	return c.pollDetailToState(ctx, d, c.pollFallbackGroupID(ctx)), nil
 }
 
 func (c *Channel) VotePoll(ctx context.Context, pollID int64, optionIDs []int64) (tools.ZaloPollState, error) {
@@ -177,11 +177,20 @@ func (c *Channel) guardPoll() (*protocol.Session, error) {
 	return sess, nil
 }
 
-func (c *Channel) pollDetailToState(ctx context.Context, d *protocol.PollDetail) tools.ZaloPollState {
+func (c *Channel) pollDetailToState(ctx context.Context, d *protocol.PollDetail, fallbackGroupID string) tools.ZaloPollState {
+	groupID := d.GroupID
+	if groupID == "" {
+		groupID = fallbackGroupID
+	}
 	var resolve pollVoterNameResolver
-	if d.GroupID != "" {
+	if groupID != "" || c.ContactCollector() != nil {
 		resolve = func(uid string) (string, bool) {
-			return c.LookupGroupMember(ctx, d.GroupID, uid)
+			if groupID != "" {
+				if displayName, ok := c.LookupGroupMember(ctx, groupID, uid); ok {
+					return displayName, true
+				}
+			}
+			return c.lookupContactDisplayName(ctx, uid)
 		}
 	}
 	return tools.ZaloPollState{
@@ -189,13 +198,21 @@ func (c *Channel) pollDetailToState(ctx context.Context, d *protocol.PollDetail)
 		Question:    d.Question,
 		Locked:      d.Locked,
 		Closed:      d.Closed,
-		GroupID:     d.GroupID,
+		GroupID:     groupID,
 		CreatedTime: d.CreatedTime,
 		UpdatedTime: d.UpdatedTime,
 		ExpiredTime: d.ExpiredTime,
 		TotalVotes:  d.TotalVotes,
 		Options:     optionsToState(d.Options, resolve),
 	}
+}
+
+func (c *Channel) pollFallbackGroupID(ctx context.Context) string {
+	chatID := tools.ToolChatIDFromCtx(ctx)
+	if chatID == "" || !c.IsGroupApproved(chatID) {
+		return ""
+	}
+	return chatID
 }
 
 type pollVoterNameResolver func(uid string) (displayName string, ok bool)

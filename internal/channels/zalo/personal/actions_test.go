@@ -2,13 +2,16 @@ package personal
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
@@ -74,6 +77,53 @@ func TestOptionsToStateIncludesVoters(t *testing.T) {
 	}
 	if !reflect.DeepEqual(opt.Voters, wantVoters) {
 		t.Fatalf("voters=%+v, want %+v", opt.Voters, wantVoters)
+	}
+}
+
+func TestPollDetailToStateUsesFallbackGroupAndContactsForVoterNames(t *testing.T) {
+	t.Parallel()
+	const uid = "u_contact"
+	ch, cs := newChannelWithContacts(t, map[string]store.ChannelContact{
+		uid: contactRow(channels.TypeZaloPersonal, uid, "DB Name"),
+	})
+
+	got := ch.pollDetailToState(context.Background(), &protocol.PollDetail{
+		PollID:   json.Number("42"),
+		Question: "Q",
+		Options: []protocol.PollOption{{
+			OptionID:  10,
+			Content:   "A",
+			VoteCount: 1,
+			Voters:    []string{uid},
+		}},
+	}, "group-1")
+
+	if got.GroupID != "group-1" {
+		t.Fatalf("group_id=%q, want fallback group-1", got.GroupID)
+	}
+	if len(got.Options) != 1 || len(got.Options[0].Voters) != 1 {
+		t.Fatalf("voters missing: %+v", got.Options)
+	}
+	voter := got.Options[0].Voters[0]
+	if voter.UserID != uid || voter.DisplayName != "DB Name" {
+		t.Fatalf("voter=%+v, want id + DB display name", voter)
+	}
+	if got := cs.lookups.Load(); got != 1 {
+		t.Fatalf("contact lookups=%d, want 1", got)
+	}
+}
+
+func TestPollFallbackGroupIDRequiresApprovedGroup(t *testing.T) {
+	t.Parallel()
+	ch := newReminderTestChannel(t)
+
+	ctx := tools.WithToolChatID(context.Background(), "group-1")
+	if got := ch.pollFallbackGroupID(ctx); got != "" {
+		t.Fatalf("unapproved fallback group_id=%q, want empty", got)
+	}
+	ch.MarkGroupApproved("group-1")
+	if got := ch.pollFallbackGroupID(ctx); got != "group-1" {
+		t.Fatalf("fallback group_id=%q, want group-1", got)
 	}
 }
 

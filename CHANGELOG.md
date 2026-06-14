@@ -64,6 +64,14 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   `zalo_personal_get_poll` and `zalo_personal_list_polls` preserve Zalo's
   per-option voter IDs and resolve display names when the group member cache can
   identify them, so agents can answer "who voted" instead of only vote counts.
+  Poll result name resolution now also uses the current group context and
+  tenant-scoped contact store fallback when Zalo board-list payloads omit
+  `group_id`.
+
+- **Zalo Personal poll listing can filter open or closed polls** —
+  `zalo_personal_list_polls` accepts `status=all|open|closed` in addition to
+  existing `page`/`count` pagination, filtering the polls returned by the
+  requested board page.
 
 - **Zalo Personal poll expiry now sends Zalo's absolute expiration timestamp** —
   `expired_time_seconds` remains an agent-friendly duration, but the channel now
