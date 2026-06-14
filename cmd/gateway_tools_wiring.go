@@ -18,6 +18,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 	"github.com/nextlevelbuilder/goclaw/internal/workstation"
 	"github.com/nextlevelbuilder/goclaw/internal/workstation/security"
+	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
 // wireExtraTools registers cron, heartbeat, session, message tools and aliases
@@ -296,4 +297,23 @@ func wireWorkstationTools(
 		}
 	}
 	return func() {}, backendCache
+}
+
+// wireWorkstationExecEvents bridges workstation.exec.chunk/done from domainBus to the WS
+// event publisher so admin clients can tail live output. Scoped by tenant; admin-only
+// (event_filter.go rejects workstation.* for non-admin clients).
+func wireWorkstationExecEvents(domainBus eventbus.DomainEventBus, eventPub bus.EventPublisher) {
+	if domainBus == nil || eventPub == nil {
+		return
+	}
+	bridge := func(_ context.Context, ev eventbus.DomainEvent) error {
+		tenantID, err := uuid.Parse(ev.TenantID)
+		if err != nil {
+			return nil
+		}
+		bus.BroadcastForTenant(eventPub, string(ev.Type), tenantID, ev.Payload)
+		return nil
+	}
+	domainBus.Subscribe(eventbus.EventType(protocol.EventWorkstationExecChunk), bridge)
+	domainBus.Subscribe(eventbus.EventType(protocol.EventWorkstationExecDone), bridge)
 }

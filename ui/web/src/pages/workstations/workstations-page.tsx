@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MonitorCog, Plus, RefreshCw, Trash2, ChevronDown, ChevronRight, Settings2 } from "lucide-react";
+import { MonitorCog, Plus, RefreshCw, Trash2, ChevronDown, ChevronRight, Settings2, KeyRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,8 @@ import { useWorkstations, type Workstation } from "./hooks/use-workstations";
 import { WorkstationCreateDialog } from "./workstation-create-dialog";
 import { WorkstationActivityTab } from "./workstation-activity-tab";
 import { WorkstationAllowlistTab } from "./workstation-allowlist-tab";
-import { CodexReauthCard } from "./codex-reauth-card";
+import { WorkstationLiveLogTab } from "./workstation-live-log-tab";
+import { CodexReauthDialog } from "./codex-reauth-dialog";
 import { WorkstationDefaultEnvDialog } from "./workstation-defaultenv-dialog";
 
 export function WorkstationsPage() {
@@ -32,6 +33,7 @@ export function WorkstationsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Workstation | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [envDialogTarget, setEnvDialogTarget] = useState<Workstation | null>(null);
+  const [reauthTarget, setReauthTarget] = useState<Workstation | null>(null);
 
   function toggleExpand(id: string) {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -82,6 +84,7 @@ export function WorkstationsPage() {
               <tbody>
                 {workstations.map((ws) => {
                   const isExpanded = expandedId === ws.id;
+                  const showReauth = isMasterScope && ws.workstationKey === "coding-agent";
                   return (
                     <>
                       <tr
@@ -111,6 +114,17 @@ export function WorkstationsPage() {
                         </td>
                         <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
+                            {showReauth && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setReauthTarget(ws)}
+                                className="gap-1"
+                              >
+                                <KeyRound className="h-3.5 w-3.5" />
+                                {t("codexReauth.reauthAction")}
+                              </Button>
+                            )}
                             {isMasterScope && (
                               <Button
                                 variant="ghost"
@@ -141,6 +155,7 @@ export function WorkstationsPage() {
                               <TabsList className="mb-3">
                                 <TabsTrigger value="allowlist">{t("allowlist.title")}</TabsTrigger>
                                 <TabsTrigger value="activity">{t("activity.title")}</TabsTrigger>
+                                <TabsTrigger value="live">{t("liveLog.title")}</TabsTrigger>
                               </TabsList>
                               <TabsContent value="allowlist">
                                 <WorkstationAllowlistTab workstation={ws} />
@@ -148,12 +163,10 @@ export function WorkstationsPage() {
                               <TabsContent value="activity">
                                 <WorkstationActivityTab workstationId={ws.id} />
                               </TabsContent>
+                              <TabsContent value="live">
+                                <WorkstationLiveLogTab workstationId={ws.id} />
+                              </TabsContent>
                             </Tabs>
-                            {isMasterScope && ws.workstationKey === "coding-agent" && (
-                              <div className="mt-4 max-w-md">
-                                <CodexReauthCard />
-                              </div>
-                            )}
                           </td>
                         </tr>
                       )}
@@ -197,6 +210,13 @@ export function WorkstationsPage() {
           onSave={async (env) => {
             await updateWorkstation(envDialogTarget.id, { defaultEnv: env });
           }}
+        />
+      )}
+
+      {reauthTarget && (
+        <CodexReauthDialog
+          open
+          onOpenChange={(open) => { if (!open) setReauthTarget(null); }}
         />
       )}
     </div>

@@ -293,6 +293,7 @@ func runGateway() {
 	// wsBackendCache is shared with telegram /login codex (nil on lite edition).
 	cleanupWorkstation, wsBackendCache := wireWorkstationTools(pgStores, toolsReg, domainBus)
 	defer cleanupWorkstation()
+	wireWorkstationExecEvents(domainBus, msgBus)
 
 	// Create all agents — resolved lazily from database by the managed resolver.
 	agentRouter := agent.NewRouter()

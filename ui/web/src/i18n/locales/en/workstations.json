@@ -103,7 +103,16 @@
     "waiting": "Waiting for approval…",
     "done": "Codex re-authenticated",
     "retry": "Retry",
-    "reset": "Start over"
+    "reset": "Start over",
+    "reauthAction": "Re-authenticate Codex"
+  },
+  "liveLog": {
+    "title": "Live Output",
+    "live": "Live",
+    "idle": "Idle",
+    "empty": "No output yet. Start a run to see live output here.",
+    "followTail": "Follow tail",
+    "clear": "Clear"
   },
   "defaultEnvDialog": {
     "title": "Environment Variables",

@@ -116,6 +116,11 @@ func clientCanReceiveEvent(c *Client, event bus.Event) bool {
 		return true
 	}
 
+	// Workstation exec streaming events: admin-only, tenant-scoped (tenant filter above).
+	if strings.HasPrefix(event.Name, "workstation.exec.") {
+		return permissions.HasMinRole(c.role, permissions.RoleAdmin)
+	}
+
 	// Zalo personal QR events: admin-only (channel management).
 	if strings.HasPrefix(event.Name, "zalo.personal.") {
 		return false
