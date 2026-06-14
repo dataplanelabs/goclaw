@@ -11,6 +11,8 @@ import (
 	tu "github.com/mymmrac/telego/telegoutil"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/codexreauth"
+	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -86,6 +88,7 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 			"/reset — Reset conversation history\n" +
 			"/status — Show bot status\n" +
 			"/reactions — Show reaction emoji legend\n" +
+			"/login codex — Re-authenticate codex on the coding-agent pod\n" +
 			"/tasks — List team tasks\n" +
 			"/task_detail <id> — View task detail\n" +
 			"/subagents — List subagent tasks\n" +
@@ -239,7 +242,71 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 		setThread(msg)
 		c.bot.SendMessage(ctx, msg)
 		return true
+
+	case "/login":
+		c.handleLoginCommand(ctx, text, chatIDObj, senderID, setThread)
+		return true
 	}
 
 	return false
+}
+
+// handleLoginCommand handles /login <service> commands deterministically (no LLM).
+// Only /login codex is currently supported — triggers device-auth on the coding-agent pod.
+func (c *Channel) handleLoginCommand(
+	ctx context.Context,
+	text string,
+	chatIDObj telego.ChatID,
+	senderID string,
+	setThread func(*telego.SendMessageParams),
+) {
+	locale := store.LocaleFromContext(ctx)
+
+	// Parse the service argument: "/login codex" → "codex"
+	parts := strings.Fields(text)
+	svc := ""
+	if len(parts) >= 2 {
+		svc = strings.ToLower(parts[1])
+	}
+
+	if svc != "codex" {
+		reply := i18n.T(locale, i18n.MsgLoginCodexUnknownSvc, svc)
+		msg := tu.Message(chatIDObj, reply)
+		setThread(msg)
+		_, _ = c.bot.SendMessage(ctx, msg)
+		return
+	}
+
+	if c.wsStore == nil || c.wsBackendCache == nil {
+		reply := i18n.T(locale, i18n.MsgLoginCodexNoWorkstation)
+		msg := tu.Message(chatIDObj, reply)
+		setThread(msg)
+		_, _ = c.bot.SendMessage(ctx, msg)
+		return
+	}
+
+	// Acknowledge immediately; the SSH poll takes up to 60s.
+	ackMsg := tu.Message(chatIDObj, i18n.T(locale, i18n.MsgLoginCodexStarted))
+	setThread(ackMsg)
+	_, _ = c.bot.SendMessage(ctx, ackMsg)
+
+	// Run in background goroutine so we don't block the Telegram handler.
+	go func() {
+		bgCtx := context.Background()
+		info, err := codexreauth.Trigger(bgCtx, c.wsStore, c.wsBackendCache, c.TenantID(), "coding-agent")
+		if err != nil {
+			slog.Warn("telegram.login_codex.failed", "sender", senderID, "error", err)
+			reply := i18n.T(locale, i18n.MsgLoginCodexFailed, err.Error())
+			msg := tu.Message(chatIDObj, reply)
+			setThread(msg)
+			_, _ = c.bot.SendMessage(bgCtx, msg)
+			return
+		}
+
+		reply := i18n.T(locale, i18n.MsgLoginCodexSuccess, info.VerificationURL, info.UserCode)
+		msg := tu.Message(chatIDObj, reply)
+		msg.ParseMode = telego.ModeHTML
+		setThread(msg)
+		_, _ = c.bot.SendMessage(bgCtx, msg)
+	}()
 }

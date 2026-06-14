@@ -19,6 +19,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/workstation"
 )
 
 // Channel connects to Telegram via the Bot API using long polling.
@@ -33,6 +34,8 @@ type Channel struct {
 	configPermStore   store.ConfigPermissionStore // for group file writer management (nil if not configured)
 	teamStore         store.TeamStore             // for /tasks, /task_detail commands (nil if not configured)
 	subagentTaskStore store.SubagentTaskStore     // for /subagents, /subagent commands (nil if not configured)
+	wsStore           store.WorkstationStore      // for /login codex (nil if not configured)
+	wsBackendCache    *workstation.BackendCache   // for /login codex (nil if not configured)
 	placeholders      sync.Map                    // localKey string → messageID int
 	stopThinking      sync.Map                    // localKey string → *thinkingCancel
 	typingCtrls       sync.Map                    // localKey string → *typing.Controller
@@ -79,6 +82,14 @@ func WithTeamStore(s store.TeamStore) Option { return func(c *Channel) { c.teamS
 // WithSubagentTaskStore sets the subagent task store for /subagents, /subagent commands.
 func WithSubagentTaskStore(s store.SubagentTaskStore) Option {
 	return func(c *Channel) { c.subagentTaskStore = s }
+}
+
+// WithWorkstationDeps sets the workstation store and backend cache for /login codex.
+func WithWorkstationDeps(ws store.WorkstationStore, bc *workstation.BackendCache) Option {
+	return func(c *Channel) {
+		c.wsStore = ws
+		c.wsBackendCache = bc
+	}
 }
 
 // WithPendingMessageStore sets the pending message store for group history buffering.

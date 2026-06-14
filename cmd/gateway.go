@@ -290,7 +290,8 @@ func runGateway() {
 
 	// Register workstation_exec + claude_remote tools (Standard edition only; deny-all until Phase 6).
 	// cleanupWorkstation stops the activity sink retention goroutine and drains the write buffer.
-	cleanupWorkstation := wireWorkstationTools(pgStores, toolsReg, domainBus)
+	// wsBackendCache is shared with telegram /login codex (nil on lite edition).
+	cleanupWorkstation, wsBackendCache := wireWorkstationTools(pgStores, toolsReg, domainBus)
 	defer cleanupWorkstation()
 
 	// Create all agents — resolved lazily from database by the managed resolver.
@@ -591,7 +592,7 @@ func runGateway() {
 		instanceLoader.SetPendingCompactionConfig(cfg.Channels.PendingCompaction)
 		instanceLoader.SetDefaultTimezone(cfg.Cron.DefaultTimezone)
 		instanceLoader.SetDurableMediaDir(filepath.Join(cfg.WorkspacePath(), ".pending-media"))
-		instanceLoader.RegisterFactory(channels.TypeTelegram, telegram.FactoryWithStoresAndAudio(pgStores.Agents, pgStores.ConfigPermissions, pgStores.Teams, pgStores.SubagentTasks, pgStores.PendingMessages, audioMgr))
+		instanceLoader.RegisterFactory(channels.TypeTelegram, telegram.FactoryWithAllDeps(pgStores.Agents, pgStores.ConfigPermissions, pgStores.Teams, pgStores.SubagentTasks, pgStores.PendingMessages, audioMgr, pgStores.Workstations, wsBackendCache))
 		instanceLoader.RegisterFactory(channels.TypeDiscord, discord.FactoryWithStoresAndAudio(pgStores.Agents, pgStores.ConfigPermissions, pgStores.PendingMessages, audioMgr))
 		instanceLoader.RegisterFactory(channels.TypeFeishu, feishu.FactoryWithPendingStoreAndAudio(pgStores.PendingMessages, audioMgr))
 		instanceLoader.RegisterFactory(channels.TypeZaloBot, zalobot.Factory)

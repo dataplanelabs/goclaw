@@ -403,5 +403,11 @@ func init() {
 		MsgInvalidDraftPatch:           "bản vá nháp không hợp lệ: %s",
 		MsgDraftPatchRequired:          "bản vá nháp cần nội dung hoặc tìm/thay",
 		MsgFindTextNotFound:            "không tìm thấy đoạn cần thay trong tệp đích",
+
+		MsgLoginCodexStarted:       "Đang khởi động xác thực thiết bị codex trên pod coding-agent…",
+		MsgLoginCodexSuccess:       "Mở URL này trên điện thoại và phê duyệt:\n%s\nMã: <code>%s</code>\n\nPod sẽ được xác thực lại sau khi bạn phê duyệt.",
+		MsgLoginCodexFailed:        "đăng nhập codex thất bại: %s",
+		MsgLoginCodexUnknownSvc:    "Dịch vụ %q không được hỗ trợ — chỉ hỗ trợ 'codex'.",
+		MsgLoginCodexNoWorkstation: "/login codex cần workstation store — chưa được cấu hình trên kênh này.",
 	})
 }

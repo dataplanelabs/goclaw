@@ -403,5 +403,11 @@ func init() {
 		MsgInvalidDraftPatch:           "无效的草稿补丁：%s",
 		MsgDraftPatchRequired:          "草稿补丁需要内容或查找/替换",
 		MsgFindTextNotFound:            "在目标文件中未找到要替换的文本",
+
+		MsgLoginCodexStarted:       "正在 coding-agent Pod 上启动 codex 设备授权…",
+		MsgLoginCodexSuccess:       "在手机上打开此 URL 并批准：\n%s\n验证码：<code>%s</code>\n\n批准后 Pod 将重新完成认证。",
+		MsgLoginCodexFailed:        "codex 登录失败：%s",
+		MsgLoginCodexUnknownSvc:    "不支持的服务 %q — 仅支持 'codex'。",
+		MsgLoginCodexNoWorkstation: "/login codex 需要 workstation store — 当前频道未配置。",
 	})
 }
