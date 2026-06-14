@@ -60,6 +60,11 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Zalo Personal poll results now expose returned voter identities** —
+  `zalo_personal_get_poll` and `zalo_personal_list_polls` preserve Zalo's
+  per-option voter IDs and resolve display names when the group member cache can
+  identify them, so agents can answer "who voted" instead of only vote counts.
+
 - **Zalo Personal poll expiry now sends Zalo's absolute expiration timestamp** —
   `expired_time_seconds` remains an agent-friendly duration, but the channel now
   converts it to the future Unix millisecond `expired_time` value expected by

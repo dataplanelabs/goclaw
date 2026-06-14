@@ -358,7 +358,16 @@ func TestListPolls_HappyPath(t *testing.T) {
 
 func TestGetPoll_StringIDParses(t *testing.T) {
 	t.Parallel()
-	fake := &fakeZaloPersonalAction{getReturn: ZaloPollState{PollID: "42"}}
+	fake := &fakeZaloPersonalAction{getReturn: ZaloPollState{
+		PollID: "42",
+		Options: []ZaloPollStateOption{{
+			OptionID:  10,
+			Content:   "Brazil",
+			VoteCount: 1,
+			VoterIDs:  []string{"u1"},
+			Voters:    []ZaloPollVoter{{UserID: "u1", DisplayName: "Alice"}},
+		}},
+	}}
 	tool := NewZaloPersonalGetPollTool()
 	tool.SetZaloPersonalActionFn(zpFakeFn(fake))
 
@@ -368,6 +377,16 @@ func TestGetPoll_StringIDParses(t *testing.T) {
 	}
 	if fake.getPollID != 42 {
 		t.Errorf("argInt64 must accept string IDs, got %d", fake.getPollID)
+	}
+	var out ZaloPollState
+	if err := json.Unmarshal([]byte(res.ForLLM), &out); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if len(out.Options) != 1 || len(out.Options[0].Voters) != 1 {
+		t.Fatalf("voters missing from get_poll result: %+v", out.Options)
+	}
+	if out.Options[0].Voters[0].DisplayName != "Alice" {
+		t.Fatalf("display_name=%q, want Alice", out.Options[0].Voters[0].DisplayName)
 	}
 }
 
