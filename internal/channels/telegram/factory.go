@@ -29,8 +29,9 @@ type telegramInstanceConfig struct {
 	HistoryLimit    int      `json:"history_limit,omitempty"`
 	DMStream        *bool    `json:"dm_stream,omitempty"`
 	GroupStream     *bool    `json:"group_stream,omitempty"`
-	DraftTransport  *bool    `json:"draft_transport,omitempty"`   // sendMessageDraft for DM streaming (default true)
+	DraftTransport  *bool    `json:"draft_transport,omitempty"`  // sendMessageDraft for DM streaming (default true)
 	ReasoningStream *bool    `json:"reasoning_stream,omitempty"` // show reasoning as separate message (default true)
+	RichMessage     *bool    `json:"rich_message,omitempty"`     // Bot API 10.1 Rich Markdown for agent replies (default false)
 	ReactionLevel   string   `json:"reaction_level,omitempty"`
 	MediaMaxMB      int64    `json:"media_max_mb,omitempty"`
 	MediaMaxBytes   int64    `json:"media_max_bytes,omitempty"` // deprecated: use media_max_mb
@@ -96,25 +97,26 @@ func buildChannel(name string, creds json.RawMessage, cfg json.RawMessage,
 	}
 
 	tgCfg := config.TelegramConfig{
-		Enabled:        true,
-		Token:          c.Token,
-		Proxy:          proxy,
-		APIServer:      apiServer,
-		AllowFrom:      ic.AllowFrom,
-		DMPolicy:       ic.DMPolicy,
-		GroupPolicy:    ic.GroupPolicy,
-		RequireMention: ic.RequireMention,
-		MentionMode:    ic.MentionMode,
-		HistoryLimit:   ic.HistoryLimit,
+		Enabled:         true,
+		Token:           c.Token,
+		Proxy:           proxy,
+		APIServer:       apiServer,
+		AllowFrom:       ic.AllowFrom,
+		DMPolicy:        ic.DMPolicy,
+		GroupPolicy:     ic.GroupPolicy,
+		RequireMention:  ic.RequireMention,
+		MentionMode:     ic.MentionMode,
+		HistoryLimit:    ic.HistoryLimit,
 		DMStream:        ic.DMStream,
 		GroupStream:     ic.GroupStream,
 		DraftTransport:  ic.DraftTransport,
 		ReasoningStream: ic.ReasoningStream,
+		RichMessage:     ic.RichMessage,
 		ReactionLevel:   ic.ReactionLevel,
-		MediaMaxBytes:  resolveMediaMaxBytes(ic),
-		LinkPreview:    ic.LinkPreview,
-		BlockReply:     ic.BlockReply,
-		ForceIPv4:      ic.ForceIPv4,
+		MediaMaxBytes:   resolveMediaMaxBytes(ic),
+		LinkPreview:     ic.LinkPreview,
+		BlockReply:      ic.BlockReply,
+		ForceIPv4:       ic.ForceIPv4,
 	}
 
 	// DB instances default to "pairing" for groups (secure by default).
