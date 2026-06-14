@@ -202,17 +202,20 @@ func wireExtraTools(
 //
 // Also subscribes to workstation update/delete events to keep BackendCache and
 // AllowlistChecker cache consistent with the database.
+// wireWorkstationTools returns the cleanup func and the shared BackendCache.
+// The BackendCache is non-nil only on Standard edition with workstation stores present;
+// callers (e.g. Telegram /login codex) must guard for nil.
 func wireWorkstationTools(
 	pgStores *store.Stores,
 	toolsReg *tools.Registry,
 	domainBus eventbus.DomainEventBus,
-) func() {
+) (cleanup func(), bc *workstation.BackendCache) {
 	if edition.Current().Name != "standard" {
-		return func() {}
+		return func() {}, nil
 	}
 	if pgStores.Workstations == nil || pgStores.WorkstationLinks == nil {
 		slog.Warn("workstation tools skipped: workstation stores not initialised")
-		return func() {}
+		return func() {}, nil
 	}
 
 	backendCache := workstation.NewBackendCache(pgStores.Workstations, 10*time.Minute)
@@ -289,8 +292,8 @@ func wireWorkstationTools(
 			return func() {
 				stopSink()
 				pgStores.WorkstationActivity.Stop()
-			}
+			}, backendCache
 		}
 	}
-	return func() {}
+	return func() {}, backendCache
 }

@@ -415,4 +415,11 @@ const (
 	MsgInvalidDraftPatch           = "error.invalid_draft_patch"            // "invalid draft_patch: %s"
 	MsgDraftPatchRequired          = "error.draft_patch_required"           // "draft_patch requires content or find/replace"
 	MsgFindTextNotFound            = "error.find_text_not_found"            // "find text not found in target file"
+
+	// --- Codex device-auth (/login codex command) ---
+	MsgLoginCodexStarted      = "cmd.login_codex.started"       // "Starting codex device auth on coding-agent pod…"
+	MsgLoginCodexSuccess      = "cmd.login_codex.success"       // "Open this URL on your phone and approve:\n%s\nCode: %s\n\nThe pod will be re-authed once you approve."
+	MsgLoginCodexFailed       = "cmd.login_codex.failed"        // "codex login failed: %s"
+	MsgLoginCodexUnknownSvc   = "cmd.login_codex.unknown_svc"   // "Unknown service %q — only 'codex' is supported."
+	MsgLoginCodexNoWorkstation = "cmd.login_codex.no_workstation" // "/login codex requires the workstation store — not configured on this channel."
 )

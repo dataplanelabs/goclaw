@@ -9,6 +9,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/workstation"
 )
 
 // telegramCreds maps the credentials JSON from the channel_instances table.
@@ -54,15 +55,34 @@ func FactoryWithStores(agentStore store.AgentStore, configPermStore store.Config
 
 // FactoryWithStoresAndAudio returns a ChannelFactory with all stores and STT support.
 func FactoryWithStoresAndAudio(agentStore store.AgentStore, configPermStore store.ConfigPermissionStore, teamStore store.TeamStore, subagentTaskStore store.SubagentTaskStore, pendingStore store.PendingMessageStore, audioMgr *audio.Manager) channels.ChannelFactory {
+	return FactoryWithAllDeps(agentStore, configPermStore, teamStore, subagentTaskStore, pendingStore, audioMgr, nil, nil)
+}
+
+// FactoryWithAllDeps returns a ChannelFactory with all stores, STT, and workstation deps.
+// wsStore and backendCache may be nil — /login codex will reply "not configured" in that case.
+func FactoryWithAllDeps(
+	agentStore store.AgentStore,
+	configPermStore store.ConfigPermissionStore,
+	teamStore store.TeamStore,
+	subagentTaskStore store.SubagentTaskStore,
+	pendingStore store.PendingMessageStore,
+	audioMgr *audio.Manager,
+	wsStore store.WorkstationStore,
+	backendCache *workstation.BackendCache,
+) channels.ChannelFactory {
 	return func(name string, creds json.RawMessage, cfg json.RawMessage,
 		msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
-		return buildChannel(name, creds, cfg, msgBus, pairingSvc, audioMgr,
+		opts := []Option{
 			WithAgentStore(agentStore),
 			WithConfigPermStore(configPermStore),
 			WithTeamStore(teamStore),
 			WithSubagentTaskStore(subagentTaskStore),
 			WithPendingMessageStore(pendingStore),
-		)
+		}
+		if wsStore != nil && backendCache != nil {
+			opts = append(opts, WithWorkstationDeps(wsStore, backendCache))
+		}
+		return buildChannel(name, creds, cfg, msgBus, pairingSvc, audioMgr, opts...)
 	}
 }
 

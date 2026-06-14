@@ -403,5 +403,11 @@ func init() {
 		MsgInvalidDraftPatch:           "invalid draft_patch: %s",
 		MsgDraftPatchRequired:          "draft_patch requires content or find/replace",
 		MsgFindTextNotFound:            "find text not found in target file",
+
+		MsgLoginCodexStarted:       "Starting codex device auth on coding-agent pod…",
+		MsgLoginCodexSuccess:       "Open this URL on your phone and approve:\n%s\nCode: <code>%s</code>\n\nThe pod will be re-authed once you approve.",
+		MsgLoginCodexFailed:        "codex login failed: %s",
+		MsgLoginCodexUnknownSvc:    "Unknown service %q — only 'codex' is supported.",
+		MsgLoginCodexNoWorkstation: "/login codex requires the workstation store — not configured on this channel.",
 	})
 }
