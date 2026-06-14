@@ -89,19 +89,5 @@
     "title": "Embedding",
     "notConfigured": "未配置",
     "configure": "在Providers中配置 →"
-  },
-  "codexReauth": {
-    "title": "Codex 重新认证",
-    "description": "通过设备授权在 coding-agent pod 上重新认证 codex CLI。",
-    "startButton": "开始设备授权",
-    "starting": "正在 pod 上启动…",
-    "openUrl": "在浏览器中打开此链接：",
-    "codeLabel": "输入代码：",
-    "copyCode": "复制代码",
-    "copied": "已复制代码",
-    "waiting": "等待授权…",
-    "done": "Codex 重新认证成功",
-    "retry": "重试",
-    "reset": "重新开始"
   }
 }

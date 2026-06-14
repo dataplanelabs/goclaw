@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MonitorCog, Plus, RefreshCw, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { MonitorCog, Plus, RefreshCw, Trash2, ChevronDown, ChevronRight, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,14 +10,18 @@ import { TableSkeleton } from "@/components/shared/loading-skeleton";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useMinLoading } from "@/hooks/use-min-loading";
 import { useDeferredLoading } from "@/hooks/use-deferred-loading";
+import { useAuthStore } from "@/stores/use-auth-store";
 import { formatDate } from "@/lib/format";
 import { useWorkstations, type Workstation } from "./hooks/use-workstations";
 import { WorkstationCreateDialog } from "./workstation-create-dialog";
 import { WorkstationActivityTab } from "./workstation-activity-tab";
+import { CodexReauthCard } from "./codex-reauth-card";
+import { WorkstationDefaultEnvDialog } from "./workstation-defaultenv-dialog";
 
 export function WorkstationsPage() {
   const { t } = useTranslation("workstations");
-  const { workstations, loading, refresh, createWorkstation, deleteWorkstation } = useWorkstations();
+  const isMasterScope = useAuthStore((s) => s.isMasterScope);
+  const { workstations, loading, refresh, createWorkstation, deleteWorkstation, updateWorkstation } = useWorkstations();
 
   const spinning = useMinLoading(loading);
   const isEmpty = workstations.length === 0;
@@ -26,6 +30,7 @@ export function WorkstationsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Workstation | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [envDialogTarget, setEnvDialogTarget] = useState<Workstation | null>(null);
 
   function toggleExpand(id: string) {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -104,15 +109,28 @@ export function WorkstationsPage() {
                           {formatDate(new Date(ws.createdAt))}
                         </td>
                         <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDeleteTarget(ws)}
-                            className="gap-1"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            {t("actions.delete")}
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            {isMasterScope && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setEnvDialogTarget(ws)}
+                                className="gap-1"
+                              >
+                                <Settings2 className="h-3.5 w-3.5" />
+                                {t("defaultEnvDialog.editButton")}
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDeleteTarget(ws)}
+                              className="gap-1"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              {t("actions.delete")}
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                       {isExpanded && (
@@ -126,6 +144,11 @@ export function WorkstationsPage() {
                                 <WorkstationActivityTab workstationId={ws.id} />
                               </TabsContent>
                             </Tabs>
+                            {isMasterScope && ws.workstationKey === "coding-agent" && (
+                              <div className="mt-4 max-w-md">
+                                <CodexReauthCard />
+                              </div>
+                            )}
                           </td>
                         </tr>
                       )}
@@ -157,6 +180,17 @@ export function WorkstationsPage() {
           onConfirm={async () => {
             await deleteWorkstation(deleteTarget.id);
             setDeleteTarget(null);
+          }}
+        />
+      )}
+
+      {envDialogTarget && (
+        <WorkstationDefaultEnvDialog
+          open
+          workstation={envDialogTarget}
+          onOpenChange={(open) => { if (!open) setEnvDialogTarget(null); }}
+          onSave={async (env) => {
+            await updateWorkstation(envDialogTarget.id, { defaultEnv: env });
           }}
         />
       )}

@@ -55,7 +55,6 @@ export function useCodexReauth() {
       setCode(res.code);
       setPhase("waiting");
 
-      // Poll every 3s until auth.json is fresh
       pollRef.current = setInterval(pollStatus, 3_000);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
