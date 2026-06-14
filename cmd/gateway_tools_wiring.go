@@ -299,6 +299,18 @@ func wireWorkstationTools(
 	return func() {}, backendCache
 }
 
+// wireWorkstationSessionBuffer creates and wires the in-memory session buffer.
+// Returns the buffer (nil if domainBus is nil or edition is not standard).
+func wireWorkstationSessionBuffer(domainBus eventbus.DomainEventBus) *workstation.SessionBuffer {
+	if domainBus == nil || edition.Current().Name != "standard" {
+		return nil
+	}
+	buf := workstation.NewSessionBuffer()
+	workstation.WireSessionBuffer(domainBus, buf)
+	slog.Info("workstation session buffer registered")
+	return buf
+}
+
 // wireWorkstationExecEvents bridges workstation.exec.chunk/done from domainBus to the WS
 // event publisher so admin clients can tail live output. Scoped by tenant; admin-only
 // (event_filter.go rejects workstation.* for non-admin clients).

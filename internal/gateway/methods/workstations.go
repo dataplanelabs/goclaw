@@ -23,6 +23,7 @@ type WorkstationsMethods struct {
 	linkStore     store.AgentWorkstationLinkStore
 	permStore     store.WorkstationPermissionStore // may be nil if Phase 6 not wired
 	activityStore store.WorkstationActivityStore   // may be nil if Phase 7 not wired
+	sessionBuf    *workstation.SessionBuffer       // may be nil if not wired
 }
 
 // NewWorkstationsMethods creates WorkstationsMethods with the given stores.
@@ -38,6 +39,11 @@ func (m *WorkstationsMethods) SetPermStore(ps store.WorkstationPermissionStore) 
 // SetActivityStore wires the activity store for audit log methods (Phase 7).
 func (m *WorkstationsMethods) SetActivityStore(as store.WorkstationActivityStore) {
 	m.activityStore = as
+}
+
+// SetSessionBuffer wires the in-memory session buffer for live-output replay.
+func (m *WorkstationsMethods) SetSessionBuffer(buf *workstation.SessionBuffer) {
+	m.sessionBuf = buf
 }
 
 // Register wires the workstations.* methods onto the router.
@@ -58,6 +64,9 @@ func (m *WorkstationsMethods) Register(router *gateway.MethodRouter) {
 	router.Register(protocol.MethodWorkstationsPermToggle, m.adminOnly(m.handlePermToggle))
 	// Phase 7: activity audit log
 	router.Register(protocol.MethodWorkstationsListActivity, m.adminOnly(m.handleListActivity))
+	// Session buffer: live-output replay
+	router.Register(protocol.MethodWorkstationsSessionsList, m.adminOnly(m.handleSessionsList))
+	router.Register(protocol.MethodWorkstationsSessionsOutput, m.adminOnly(m.handleSessionsOutput))
 }
 
 // adminOnly is a middleware that requires at least RoleAdmin on the WS client.
@@ -531,6 +540,91 @@ func (m *WorkstationsMethods) handlePermToggle(ctx context.Context, client *gate
 		return
 	}
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"id": id, "enabled": params.Enabled}))
+}
+
+// --- Session buffer: live-output replay ---
+
+func (m *WorkstationsMethods) handleSessionsList(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	locale := store.LocaleFromContext(ctx)
+	if m.sessionBuf == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotImplemented,
+			i18n.T(locale, i18n.MsgNotImplemented, "workstations.sessions.list")))
+		return
+	}
+	var params struct {
+		WorkstationID string `json:"workstationId"`
+	}
+	if req.Params != nil {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid params"))
+			return
+		}
+	}
+	if _, err := uuid.Parse(params.WorkstationID); err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+			i18n.T(locale, i18n.MsgInvalidID, "workstation")))
+		return
+	}
+	// Ownership: verify workstation belongs to caller's tenant.
+	if _, err := m.wsStore.GetByID(ctx, uuid.MustParse(params.WorkstationID)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotFound,
+				i18n.T(locale, i18n.MsgWorkstationNotFound, params.WorkstationID)))
+			return
+		}
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal,
+			i18n.T(locale, i18n.MsgInternalError, err.Error())))
+		return
+	}
+	sessions := m.sessionBuf.ListSessions(params.WorkstationID)
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"sessions": sessions}))
+}
+
+func (m *WorkstationsMethods) handleSessionsOutput(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	locale := store.LocaleFromContext(ctx)
+	if m.sessionBuf == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotImplemented,
+			i18n.T(locale, i18n.MsgNotImplemented, "workstations.sessions.output")))
+		return
+	}
+	var params struct {
+		WorkstationID string `json:"workstationId"`
+		SessionKey    string `json:"sessionKey"`
+	}
+	if req.Params != nil {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid params"))
+			return
+		}
+	}
+	if _, err := uuid.Parse(params.WorkstationID); err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+			i18n.T(locale, i18n.MsgInvalidID, "workstation")))
+		return
+	}
+	if params.SessionKey == "" {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+			i18n.T(locale, i18n.MsgRequired, "sessionKey")))
+		return
+	}
+	// Ownership check.
+	if _, err := m.wsStore.GetByID(ctx, uuid.MustParse(params.WorkstationID)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotFound,
+				i18n.T(locale, i18n.MsgWorkstationNotFound, params.WorkstationID)))
+			return
+		}
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal,
+			i18n.T(locale, i18n.MsgInternalError, err.Error())))
+		return
+	}
+	out, ok := m.sessionBuf.GetOutput(params.WorkstationID, params.SessionKey)
+	if !ok {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotFound,
+			"session not found in buffer"))
+		return
+	}
+	client.SendResponse(protocol.NewOKResponse(req.ID, out))
 }
 
 // --- Phase 7: activity audit log ---

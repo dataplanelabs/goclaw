@@ -43,4 +43,5 @@ type gatewayDeps struct {
 	vieneuDaemonURL  string                   // base URL for the in-pod VieNeu daemon ("" = disabled)
 	voiceCache       *audio.VoiceCache        // shared by GET /v1/voices + cloned-voice CRUD invalidation
 	wsBackendCache   *workstation.BackendCache // nil on lite edition; shared with Telegram /login codex
+	wsSessionBuf     *workstation.SessionBuffer // nil on lite edition; in-memory exec session buffer
 }

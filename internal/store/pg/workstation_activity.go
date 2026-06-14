@@ -60,7 +60,7 @@ func (s *PGWorkstationActivityStore) List(ctx context.Context, workstationID uui
 	if cursor == nil {
 		rows, err = s.db.QueryContext(ctx,
 			`SELECT id, tenant_id, workstation_id, agent_id, action, cmd_hash, cmd_preview,
-			        exit_code, duration_ms, deny_reason, created_at
+			        cmd_full, output_tail, exit_code, duration_ms, deny_reason, created_at
 			 FROM workstation_activity
 			 WHERE workstation_id = $1
 			 ORDER BY created_at DESC
@@ -68,10 +68,9 @@ func (s *PGWorkstationActivityStore) List(ctx context.Context, workstationID uui
 			workstationID, limit+1,
 		)
 	} else {
-		// Cursor: created_at of the cursor row acts as the page boundary.
 		rows, err = s.db.QueryContext(ctx,
 			`SELECT id, tenant_id, workstation_id, agent_id, action, cmd_hash, cmd_preview,
-			        exit_code, duration_ms, deny_reason, created_at
+			        cmd_full, output_tail, exit_code, duration_ms, deny_reason, created_at
 			 FROM workstation_activity
 			 WHERE workstation_id = $1
 			   AND created_at < (SELECT created_at FROM workstation_activity WHERE id = $2)
@@ -90,7 +89,8 @@ func (s *PGWorkstationActivityStore) List(ctx context.Context, workstationID uui
 		var a store.WorkstationActivity
 		if err := rows.Scan(
 			&a.ID, &a.TenantID, &a.WorkstationID, &a.AgentID, &a.Action,
-			&a.CmdHash, &a.CmdPreview, &a.ExitCode, &a.DurationMS, &a.DenyReason, &a.CreatedAt,
+			&a.CmdHash, &a.CmdPreview, &a.CmdFull, &a.OutputTail,
+			&a.ExitCode, &a.DurationMS, &a.DenyReason, &a.CreatedAt,
 		); err != nil {
 			return nil, nil, err
 		}
@@ -178,8 +178,8 @@ func (s *PGWorkstationActivityStore) batchInsert(ctx context.Context, rows []*st
 	stmt, err := tx.PrepareContext(ctx,
 		`INSERT INTO workstation_activity
 		   (id, tenant_id, workstation_id, agent_id, action, cmd_hash, cmd_preview,
-		    exit_code, duration_ms, deny_reason, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		    cmd_full, output_tail, exit_code, duration_ms, deny_reason, created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		 ON CONFLICT (id) DO NOTHING`,
 	)
 	if err != nil {
@@ -191,7 +191,8 @@ func (s *PGWorkstationActivityStore) batchInsert(ctx context.Context, rows []*st
 	for _, r := range rows {
 		if _, err := stmt.ExecContext(ctx,
 			r.ID, r.TenantID, r.WorkstationID, r.AgentID, r.Action,
-			r.CmdHash, r.CmdPreview, r.ExitCode, r.DurationMS, r.DenyReason, r.CreatedAt,
+			r.CmdHash, r.CmdPreview, r.CmdFull, r.OutputTail,
+			r.ExitCode, r.DurationMS, r.DenyReason, r.CreatedAt,
 		); err != nil {
 			_ = tx.Rollback()
 			return err

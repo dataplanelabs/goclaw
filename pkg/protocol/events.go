@@ -115,11 +115,11 @@ const (
 	EventBackgroundError = "background.error"
 
 	// Workstation exec streaming events.
+	// EventWorkstationExecStart is emitted when a remote exec session begins.
+	EventWorkstationExecStart = "workstation.exec.start"
 	// EventWorkstationExecChunk is emitted for each stdout/stderr chunk during remote exec.
-	// Payload: WorkstationExecChunkPayload.
 	EventWorkstationExecChunk = "workstation.exec.chunk"
 	// EventWorkstationExecDone is emitted when a remote exec command finishes.
-	// Payload: WorkstationExecDonePayload.
 	EventWorkstationExecDone = "workstation.exec.done"
 )
 

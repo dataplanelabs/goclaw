@@ -421,6 +421,9 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 			if d.pgStores.WorkstationActivity != nil {
 				wsH.SetActivityStore(d.pgStores.WorkstationActivity)
 			}
+			if d.wsSessionBuf != nil {
+				wsH.SetSessionBuffer(d.wsSessionBuf)
+			}
 			d.server.SetWorkstationsHandler(wsH)
 		}
 

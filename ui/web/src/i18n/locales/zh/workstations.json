@@ -80,6 +80,7 @@
     "columns": {
       "action": "操作",
       "cmdPreview": "命令",
+      "output": "输出",
       "exitCode": "退出码",
       "duration": "耗时",
       "agent": "Agent",
@@ -89,7 +90,24 @@
       "exec": "执行",
       "deny": "拒绝"
     },
+    "detail": {
+      "fullCommand": "完整命令",
+      "outputTail": "输出（最后约 8KB）"
+    },
     "loadMore": "加载更多"
+  },
+  "sessions": {
+    "selectSession": "选择运行记录…",
+    "empty": "暂无运行记录。通过 goclaw Agent 发起的运行将在此显示。",
+    "statusRunning": "运行中",
+    "statusDone": "已完成",
+    "statusFailed": "失败",
+    "agentLabel": "Agent",
+    "refreshSessions": "刷新",
+    "loadingOutput": "加载输出中…",
+    "waitingForOutput": "运行中 — 等待输出…",
+    "noOutput": "无输出。",
+    "goclawOnly": "仅显示通过 goclaw（workstation_exec / codex_remote / claude_remote）发起的运行。"
   },
   "codexReauth": {
     "title": "Codex 重新认证",

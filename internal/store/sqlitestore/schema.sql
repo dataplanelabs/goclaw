@@ -1840,6 +1840,8 @@ CREATE TABLE IF NOT EXISTS workstation_activity (
     action          VARCHAR(20)  NOT NULL,
     cmd_hash        VARCHAR(64)  NOT NULL DEFAULT '',
     cmd_preview     VARCHAR(200) NOT NULL DEFAULT '',
+    cmd_full        TEXT,
+    output_tail     TEXT,
     exit_code       INTEGER,
     duration_ms     INTEGER,
     deny_reason     VARCHAR(200) NOT NULL DEFAULT '',
