@@ -423,6 +423,14 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 			}
 			d.server.SetWorkstationsHandler(wsH)
 		}
+
+		// Codex re-auth API — requires workstation store (nil on lite).
+		if d.pgStores != nil && d.pgStores.Workstations != nil {
+			d.server.SetCodexReauthHandler(httpapi.NewCodexReauthHandler(
+				d.pgStores.Workstations,
+				d.wsBackendCache,
+			))
+		}
 	}
 
 	// Seed + apply builtin tool disables

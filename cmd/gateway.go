@@ -390,6 +390,7 @@ func runGateway() {
 		dataDir:          dataDir,
 		domainBus:        domainBus,
 		audioMgr:         audioMgr,
+		wsBackendCache:   wsBackendCache,
 	}
 
 	gatewayAddr := loopbackAddr(cfg.Gateway.Host, cfg.Gateway.Port)

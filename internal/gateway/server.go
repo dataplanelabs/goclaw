@@ -622,6 +622,11 @@ func (s *Server) SetWorkstationsHandler(h *httpapi.WorkstationsHandler) {
 	s.handlers = append(s.handlers, h)
 }
 
+// SetCodexReauthHandler registers the codex device-auth endpoints.
+func (s *Server) SetCodexReauthHandler(h *httpapi.CodexReauthHandler) {
+	s.handlers = append(s.handlers, h)
+}
+
 // SetVersion sets the server version for health responses.
 func (s *Server) SetVersion(v string) { s.version = v }
 
