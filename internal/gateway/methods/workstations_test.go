@@ -230,3 +230,89 @@ func TestWorkstationsUpdate_MetadataConvertedToBytes(t *testing.T) {
 		t.Errorf("metadata passed to store is %T, want []byte", metaVal)
 	}
 }
+
+// ---- Tests: handleUpdate — defaultEnv validation ----
+
+// TestWorkstationsUpdate_DefaultEnv covers the three cases for the defaultEnv
+// validation block: nested object rejected, non-string value rejected, and a
+// valid flat map[string]string that reaches the store as default_env []byte.
+func TestWorkstationsUpdate_DefaultEnv(t *testing.T) {
+	cases := []struct {
+		name        string
+		defaultEnv  any
+		wantErrCode string // non-empty → expect an error response with this code
+		wantKey     string // non-empty → expect this key in store updates
+	}{
+		{
+			name:        "nested object rejected",
+			defaultEnv:  map[string]any{"a": map[string]any{"b": 1}},
+			wantErrCode: protocol.ErrInvalidRequest,
+		},
+		{
+			name:        "non-string value rejected",
+			defaultEnv:  map[string]any{"a": 1},
+			wantErrCode: protocol.ErrInvalidRequest,
+		},
+		{
+			name:       "valid flat map reaches store as default_env bytes",
+			defaultEnv: map[string]any{"GH_TOKEN": "x"},
+			wantKey:    "default_env",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, stub := buildWorkstationMethods(t)
+			wsID := addSSHWorkstation(t, stub, "synthetic-key-material")
+			tenantID := uuid.New()
+			client, ch := gateway.NewCapturingTestClient(permissions.RoleAdmin, tenantID, "admin-user")
+
+			req := wsReqFrame(t, protocol.MethodWorkstationsUpdate, map[string]any{
+				"id": wsID.String(),
+				"updates": map[string]any{
+					"defaultEnv": tc.defaultEnv,
+				},
+			})
+
+			m.handleUpdate(context.Background(), client, req)
+
+			resp := readResponse(t, ch)
+			if resp == nil {
+				t.Fatal("expected response frame, got none")
+			}
+
+			if tc.wantErrCode != "" {
+				if resp.Error == nil {
+					t.Fatalf("expected error %q, got success", tc.wantErrCode)
+				}
+				if resp.Error.Code != tc.wantErrCode {
+					t.Errorf("error code = %q, want %q", resp.Error.Code, tc.wantErrCode)
+				}
+				return
+			}
+
+			// Happy path: store must have been called with default_env key as []byte.
+			if stub.captureUpdates == nil {
+				t.Fatal("store Update was not called")
+			}
+			if _, hasOld := stub.captureUpdates["defaultEnv"]; hasOld {
+				t.Error("store received camelCase 'defaultEnv' key; expected snake_case 'default_env'")
+			}
+			val, ok := stub.captureUpdates[tc.wantKey]
+			if !ok {
+				t.Fatalf("store updates missing key %q; got %v", tc.wantKey, stub.captureUpdates)
+			}
+			b, isBytes := val.([]byte)
+			if !isBytes {
+				t.Fatalf("store updates[%q] is %T, want []byte", tc.wantKey, val)
+			}
+			var decoded map[string]string
+			if err := json.Unmarshal(b, &decoded); err != nil {
+				t.Fatalf("store default_env bytes not valid JSON: %v", err)
+			}
+			if decoded["GH_TOKEN"] != "x" {
+				t.Errorf("decoded GH_TOKEN = %q, want %q", decoded["GH_TOKEN"], "x")
+			}
+		})
+	}
+}

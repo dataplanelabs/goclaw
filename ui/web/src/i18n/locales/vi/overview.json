@@ -89,19 +89,5 @@
     "title": "Embedding",
     "notConfigured": "Chưa cấu hình",
     "configure": "Cấu hình trong Providers →"
-  },
-  "codexReauth": {
-    "title": "Xác thực lại Codex",
-    "description": "Xác thực lại CLI codex trên pod coding-agent qua device auth.",
-    "startButton": "Bắt đầu xác thực",
-    "starting": "Đang khởi động trên pod…",
-    "openUrl": "Mở URL này trong trình duyệt:",
-    "codeLabel": "Nhập mã:",
-    "copyCode": "Sao chép mã",
-    "copied": "Đã sao chép mã",
-    "waiting": "Đang chờ phê duyệt…",
-    "done": "Codex đã xác thực lại thành công",
-    "retry": "Thử lại",
-    "reset": "Bắt đầu lại"
   }
 }

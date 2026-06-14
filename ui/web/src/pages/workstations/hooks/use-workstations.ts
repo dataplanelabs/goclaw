@@ -24,6 +24,7 @@ export interface UpdateWorkstationParams {
   name?: string;
   active?: boolean;
   metadata?: Record<string, unknown>;
+  defaultEnv?: Record<string, string>;
 }
 
 export function useWorkstations() {
@@ -62,7 +63,7 @@ export function useWorkstations() {
 
   const updateWorkstation = useCallback(
     async (id: string, params: UpdateWorkstationParams): Promise<void> => {
-      await ws.call(Methods.WORKSTATIONS_UPDATE, { id, ...params });
+      await ws.call(Methods.WORKSTATIONS_UPDATE, { id, updates: params });
       await load();
     },
     [ws, load],

@@ -89,19 +89,5 @@
     "title": "Embedding",
     "notConfigured": "Not configured",
     "configure": "Configure in Providers →"
-  },
-  "codexReauth": {
-    "title": "Codex Re-authentication",
-    "description": "Re-authenticate the codex CLI on the coding-agent pod via device auth.",
-    "startButton": "Start device auth",
-    "starting": "Launching on pod…",
-    "openUrl": "Open this URL in your browser:",
-    "codeLabel": "Enter code:",
-    "copyCode": "Copy code",
-    "copied": "Code copied",
-    "waiting": "Waiting for approval…",
-    "done": "Codex re-authenticated",
-    "retry": "Retry",
-    "reset": "Start over"
   }
 }

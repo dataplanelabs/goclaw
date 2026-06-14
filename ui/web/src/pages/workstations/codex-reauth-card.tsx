@@ -6,7 +6,7 @@ import { toast } from "@/stores/use-toast-store";
 import { useCodexReauth } from "./hooks/use-codex-reauth";
 
 export function CodexReauthCard() {
-  const { t } = useTranslation("overview");
+  const { t } = useTranslation("workstations");
   const { phase, url, code, error, start, reset } = useCodexReauth();
 
   function copyCode() {

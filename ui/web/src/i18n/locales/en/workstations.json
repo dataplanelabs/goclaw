@@ -78,5 +78,31 @@
       "deny": "Denied"
     },
     "loadMore": "Load more"
+  },
+  "codexReauth": {
+    "title": "Codex Re-authentication",
+    "description": "Re-authenticate the codex CLI on the coding-agent pod via device auth.",
+    "startButton": "Start device auth",
+    "starting": "Launching on pod…",
+    "openUrl": "Open this URL in your browser:",
+    "codeLabel": "Enter code:",
+    "copyCode": "Copy code",
+    "copied": "Code copied",
+    "waiting": "Waiting for approval…",
+    "done": "Codex re-authenticated",
+    "retry": "Retry",
+    "reset": "Start over"
+  },
+  "defaultEnvDialog": {
+    "title": "Environment Variables",
+    "description": "Set environment variables injected when this workstation runs commands. Values are encrypted at rest. This replaces all existing env vars.",
+    "keyPlaceholder": "ENV_KEY",
+    "valuePlaceholder": "value",
+    "addRow": "Add variable",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saved": "Environment variables saved",
+    "saveFailed": "Failed to save environment variables",
+    "editButton": "Edit Environment"
   }
 }

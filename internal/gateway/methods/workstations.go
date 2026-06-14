@@ -21,8 +21,8 @@ import (
 type WorkstationsMethods struct {
 	wsStore       store.WorkstationStore
 	linkStore     store.AgentWorkstationLinkStore
-	permStore     store.WorkstationPermissionStore     // may be nil if Phase 6 not wired
-	activityStore store.WorkstationActivityStore       // may be nil if Phase 7 not wired
+	permStore     store.WorkstationPermissionStore // may be nil if Phase 6 not wired
+	activityStore store.WorkstationActivityStore   // may be nil if Phase 7 not wired
 }
 
 // NewWorkstationsMethods creates WorkstationsMethods with the given stores.
@@ -122,13 +122,13 @@ func (m *WorkstationsMethods) handleGet(ctx context.Context, client *gateway.Cli
 func (m *WorkstationsMethods) handleCreate(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	locale := store.LocaleFromContext(ctx)
 	var params struct {
-		WorkstationKey string                     `json:"workstationKey"`
-		Name           string                     `json:"name"`
-		BackendType    store.WorkstationBackend   `json:"backendType"`
-		Metadata       json.RawMessage            `json:"metadata"`
-		DefaultCWD     string                     `json:"defaultCwd"`
-		DefaultEnv     json.RawMessage            `json:"defaultEnv"`
-		CreatedBy      string                     `json:"createdBy"`
+		WorkstationKey string                   `json:"workstationKey"`
+		Name           string                   `json:"name"`
+		BackendType    store.WorkstationBackend `json:"backendType"`
+		Metadata       json.RawMessage          `json:"metadata"`
+		DefaultCWD     string                   `json:"defaultCwd"`
+		DefaultEnv     json.RawMessage          `json:"defaultEnv"`
+		CreatedBy      string                   `json:"createdBy"`
 	}
 	if req.Params != nil {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -231,6 +231,30 @@ func (m *WorkstationsMethods) handleUpdate(ctx context.Context, client *gateway.
 		}
 		// Replace map[string]any with []byte so the store encrypts correctly (bytea column).
 		params.Updates["metadata"] = metaBytes
+	}
+	// Validate and serialize defaultEnv when present: must be flat map[string]string.
+	if rawEnv, hasEnv := params.Updates["defaultEnv"]; hasEnv {
+		envBytes, err := json.Marshal(rawEnv)
+		if err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidDefaultEnvShape, err.Error())))
+			return
+		}
+		var flat map[string]string
+		if err := json.Unmarshal(envBytes, &flat); err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidDefaultEnvShape, "must be a flat object with string values")))
+			return
+		}
+		// Re-marshal the validated flat map to ensure clean bytes for the store.
+		cleanBytes, err := json.Marshal(flat)
+		if err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidDefaultEnvShape, err.Error())))
+			return
+		}
+		delete(params.Updates, "defaultEnv")
+		params.Updates["default_env"] = cleanBytes
 	}
 	if err := m.wsStore.Update(ctx, id, params.Updates); err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal,
