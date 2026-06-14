@@ -8,7 +8,18 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
+)
+
+// Math-delimiter normalization: Telegram Rich Markdown (Bot API 10.1) uses GFM
+// math — $..$ inline, $$..$$ block — but agents commonly emit standard LaTeX
+// delimiters \(..\) / \[..\]. We rewrite those (outside code spans) so the math
+// renders. Existing $..$ / $$..$$ are already GFM and left untouched.
+var (
+	codeSpanRe   = regexp.MustCompile("(?s)```.*?```|`[^`]*`")
+	blockMathRe  = regexp.MustCompile(`(?s)\\\[(.*?)\\\]`)
+	inlineMathRe = regexp.MustCompile(`(?s)\\\((.*?)\\\)`)
 )
 
 // telegramAPIBase returns the Bot API base URL (official or self-hosted).
@@ -106,7 +117,34 @@ func (c *Channel) sendRichMessageDraft(ctx context.Context, p sendRichMessageDra
 // prepareRichMarkdown is near-identity: trim only. The agent already emits GFM;
 // Rich Markdown accepts it verbatim. Do NOT run markdownToTelegramHTML (lossy).
 func (c *Channel) prepareRichMarkdown(text string) string {
-	return strings.TrimSpace(text)
+	return normalizeMathDelimiters(strings.TrimSpace(text))
+}
+
+// normalizeMathDelimiters rewrites LaTeX math delimiters to GFM, skipping code
+// spans (fenced ``` blocks and `inline code`) so source examples stay verbatim.
+func normalizeMathDelimiters(text string) string {
+	if !strings.Contains(text, `\[`) && !strings.Contains(text, `\(`) {
+		return text
+	}
+	var b strings.Builder
+	last := 0
+	for _, loc := range codeSpanRe.FindAllStringIndex(text, -1) {
+		b.WriteString(convertMath(text[last:loc[0]])) // prose before the code span
+		b.WriteString(text[loc[0]:loc[1]])            // code span verbatim
+		last = loc[1]
+	}
+	b.WriteString(convertMath(text[last:]))
+	return b.String()
+}
+
+func convertMath(s string) string {
+	s = blockMathRe.ReplaceAllStringFunc(s, func(m string) string {
+		return "$$" + blockMathRe.FindStringSubmatch(m)[1] + "$$"
+	})
+	s = inlineMathRe.ReplaceAllStringFunc(s, func(m string) string {
+		return "$" + inlineMathRe.FindStringSubmatch(m)[1] + "$"
+	})
+	return s
 }
 
 // trySendRich attempts the Rich Markdown path. Returns true if delivered.
