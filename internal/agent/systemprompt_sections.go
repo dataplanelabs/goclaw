@@ -292,8 +292,15 @@ func buildTimeSection(tz string) []string {
 			label = tz
 		}
 	}
+	t := now.In(loc)
+	tomorrow := t.AddDate(0, 0, 1)
+	// Weekday-first + pre-computed "tomorrow" so the model never miscomputes the
+	// day-of-week (it does: e.g. saying "tomorrow is Monday" on a Monday).
 	return []string{
-		fmt.Sprintf("Current date: %s (%s)", now.In(loc).Format("2006-01-02 15:04 Monday"), label),
+		fmt.Sprintf("Current date: %s, %s %s (%s). Tomorrow is %s.",
+			t.Format("Monday"), t.Format("2006-01-02"), t.Format("15:04"),
+			label, tomorrow.Format("Monday, 2006-01-02")),
+		"This is the authoritative current date/day — use it directly; never guess or recompute the weekday.",
 		"",
 	}
 }
