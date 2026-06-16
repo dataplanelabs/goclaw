@@ -6,6 +6,12 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- **Honor `is_system` on skill upload** — the skill-upload handler now reads the
+  `is_system` multipart field (set by gcplane for `_system/` skills) and persists
+  it on create, so a single `_system/` skill becomes cross-tenant (global) without
+  a manual DB backfill. Gated to the master/owner context so a tenant upload cannot
+  escalate a skill to global; immutable on update.
+
 - **Per-message local timestamps** — the agent now sees each inbound message's
   arrival date and time (`YYYY-MM-DD HH:MM`) in its resolved timezone. Group-buffer
   timestamps are localized to the agent's preferred TZ (previously rendered in raw

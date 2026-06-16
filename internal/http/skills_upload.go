@@ -352,6 +352,14 @@ func (h *SkillsHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Source:      incomingSource,
 	}
 
+	// is_system marks a cross-tenant (global) skill (gcplane sets it for _system/
+	// uploads). Honor it only from the master/owner context so a tenant upload
+	// cannot escalate a skill to global. Set on create only (immutable on update).
+	if strings.EqualFold(strings.TrimSpace(r.FormValue("is_system")), "true") &&
+		(store.IsOwnerRole(r.Context()) || store.TenantIDFromContext(r.Context()) == store.MasterTenantID) {
+		skill.IsSystem = true
+	}
+
 	// Scan and check dependencies
 	// is_new is true only when no previous version of this skill existed (first upload).
 	isNew := !skillExists
