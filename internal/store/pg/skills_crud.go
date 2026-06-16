@@ -174,6 +174,11 @@ func (s *PGSkillStore) CreateSkillManaged(ctx context.Context, p store.SkillCrea
 		   file_path = EXCLUDED.file_path, deps = EXCLUDED.deps,
 		   file_size = EXCLUDED.file_size, file_hash = EXCLUDED.file_hash,
 		   source = EXCLUDED.source,
+		   -- is_system is sticky and promote-only: a master-scope upload (EXCLUDED.is_system=true,
+		   -- gated in the handler) can promote an existing skill to global; tenant uploads send
+		   -- false and never downgrade it. Lets a pre-existing skill become cross-tenant without
+		   -- a hard delete (goclaw soft-deletes, so the row persists).
+		   is_system = skills.is_system OR EXCLUDED.is_system,
 		   visibility = CASE WHEN skills.status IN ('archived', 'deleted') THEN 'private' ELSE skills.visibility END,
 		   status = EXCLUDED.status, updated_at = NOW()
 		 RETURNING id`,
