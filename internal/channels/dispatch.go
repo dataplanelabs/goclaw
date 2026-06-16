@@ -97,6 +97,8 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 				})
 			}
 
+			msg.Content = dedashContent(msg.Content)
+
 			sendErr := channel.Send(sendCtx, msg)
 			if sendErr == nil && msg.TraceID != uuid.Nil {
 				m.mu.RLock()
