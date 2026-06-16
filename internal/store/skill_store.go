@@ -147,6 +147,7 @@ type SkillCreateParams struct {
 	FileHash    *string
 	Frontmatter map[string]string
 	Source      string // ownership marker: "unknown" | "cli" | "gcplane" | "bundled" | "evolution". Empty → "unknown".
+	IsSystem    bool   // cross-tenant (global) skill; honored only from master/owner context, set on create (immutable on update).
 }
 
 // SkillWithGrantStatus is a skill with its grant status for a specific agent.
