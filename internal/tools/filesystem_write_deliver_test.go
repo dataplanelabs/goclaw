@@ -15,7 +15,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 // TestWriteFileDeliverTrue_PopulatesResultMedia asserts that write_file with
@@ -167,6 +170,46 @@ func TestWriteFileScratchPath_DefaultDeliverySuppressed(t *testing.T) {
 	}
 	if _, err := os.Stat(resolvedPath); err != nil {
 		t.Fatalf("expected scratch file to still be written: %v", err)
+	}
+}
+
+func TestWriteFilePermissionDenied_NoFileNoDeliveryMark(t *testing.T) {
+	workspace := t.TempDir()
+	workspaceCanonical, _ := filepath.EvalSymlinks(workspace)
+
+	tool := NewWriteFileTool(workspaceCanonical, true)
+	tool.SetConfigPermStore(stubConfigPermissionStore{allow: false})
+
+	dm := NewDeliveredMedia()
+	ctx := context.Background()
+	ctx = WithDeliveredMedia(ctx, dm)
+	ctx = store.WithTenantID(ctx, uuid.New())
+	ctx = store.WithAgentID(ctx, uuid.New())
+	ctx = store.WithUserID(ctx, "group:telegram:-100123456789")
+	ctx = store.WithSenderID(ctx, "42")
+
+	result := tool.Execute(ctx, map[string]any{
+		"path":    "sent-posts/already-sent.json",
+		"content": `{"post_id":"launch-001"}`,
+		"deliver": true,
+	})
+
+	if !result.IsError {
+		t.Fatal("expected write_file to fail when file_writer permission is denied")
+	}
+	if !strings.Contains(strings.ToLower(result.ForLLM), "permission denied") {
+		t.Fatalf("expected permission denied error, got: %s", result.ForLLM)
+	}
+	if len(result.Media) != 0 {
+		t.Fatalf("expected no media attachment on denied write, got %d", len(result.Media))
+	}
+
+	resolvedPath := filepath.Join(workspaceCanonical, "sent-posts", "already-sent.json")
+	if _, err := os.Stat(resolvedPath); !os.IsNotExist(err) {
+		t.Fatalf("expected denied write not to create sent-state file, stat err: %v", err)
+	}
+	if dm.IsDelivered(resolvedPath) {
+		t.Fatalf("expected denied write not to mark delivered media: %s", resolvedPath)
 	}
 }
 
