@@ -83,6 +83,12 @@ Capabilities are inferred from tool name when no explicit metadata is registered
 |---|---|
 | `exec` | Execute a shell command; supports credentialed CLI mode for secure credential injection |
 
+`exec` accepts an optional `timeout_sec` parameter. The effective timeout can
+also be set through builtin tool settings (`{"timeout_sec": 180}`); per-call
+arguments override settings. Values below 180 seconds are clamped to 180 seconds
+and values above 3600 seconds are clamped to 3600 seconds. Host execution
+defaults to 180 seconds; sandbox execution defaults to 300 seconds.
+
 **Credentialed CLI mode** — when the invoked binary is registered in `secure_cli_binaries`, the exec tool injects encrypted env vars directly into the child process (no shell involved) and verifies the agent has an explicit grant. Shell-wrapper unwrapping (up to depth 3) prevents bypass via `sh -c`. Fail-closed on DB error.
 
 ### Web (`group:web`)

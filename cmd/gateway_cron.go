@@ -131,6 +131,7 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 			ChatID:            job.DeliverTo,
 			PeerKind:          peerKind,
 			UserID:            job.UserID,
+			UserTimezone:      cronRunTimezone(job, cfg.Cron.DefaultTimezone),
 			SenderID:          fmt.Sprintf("cron:%s", job.ID),
 			RunID:             fmt.Sprintf("cron:%s", job.ID),
 			Stream:            false,
@@ -217,6 +218,13 @@ func resetCronSessionIfStateless(ctx context.Context, sessionMgr cronSessionRese
 // cronContextForJob builds a short tenant-scoped context for resolver lookups.
 func cronContextForJob(job *store.CronJob) context.Context {
 	return store.WithTenantID(context.Background(), job.TenantID)
+}
+
+func cronRunTimezone(job *store.CronJob, defaultTZ string) string {
+	if job == nil {
+		return ""
+	}
+	return agent.ResolveUserTimezone(job.Schedule.TZ, defaultTZ)
 }
 
 // resolveCronPeerKind returns "group" or "direct" for the cron's reply target.

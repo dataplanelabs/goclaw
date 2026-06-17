@@ -192,7 +192,7 @@ func (s *PGTracingStore) ListTraceRecipients(ctx context.Context, tenantID uuid.
 	if tenantID == uuid.Nil {
 		return nil, nil
 	}
-	q := `SELECT DISTINCT ON (user_id) user_id, COALESCE(session_key, '') AS session_key, COALESCE(channel, '') AS channel
+	q := `SELECT DISTINCT ON (user_id) user_id, COALESCE(session_key, '') AS session_key, COALESCE(channel, '') AS channel, COALESCE(run_id, '') AS run_id
 		FROM traces
 		WHERE tenant_id = $1 AND user_id <> ''
 		ORDER BY user_id, start_time DESC

@@ -168,7 +168,7 @@ func (s *SQLiteTracingStore) ListTraceRecipients(ctx context.Context, tenantID u
 	if tenantID == uuid.Nil {
 		return nil, nil
 	}
-	q := `SELECT user_id, COALESCE(session_key, '') AS session_key, COALESCE(channel, '') AS channel
+	q := `SELECT user_id, COALESCE(session_key, '') AS session_key, COALESCE(channel, '') AS channel, COALESCE(run_id, '') AS run_id
 		FROM traces t
 		WHERE tenant_id = ? AND user_id IS NOT NULL AND user_id <> ''
 		  AND start_time = (
@@ -186,7 +186,7 @@ func (s *SQLiteTracingStore) ListTraceRecipients(ctx context.Context, tenantID u
 	var out []store.TraceRecipient
 	for rows.Next() {
 		var r store.TraceRecipient
-		if err := rows.Scan(&r.UserID, &r.SessionKey, &r.Channel); err != nil {
+		if err := rows.Scan(&r.UserID, &r.SessionKey, &r.Channel, &r.RunID); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

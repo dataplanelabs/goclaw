@@ -196,9 +196,18 @@ worker.Stop()
 | `agent_id` | UUID | Filter by agent |
 | `user_id` | string | Filter by user |
 | `status` | string | Filter by status (running, success, error, cancelled) |
+| `channel` | string | Filter by channel instance |
+| `source_type` | string | Filter by invocation source (`cron`, `group`, `direct`, `team`, `ws`) |
 | `from` / `to` | timestamp | Date range filter |
 | `limit` | int | Page size (default 50) |
 | `offset` | int | Pagination offset |
+
+Trace responses include a best-effort `chat_title` field resolved from channel
+contacts. For cron traces, the resolver uses `run_id = cron:<jobID>` to load the
+cron job's configured `deliver_to` target, so the trace list/detail can show the
+delivery recipient while retaining `user_id` as the requester/audit identity.
+Cron input previews also rewrite the leading prompt timestamp to the job's
+schedule timezone when the cron job is still available.
 
 ---
 

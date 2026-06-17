@@ -66,6 +66,21 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Cron runs honor their schedule timezone in trace prompts** — cron-dispatched
+  agent turns now carry the job schedule timezone into the run request, so the
+  bracketed prompt timestamp renders in the configured local timezone instead of
+  UTC. Trace detail views also rewrite persisted cron input previews at read
+  time when the cron job still exists, making older runs easier to inspect.
+
+- **Cron traces show the delivery target and deduplicate recipient filters** —
+  trace list/detail enrichment now resolves cron run IDs back to the configured
+  delivery target, and the trace recipient filter collapses duplicate display
+  labels from overlapping user/contact records.
+
+- **`exec` timeout is configurable with a 180s floor** — the built-in shell tool
+  accepts `timeout_sec` from both tool settings and per-call arguments, clamps it
+  to safe bounds, and defaults host execution to three minutes.
+
 - **Zalo Personal poll results now expose returned voter identities** —
   `zalo_personal_get_poll` and `zalo_personal_list_polls` preserve Zalo's
   per-option voter IDs and resolve display names when the group member cache can

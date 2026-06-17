@@ -169,6 +169,13 @@ stateDiagram-v2
 | `every` | `everyMs` | Every 30 minutes (1,800,000 ms) |
 | `cron` | `expr` (5-field) | `"0 9 * * 1-5"` (9AM on weekdays) |
 
+Cron schedules may carry an IANA timezone (`tz`). The scheduler computes due
+times in that timezone and stores execution timestamps in UTC. When a cron job
+enters the agent loop, the same timezone is propagated into the run context so
+the prompt's leading current-message stamp reflects the schedule timezone
+(for example, `08:00 +07` for an `Asia/Ho_Chi_Minh` 8AM cron rather than the
+equivalent `01:00 +00` UTC instant).
+
 ### Job States
 
 Jobs have an `Enabled` boolean flag. When `false`, the job is skipped during the due-job check. When re-enabled, the next run is recomputed. Run results are logged in-memory (last 200 entries) and persisted to the PostgreSQL `cron_run_logs` table. Job state changes propagate via the message bus cache invalidation (`cache:cron` event).

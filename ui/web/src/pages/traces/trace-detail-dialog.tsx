@@ -158,8 +158,13 @@ function parsePeerId(raw: string): { kind: "group" | "user"; peerId: string } {
   return { kind: "user", peerId: raw };
 }
 
+function isCronTrace(trace: TraceData): boolean {
+  return trace.run_id?.startsWith("cron:") || trace.session_key?.includes(":cron:");
+}
+
 function TraceSummaryGrid({ trace, tz, onNavigateTrace }: { trace: TraceData; tz: string; onNavigateTrace?: (id: string) => void }) {
   const { t } = useTranslation("traces");
+  const cronTrace = isCronTrace(trace);
   return (
     <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
       <div><span className="text-muted-foreground">{t("detail.name")}</span> <span className="font-medium">{trace.name || t("unnamed")}</span></div>
@@ -168,7 +173,7 @@ function TraceSummaryGrid({ trace, tz, onNavigateTrace }: { trace: TraceData; tz
       <div><span className="text-muted-foreground">{t("detail.channel")}</span> {trace.channel || "—"}</div>
       {trace.chat_title && (
         <div className="col-span-2 sm:col-span-2" title={trace.chat_title}>
-          <span className="text-muted-foreground">{t("detail.chatTitle")}</span>{" "}
+          <span className="text-muted-foreground">{cronTrace ? t("detail.deliveryTarget") : t("detail.chatTitle")}</span>{" "}
           <span className="font-medium">{trace.chat_title}</span>
         </div>
       )}
@@ -192,7 +197,7 @@ function TraceSummaryGrid({ trace, tz, onNavigateTrace }: { trace: TraceData; tz
       )}
       {trace.user_id && (() => {
         const { kind, peerId } = parsePeerId(trace.user_id);
-        const label = kind === "group" ? t("detail.groupId") : t("detail.userId");
+        const label = cronTrace ? t("detail.requesterUserId") : kind === "group" ? t("detail.groupId") : t("detail.userId");
         return (
           <div className="col-span-2 sm:col-span-4" title={trace.user_id}>
             <span className="text-muted-foreground">{label}</span>{" "}

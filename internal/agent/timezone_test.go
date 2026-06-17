@@ -25,3 +25,17 @@ func TestResolveUserTimezone(t *testing.T) {
 		})
 	}
 }
+
+func TestTurnTimezone_RequestOverrideWins(t *testing.T) {
+	got := turnTimezone("Asia/Ho_Chi_Minh", nil, "UTC")
+	if got != "Asia/Ho_Chi_Minh" {
+		t.Fatalf("turnTimezone override = %q, want Asia/Ho_Chi_Minh", got)
+	}
+}
+
+func TestTurnTimezone_InvalidOverrideFallsBack(t *testing.T) {
+	got := turnTimezone("Bad/Timezone", nil, "UTC")
+	if got != "UTC" {
+		t.Fatalf("turnTimezone invalid override = %q, want UTC fallback", got)
+	}
+}

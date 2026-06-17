@@ -37,6 +37,8 @@
     "duration": "Duration:",
     "channel": "Channel:",
     "chatTitle": "Chat:",
+    "deliveryTarget": "Delivered to:",
+    "requesterUserId": "Requester ID:",
     "userId": "User ID:",
     "groupId": "Group ID:",
     "tokens": "Tokens:",
