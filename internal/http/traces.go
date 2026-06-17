@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,11 +29,16 @@ type TracesHandler struct {
 	router     RetryAgentRunner
 	channels   store.ChannelInstanceStore
 	contacts   store.ContactStore
+	cron       store.CronStore
 }
 
 func (h *TracesHandler) SetEnrichmentDeps(channels store.ChannelInstanceStore, contacts store.ContactStore) {
 	h.channels = channels
 	h.contacts = contacts
+}
+
+func (h *TracesHandler) SetCronStore(cron store.CronStore) {
+	h.cron = cron
 }
 
 // RetryAgentRunner is the subset of agent.Router needed to invoke a retry run.
@@ -176,9 +182,9 @@ func (h *TracesHandler) handleRecipients(w http.ResponseWriter, r *http.Request)
 
 	pairs := make([]channelSession, len(recipients))
 	for i, rec := range recipients {
-		pairs[i] = channelSession{channel: rec.Channel, sessionKey: rec.SessionKey}
+		pairs[i] = channelSession{channel: rec.Channel, sessionKey: rec.SessionKey, runID: rec.RunID}
 	}
-	titles := h.resolveChatTitles(r.Context(), pairs)
+	titles := h.resolveChatTitles(r.Context(), pairs, nil)
 
 	out := make([]traceRecipientOut, 0, len(recipients))
 	for i, rec := range recipients {
@@ -198,14 +204,22 @@ func (h *TracesHandler) handleRecipients(w http.ResponseWriter, r *http.Request)
 // (trace.channel → channel_instance.channel_type) × (sender_id from session_key)
 // against channel_contacts.display_name. Best-effort: silent on any lookup miss.
 func (h *TracesHandler) enrichChatTitles(ctx context.Context, traces []store.TraceData) {
-	if len(traces) == 0 || h.channels == nil || h.contacts == nil {
+	if len(traces) == 0 {
+		return
+	}
+	cronJobs := cronJobCache(nil)
+	if h.cron != nil {
+		cronJobs = make(cronJobCache)
+	}
+	h.enrichCronInputPreviews(ctx, traces, cronJobs)
+	if h.channels == nil || h.contacts == nil {
 		return
 	}
 	pairs := make([]channelSession, len(traces))
 	for i := range traces {
-		pairs[i] = channelSession{channel: traces[i].Channel, sessionKey: traces[i].SessionKey}
+		pairs[i] = channelSession{channel: traces[i].Channel, sessionKey: traces[i].SessionKey, runID: traces[i].RunID}
 	}
-	titles := h.resolveChatTitles(ctx, pairs)
+	titles := h.resolveChatTitles(ctx, pairs, cronJobs)
 	for i := range traces {
 		if title, ok := titles[i]; ok {
 			traces[i].ChatTitle = title
@@ -217,20 +231,26 @@ func (h *TracesHandler) enrichChatTitles(ctx context.Context, traces []store.Tra
 type channelSession struct {
 	channel    string
 	sessionKey string
+	runID      string
 }
 
 // resolveChatTitles resolves group/DM display names for the given (channel,
 // session_key) pairs, returning a map of index → display name for resolved rows.
 // Shared by enrichChatTitles and the recipients endpoint so labels match the rows.
-func (h *TracesHandler) resolveChatTitles(ctx context.Context, pairs []channelSession) map[int]string {
+func (h *TracesHandler) resolveChatTitles(ctx context.Context, pairs []channelSession, cronJobs cronJobCache) map[int]string {
 	out := make(map[int]string, len(pairs))
 	if len(pairs) == 0 || h.channels == nil || h.contacts == nil {
 		return out
 	}
+	if cronJobs == nil && h.cron != nil {
+		cronJobs = make(cronJobCache)
+	}
 	channelTypes := make(map[string]string, 4)
 	senderIDs := make([]string, 0, len(pairs))
-	for _, p := range pairs {
-		sid := chatIDFromSessionKey(p.sessionKey)
+	sids := make([]string, len(pairs))
+	for i, p := range pairs {
+		sid := h.chatIDForTraceTitle(ctx, p, cronJobs)
+		sids[i] = sid
 		if sid == "" || p.channel == "" {
 			continue
 		}
@@ -255,7 +275,7 @@ func (h *TracesHandler) resolveChatTitles(ctx context.Context, pairs []channelSe
 		return out
 	}
 	for i, p := range pairs {
-		sid := chatIDFromSessionKey(p.sessionKey)
+		sid := sids[i]
 		if sid == "" {
 			continue
 		}
@@ -268,6 +288,85 @@ func (h *TracesHandler) resolveChatTitles(ctx context.Context, pairs []channelSe
 		}
 	}
 	return out
+}
+
+func (h *TracesHandler) chatIDForTraceTitle(ctx context.Context, p channelSession, cronJobs cronJobCache) string {
+	if job := h.cronJobForTrace(ctx, p.runID, p.sessionKey, cronJobs); job != nil && job.DeliverTo != "" {
+		return job.DeliverTo
+	}
+	return chatIDFromSessionKey(p.sessionKey)
+}
+
+func (h *TracesHandler) enrichCronInputPreviews(ctx context.Context, traces []store.TraceData, cronJobs cronJobCache) {
+	if h.cron == nil {
+		return
+	}
+	for i := range traces {
+		job := h.cronJobForTrace(ctx, traces[i].RunID, traces[i].SessionKey, cronJobs)
+		if job == nil || job.Schedule.TZ == "" {
+			continue
+		}
+		traces[i].InputPreview = rewriteLeadingTraceStamp(traces[i].InputPreview, traces[i].StartTime, job.Schedule.TZ)
+	}
+}
+
+type cronJobCache map[string]*store.CronJob
+
+func (h *TracesHandler) cronJobForTrace(ctx context.Context, runID, sessionKey string, cronJobs cronJobCache) *store.CronJob {
+	if h.cron == nil {
+		return nil
+	}
+	jobID := cronJobIDFromTrace(runID, sessionKey)
+	if jobID == "" {
+		return nil
+	}
+	if cronJobs != nil {
+		if job, ok := cronJobs[jobID]; ok {
+			return job
+		}
+	}
+	job, ok := h.cron.GetJob(ctx, jobID)
+	if !ok {
+		if cronJobs != nil {
+			cronJobs[jobID] = nil
+		}
+		return nil
+	}
+	if cronJobs != nil {
+		cronJobs[jobID] = job
+	}
+	return job
+}
+
+func rewriteLeadingTraceStamp(input string, start time.Time, tz string) string {
+	if input == "" || start.IsZero() || tz == "" || !strings.HasPrefix(input, "[") {
+		return input
+	}
+	end := strings.IndexByte(input, ']')
+	if end <= 1 {
+		return input
+	}
+	if _, err := time.Parse("2006-01-02 15:04 -07", input[1:end]); err != nil {
+		return input
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return input
+	}
+	stamp := start.In(loc).Format("2006-01-02 15:04 -07")
+	return "[" + stamp + "]" + input[end+1:]
+}
+
+func cronJobIDFromTrace(runID, sessionKey string) string {
+	if strings.HasPrefix(runID, "cron:") {
+		if jobID := strings.TrimPrefix(runID, "cron:"); jobID != "" {
+			return jobID
+		}
+	}
+	if !strings.Contains(sessionKey, ":cron:") {
+		return ""
+	}
+	return chatIDFromSessionKey(sessionKey)
 }
 
 // chatIDFromSessionKey returns the last colon-separated segment, the typical
@@ -314,6 +413,10 @@ func (h *TracesHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	enriched := []store.TraceData{*trace}
+	h.enrichChatTitles(r.Context(), enriched)
+	*trace = enriched[0]
 
 	spans, err := h.tracing.GetTraceSpans(r.Context(), traceID)
 	if err != nil {

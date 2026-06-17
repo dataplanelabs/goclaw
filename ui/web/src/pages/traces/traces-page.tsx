@@ -156,10 +156,15 @@ export function TracesPage() {
   }, [traces, resolve]);
 
   const recipientOptions = useMemo(() => {
-    if (tenantRecipients.length === 0) return pageRecipientOptions;
-    return tenantRecipients
+    const rawOptions = tenantRecipients.length === 0 ? pageRecipientOptions : tenantRecipients
       .map((r): [string, string] => [r.user_id, r.label || formatUserLabel(r.user_id, resolve)])
       .sort((a, b) => a[1].localeCompare(b[1]));
+    const byLabel = new Map<string, [string, string]>();
+    for (const option of rawOptions) {
+      const key = (option[1] || option[0]).trim().toLocaleLowerCase();
+      if (!byLabel.has(key)) byLabel.set(key, option);
+    }
+    return [...byLabel.values()];
   }, [tenantRecipients, pageRecipientOptions, resolve]);
 
   const spinning = useMinLoading(fetching);

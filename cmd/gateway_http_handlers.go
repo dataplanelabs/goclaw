@@ -47,6 +47,9 @@ func wireHTTP(stores *store.Stores, defaultWorkspace, dataDir, bundledSkillsDir 
 		if stores.ChannelInstances != nil && stores.Contacts != nil {
 			tracesH.SetEnrichmentDeps(stores.ChannelInstances, stores.Contacts)
 		}
+		if stores.Cron != nil {
+			tracesH.SetCronStore(stores.Cron)
+		}
 	}
 
 	if stores != nil && stores.MCP != nil {

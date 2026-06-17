@@ -95,6 +95,22 @@ func TestResolveCronPeerKind_NilContactStore_FailsSafeDirect(t *testing.T) {
 	}
 }
 
+func TestCronRunTimezone_JobTZWins(t *testing.T) {
+	job := &store.CronJob{Schedule: store.CronSchedule{TZ: "Asia/Ho_Chi_Minh"}}
+	got := cronRunTimezone(job, "UTC")
+	if got != "Asia/Ho_Chi_Minh" {
+		t.Fatalf("cronRunTimezone = %q, want Asia/Ho_Chi_Minh", got)
+	}
+}
+
+func TestCronRunTimezone_DefaultFallback(t *testing.T) {
+	job := &store.CronJob{}
+	got := cronRunTimezone(job, "Asia/Ho_Chi_Minh")
+	if got != "Asia/Ho_Chi_Minh" {
+		t.Fatalf("cronRunTimezone fallback = %q, want Asia/Ho_Chi_Minh", got)
+	}
+}
+
 // fakeCronSession simulates an isolated cron session that accumulates messages
 // across runs. Reset clears it; Save snapshots the (possibly empty) state to the
 // "DB" so a simulated restart can't reload stale history.

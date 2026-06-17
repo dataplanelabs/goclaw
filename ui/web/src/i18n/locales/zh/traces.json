@@ -12,6 +12,8 @@
   "detail": {
     "channel": "Channel：",
     "chatTitle": "聊天：",
+    "deliveryTarget": "投递至：",
+    "requesterUserId": "请求者 ID：",
     "userId": "用户 ID：",
     "groupId": "群组 ID：",
     "copy": "复制",

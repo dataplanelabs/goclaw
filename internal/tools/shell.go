@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +28,13 @@ import (
 // Sources: OWASP Agentic AI Top 10, Claude Code CVE-2025-66032, MITRE ATT&CK,
 // PayloadsAllTheThings, Trail of Bits prompt-injection-to-RCE research.
 // Groups and patterns defined in shell_deny_groups.go.
+
+const (
+	defaultExecTimeout        = 180 * time.Second
+	defaultSandboxExecTimeout = 300 * time.Second
+	minExecTimeout            = 180 * time.Second
+	maxExecTimeout            = 60 * time.Minute
+)
 
 // DefaultDenyPatterns returns all patterns from groups where Default=true.
 // Backward-compatible wrapper for code that doesn't use per-agent overrides.
@@ -93,7 +102,7 @@ func (t *ExecTool) EffectiveDenyGroupsForTest(ctx context.Context) map[string]bo
 func NewExecTool(workspace string, restrict bool) *ExecTool {
 	return &ExecTool{
 		workspace: workspace,
-		timeout:   60 * time.Second,
+		timeout:   defaultExecTimeout,
 		restrict:  restrict,
 	}
 }
@@ -102,7 +111,7 @@ func NewExecTool(workspace string, restrict bool) *ExecTool {
 func NewSandboxedExecTool(workspace string, restrict bool, mgr sandbox.Manager) *ExecTool {
 	return &ExecTool{
 		workspace:  workspace,
-		timeout:    300 * time.Second, // sandbox allows longer timeout
+		timeout:    defaultSandboxExecTimeout, // sandbox allows longer timeout
 		restrict:   restrict,
 		sandboxMgr: mgr,
 	}
@@ -185,6 +194,10 @@ func (t *ExecTool) Parameters() map[string]any {
 			"working_dir": map[string]any{
 				"type":        "string",
 				"description": "Working directory for the command (default: workspace root)",
+			},
+			"timeout_sec": map[string]any{
+				"type":        "number",
+				"description": "Command timeout in seconds (minimum/default: 180)",
 			},
 		},
 		"required": []string{"command"},
@@ -397,14 +410,67 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 		}
 	}
 
+	execTimeout := t.effectiveTimeout(ctx, args)
+
 	// Sandbox routing (sandboxKey from ctx — thread-safe)
 	sandboxKey := ToolSandboxKeyFromCtx(ctx)
 	if t.sandboxMgr != nil && sandboxKey != "" {
-		return t.executeInSandbox(ctx, command, cwd, sandboxKey)
+		return t.executeInSandbox(ctx, command, cwd, sandboxKey, execTimeout)
 	}
 
 	// Host execution
-	return t.executeOnHost(ctx, command, cwd)
+	return t.executeOnHost(ctx, command, cwd, execTimeout)
+}
+
+type execToolSettings struct {
+	TimeoutSec int `json:"timeout_sec"`
+}
+
+func (t *ExecTool) effectiveTimeout(ctx context.Context, args map[string]any) time.Duration {
+	timeout := clampExecTimeout(t.timeout)
+
+	if settings := BuiltinToolSettingsFromCtx(ctx); settings != nil {
+		if raw := settings["exec"]; len(raw) > 0 {
+			var cfg execToolSettings
+			if err := json.Unmarshal(raw, &cfg); err == nil && cfg.TimeoutSec > 0 {
+				timeout = clampExecTimeout(time.Duration(cfg.TimeoutSec) * time.Second)
+			}
+		}
+	}
+
+	if sec := timeoutSecArg(args["timeout_sec"]); sec > 0 {
+		timeout = clampExecTimeout(time.Duration(sec) * time.Second)
+	}
+	return timeout
+}
+
+func clampExecTimeout(d time.Duration) time.Duration {
+	if d < minExecTimeout {
+		return minExecTimeout
+	}
+	if d > maxExecTimeout {
+		return maxExecTimeout
+	}
+	return d
+}
+
+func timeoutSecArg(v any) int {
+	switch x := v.(type) {
+	case int:
+		return x
+	case int64:
+		return int(x)
+	case float64:
+		return int(x)
+	case json.Number:
+		n, _ := x.Int64()
+		return int(n)
+	case string:
+		n, _ := strconv.Atoi(strings.TrimSpace(x))
+		return n
+	default:
+		return 0
+	}
 }
 
 // matchesAny checks if a command matches any pattern in the list.
@@ -420,8 +486,12 @@ func matchesAny(command string, patterns []*regexp.Regexp) bool {
 // executeOnHost runs a command directly on the host (original behavior).
 // ctx cancellation (e.g. agent abort) triggers SIGTERM → 3s grace → SIGKILL on the
 // entire process group so forked children are also cleaned up (no orphans).
-func (t *ExecTool) executeOnHost(ctx context.Context, command, cwd string) *Result {
-	ctx, cancel := context.WithTimeout(ctx, t.timeout)
+func (t *ExecTool) executeOnHost(ctx context.Context, command, cwd string, timeoutOverride ...time.Duration) *Result {
+	execTimeout := clampExecTimeout(t.timeout)
+	if len(timeoutOverride) > 0 {
+		execTimeout = clampExecTimeout(timeoutOverride[0])
+	}
+	ctx, cancel := context.WithTimeout(ctx, execTimeout)
 	defer cancel()
 
 	// Use plain exec.Command (not CommandContext) so we control the kill sequence.
@@ -466,7 +536,7 @@ func (t *ExecTool) executeOnHost(ctx context.Context, command, cwd string) *Resu
 	select {
 	case err := <-done:
 		// Normal completion (success or non-zero exit).
-		return buildHostResult(err, stdout, stderr, ctx, t.timeout)
+		return buildHostResult(err, stdout, stderr, ctx, execTimeout)
 
 	case <-ctx.Done():
 		// Context cancelled or timed out — kill the process group gracefully then forcefully.
@@ -480,7 +550,7 @@ func (t *ExecTool) executeOnHost(ctx context.Context, command, cwd string) *Resu
 			<-done
 		}
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return ErrorResult(fmt.Sprintf("command timed out after %s", t.timeout))
+			return ErrorResult(fmt.Sprintf("command timed out after %s", execTimeout))
 		}
 		return ErrorResult("command aborted")
 	}
@@ -516,11 +586,19 @@ func buildHostResult(err error, stdout, stderr *limitedBuffer, ctx context.Conte
 }
 
 // executeInSandbox routes a command through a Docker sandbox container.
-func (t *ExecTool) executeInSandbox(ctx context.Context, command, cwd, sandboxKey string) *Result {
+func (t *ExecTool) executeInSandbox(ctx context.Context, command, cwd, sandboxKey string, timeoutOverride ...time.Duration) *Result {
+	originalCtx := ctx
+	execTimeout := clampExecTimeout(t.timeout)
+	if len(timeoutOverride) > 0 {
+		execTimeout = clampExecTimeout(timeoutOverride[0])
+	}
+	ctx, cancel := context.WithTimeout(ctx, execTimeout)
+	defer cancel()
+
 	sb, err := t.sandboxMgr.Get(ctx, sandboxKey, t.workspace, SandboxConfigFromCtx(ctx))
 	if err != nil {
 		if errors.Is(err, sandbox.ErrSandboxDisabled) {
-			return t.executeOnHost(ctx, command, cwd)
+			return t.executeOnHost(originalCtx, command, cwd, execTimeout)
 		}
 		// Docker unavailable (binary missing, daemon down) → fail closed.
 		// Do NOT silently fallback to host — that defeats the purpose of sandboxing.
@@ -539,6 +617,9 @@ func (t *ExecTool) executeInSandbox(ctx context.Context, command, cwd, sandboxKe
 
 	result, err := sb.Exec(ctx, []string{"sh", "-c", command}, containerCwd) //nolint: no ExecOption for normal exec
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return ErrorResult(fmt.Sprintf("command timed out after %s", execTimeout))
+		}
 		return ErrorResult(fmt.Sprintf("sandbox exec: %v", err))
 	}
 

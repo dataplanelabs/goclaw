@@ -120,6 +120,7 @@ type TraceRecipient struct {
 	UserID     string `json:"user_id" db:"user_id"`
 	SessionKey string `json:"session_key" db:"session_key"`
 	Channel    string `json:"channel" db:"channel"`
+	RunID      string `json:"run_id" db:"run_id"`
 }
 
 // CostSummaryOpts configures cost aggregation queries.

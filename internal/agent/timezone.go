@@ -48,6 +48,18 @@ func userTimezone(meta *bootstrap.ChannelMeta, workspaceDefault string) string {
 	return ResolveUserTimezone(meta.ChannelTimezone, workspaceDefault)
 }
 
+// turnTimezone picks the IANA timezone for this run. A request-level override
+// wins over channel/default config so scheduled jobs can render prompt times in
+// their cron timezone even when the delivery channel has no timezone metadata.
+func turnTimezone(override string, meta *bootstrap.ChannelMeta, workspaceDefault string) string {
+	if override != "" {
+		if _, err := time.LoadLocation(override); err == nil {
+			return override
+		}
+	}
+	return userTimezone(meta, workspaceDefault)
+}
+
 // userTimezoneFromCtx reads the per-turn resolved timezone off RunContext.
 // Returns "" if RunContext is absent (subagent paths, tests) — buildTimeSection
 // then falls back to UTC.
