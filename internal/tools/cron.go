@@ -49,7 +49,10 @@ VALID ACTIONS AND EXACT PAYLOAD SHAPES:
     "channel": "string",          // optional, auto-filled from current channel context
     "to": "string",               // optional
     "agentId": "string",          // optional, defaults to current agent
-    "deleteAfterRun": true|false  // optional, default true for schedule.kind="at"
+    "deleteAfterRun": true|false, // optional, default true for schedule.kind="at"
+    "stateless": true|false,      // optional, run each fire on a fresh session (default false)
+    "injectTargetHistory": true|false,    // optional, inject recent target-chat history into the run (default true) — lets the job read the chat and skip a reminder the user already handled
+    "injectTargetHistoryLimit": <int>     // optional, max history messages to inject (default 50)
   }
 }
 
@@ -66,6 +69,9 @@ VALID ACTIONS AND EXACT PAYLOAD SHAPES:
     "to": "string",
     "agentId": "string",
     "deleteAfterRun": true|false,
+    "stateless": true|false,
+    "injectTargetHistory": true|false,
+    "injectTargetHistoryLimit": <int>,
     "disabled": true|false
   }
 }
@@ -92,7 +98,8 @@ RULES:
 - "name" must match: lowercase letters, numbers, hyphens only.
 - Before creating or updating a scheduled job, call the datetime tool first to get the precise current time and unix_ms timestamp. Never guess timestamps.
 - Omit optional fields when unknown; do not invent placeholder values like "", 0, or null unless required.
-- Jobs run as isolated agent turns using the provided "message".`
+- Jobs run as isolated agent turns using the provided "message".
+- Reminder/coaching jobs: keep "injectTargetHistory": true (the default) so the run reads the recent chat and can skip reminding a task the user already finished or objected to; do not create speculative escalation jobs.`
 }
 
 func (t *CronTool) Parameters() map[string]any {
@@ -110,7 +117,7 @@ func (t *CronTool) Parameters() map[string]any {
 			},
 			"job": map[string]any{
 				"type":                 "object",
-				"description":          "Job definition for add action (name, schedule, message, deliver, channel, to, agentId, deleteAfterRun)",
+				"description":          "Job definition for add action (name, schedule, message, deliver, channel, to, agentId, deleteAfterRun, stateless, injectTargetHistory, injectTargetHistoryLimit)",
 				"additionalProperties": true,
 			},
 			"jobId": map[string]any{
@@ -297,10 +304,10 @@ func (t *CronTool) handleAdd(ctx context.Context, args map[string]any, agentID, 
 		return ErrorResult(fmt.Sprintf("failed to create cron job: %v", err))
 	}
 
-	// Set wake_heartbeat if requested (triggers heartbeat after cron job completes)
-	if wh, _ := jobObj["wake_heartbeat"].(bool); wh {
-		wakeTrue := true
-		if updated, uErr := t.cronStore.UpdateJob(ctx, job.ID, store.CronJobPatch{WakeHeartbeat: &wakeTrue}); uErr == nil {
+	// Apply post-create fields AddJob doesn't take (wake_heartbeat, stateless,
+	// injectTargetHistory*), in one patch so agent-authored jobs are configurable.
+	if patch, dirty := buildAddPatch(jobObj); dirty {
+		if updated, uErr := t.cronStore.UpdateJob(ctx, job.ID, patch); uErr == nil {
 			job = updated
 		}
 	}
@@ -326,6 +333,33 @@ func (t *CronTool) checkJobOwnership(ctx context.Context, jobID, agentID, userID
 	}
 
 	return job, nil
+}
+
+// buildAddPatch collects the create-time fields AddJob doesn't accept directly.
+// wake_heartbeat is applied only when true (legacy behavior); the rest apply
+// whenever the agent supplied them so an explicit false overrides the default.
+func buildAddPatch(jobObj map[string]any) (store.CronJobPatch, bool) {
+	patch := store.CronJobPatch{}
+	dirty := false
+	if wh, _ := jobObj["wake_heartbeat"].(bool); wh {
+		wakeTrue := true
+		patch.WakeHeartbeat = &wakeTrue
+		dirty = true
+	}
+	if ith, ok := jobObj["injectTargetHistory"].(bool); ok {
+		patch.InjectTargetHistory = &ith
+		dirty = true
+	}
+	if lim, ok := jobObj["injectTargetHistoryLimit"].(float64); ok {
+		l := int(lim)
+		patch.InjectTargetHistoryLimit = &l
+		dirty = true
+	}
+	if sl, ok := jobObj["stateless"].(bool); ok {
+		patch.Stateless = &sl
+		dirty = true
+	}
+	return patch, dirty
 }
 
 func (t *CronTool) handleUpdate(ctx context.Context, args map[string]any, agentID, userID string) *Result {
