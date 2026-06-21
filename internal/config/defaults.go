@@ -12,3 +12,20 @@ const (
 	DefaultHistoryShare        = 0.85
 	DefaultReplayRetentionDays = 7
 )
+
+var DefaultCronNoReplyKeywords = []string{
+	"send nothing",
+	"don't send",
+	"do not send",
+	"no reply needed",
+	"skip reply",
+	"no action needed",
+	"nothing to do",
+	"không gửi gì",
+	"không cần gửi",
+	"không cần nhắc",
+	"không cần làm gì",
+	"không còn gì cần làm",
+	"khỏi gửi",
+	"đừng gửi",
+}

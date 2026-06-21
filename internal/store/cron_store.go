@@ -16,6 +16,10 @@ var (
 	ErrCronJobNoFutureRun = errors.New("cron job has no future run")
 )
 
+// DefaultCronInjectTargetHistoryLimit is the default number of target-chat
+// messages injected into cron runs.
+const DefaultCronInjectTargetHistoryLimit = 100
+
 // CronJob represents a scheduled job.
 type CronJob struct {
 	ID                  string       `json:"id" db:"id"`

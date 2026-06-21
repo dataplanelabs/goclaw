@@ -336,7 +336,7 @@ func TestSQLiteCronStore_InjectTargetHistoryRoundtrip(t *testing.T) {
 }
 
 // TestSQLiteCronStore_InjectTargetHistoryLimitRoundtrip verifies the per-cron
-// look-back limit defaults to 50 on create and round-trips a patched value
+// look-back limit defaults on create and round-trips a patched value
 // via GetJob + ListJobs.
 func TestSQLiteCronStore_InjectTargetHistoryLimitRoundtrip(t *testing.T) {
 	cronStore, ctx, _ := newTestSQLiteCronStore(t)
@@ -353,9 +353,8 @@ func TestSQLiteCronStore_InjectTargetHistoryLimitRoundtrip(t *testing.T) {
 		job = mustOnlyJob(t, cronStore, ctx)
 	}
 
-	// Fresh job defaults to 50 (DB DEFAULT 50).
-	if job.InjectTargetHistoryLimit != 50 {
-		t.Fatalf("expected fresh job InjectTargetHistoryLimit=50, got %d", job.InjectTargetHistoryLimit)
+	if job.InjectTargetHistoryLimit != store.DefaultCronInjectTargetHistoryLimit {
+		t.Fatalf("expected fresh job InjectTargetHistoryLimit=%d, got %d", store.DefaultCronInjectTargetHistoryLimit, job.InjectTargetHistoryLimit)
 	}
 
 	limit := 120

@@ -68,10 +68,10 @@ func (s *PGCronStore) AddJob(ctx context.Context, name string, schedule store.Cr
 
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO cron_jobs (id, tenant_id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
-		 interval_ms, payload, delete_after_run, deliver, deliver_channel, deliver_to, wake_heartbeat, next_run_at, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+		 interval_ms, payload, delete_after_run, deliver, deliver_channel, deliver_to, wake_heartbeat, inject_target_history_limit, next_run_at, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
 		id, tenantIDForInsert(ctx), agentUUID, userIDPtr, name, scheduleKind, cronExpr, runAt, tz,
-		intervalMS, payloadJSON, deleteAfterRun, deliver, channel, to, false, nextRun, now, now,
+		intervalMS, payloadJSON, deleteAfterRun, deliver, channel, to, false, store.DefaultCronInjectTargetHistoryLimit, nextRun, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create cron job: %w", err)

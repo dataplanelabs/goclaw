@@ -71,10 +71,10 @@ func (s *SQLiteCronStore) AddJob(ctx context.Context, name string, schedule stor
 
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO cron_jobs (id, tenant_id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
-		 interval_ms, payload, delete_after_run, deliver, deliver_channel, deliver_to, wake_heartbeat, next_run_at, created_at, updated_at)
-		 VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 interval_ms, payload, delete_after_run, deliver, deliver_channel, deliver_to, wake_heartbeat, inject_target_history_limit, next_run_at, created_at, updated_at)
+		 VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		id, tenantIDForInsert(ctx), agentUUID, userIDPtr, name, scheduleKind, cronExpr, runAt, tz,
-		intervalMS, payloadJSON, deleteAfterRun, deliver, channel, to, false, nextRun, now, now,
+		intervalMS, payloadJSON, deleteAfterRun, deliver, channel, to, false, store.DefaultCronInjectTargetHistoryLimit, nextRun, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create cron job: %w", err)
@@ -404,7 +404,6 @@ func (s *SQLiteCronStore) lockCronJobForMutation(ctx context.Context, tx *sql.Tx
 	return &state, nil
 }
 
-
 func execCronJobUpdateTx(ctx context.Context, tx *sql.Tx, id uuid.UUID, updates map[string]any) error {
 	if len(updates) == 0 {
 		return nil
@@ -442,4 +441,3 @@ func execCronJobUpdateTx(ctx context.Context, tx *sql.Tx, id uuid.UUID, updates 
 	}
 	return nil
 }
-

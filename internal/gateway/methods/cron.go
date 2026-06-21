@@ -18,7 +18,7 @@ import (
 var cronSlugRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 const (
-	cronHistoryLimitDefault = 50
+	cronHistoryLimitDefault = store.DefaultCronInjectTargetHistoryLimit
 	cronHistoryLimitMin     = 5
 	cronHistoryLimitMax     = 200
 )
@@ -108,7 +108,7 @@ func (m *CronMethods) handleCreate(ctx context.Context, client *gateway.Client, 
 		WakeHeartbeat       bool               `json:"wakeHeartbeat"`
 		Stateless           *bool              `json:"stateless"`           // default true for new crons
 		InjectTargetHistory *bool              `json:"injectTargetHistory"` // default true for new crons
-		// InjectTargetHistoryLimit defaults to 50, clamped to [5, 200].
+		// InjectTargetHistoryLimit defaults to 100, clamped to [5, 200].
 		InjectTargetHistoryLimit *int   `json:"injectTargetHistoryLimit"`
 		AgentID                  string `json:"agentId"`
 		// WriteOnlyHash is an opaque hash supplied by external reconcilers

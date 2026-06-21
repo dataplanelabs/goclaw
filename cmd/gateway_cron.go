@@ -20,7 +20,7 @@ import (
 
 const (
 	// Fallback look-back when the per-cron InjectTargetHistoryLimit is unset (<=0).
-	cronTargetHistoryDefaultLimit = 50
+	cronTargetHistoryDefaultLimit = store.DefaultCronInjectTargetHistoryLimit
 	cronTargetHistoryCharsCap     = 6000
 	// Per-message rune clamp so a single huge target-chat message (e.g. a pasted
 	// document) can't blow the cron context budget. UTF-8/rune-safe.
@@ -155,7 +155,7 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 
 		// If job wants delivery to a channel, send the agent response to the target chat.
 		if job.Deliver && job.DeliverChannel != "" && job.DeliverTo != "" {
-			deliverContent, deliverable := guardCronDelivery(result.Content)
+			deliverContent, deliverable := guardCronDelivery(result.Content, cfg.Cron.NoReplyKeywordsOrDefault())
 			if !deliverable {
 				slog.Warn("cron: delivery suppressed — internal/meta content (full text kept in run log)",
 					"job_id", job.ID, "job_name", job.Name, "content_len", len(result.Content))

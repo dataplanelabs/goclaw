@@ -243,6 +243,16 @@ func TestCronConfig_JobTimeoutDuration_Invalid(t *testing.T) {
 	}
 }
 
+func TestCronConfig_NoReplyKeywordsOrDefault(t *testing.T) {
+	if got := (CronConfig{}).NoReplyKeywordsOrDefault(); len(got) != len(DefaultCronNoReplyKeywords) {
+		t.Fatalf("expected default no-reply keywords, got %v", got)
+	}
+	custom := []string{"hold fire"}
+	if got := (CronConfig{NoReplyKeywords: custom}).NoReplyKeywordsOrDefault(); got[0] != custom[0] {
+		t.Fatalf("expected custom keywords, got %v", got)
+	}
+}
+
 func TestCronConfig_ToRetryConfig_Defaults(t *testing.T) {
 	cc := CronConfig{}
 	got := cc.ToRetryConfig()
@@ -275,11 +285,12 @@ func TestCronConfig_ToRetryConfig_Custom(t *testing.T) {
 func TestApplySystemConfigs(t *testing.T) {
 	cfg := Default()
 	cfg.ApplySystemConfigs(map[string]string{
-		"agent.default_provider":   "openai",
-		"agent.default_model":      "gpt-4o",
-		"agent.context_window":     "100000",
-		"gateway.rate_limit_rpm":   "60",
+		"agent.default_provider":    "openai",
+		"agent.default_model":       "gpt-4o",
+		"agent.context_window":      "100000",
+		"gateway.rate_limit_rpm":    "60",
 		"gateway.max_message_chars": "50000",
+		"cron.no_reply_keywords":    `["hold fire","skip output"]`,
 	})
 
 	if cfg.Agents.Defaults.Provider != "openai" {
@@ -293,6 +304,9 @@ func TestApplySystemConfigs(t *testing.T) {
 	}
 	if cfg.Gateway.RateLimitRPM != 60 {
 		t.Errorf("rate_limit_rpm: got %d", cfg.Gateway.RateLimitRPM)
+	}
+	if len(cfg.Cron.NoReplyKeywords) != 2 || cfg.Cron.NoReplyKeywords[0] != "hold fire" || cfg.Cron.NoReplyKeywords[1] != "skip output" {
+		t.Errorf("cron.no_reply_keywords: got %v", cfg.Cron.NoReplyKeywords)
 	}
 }
 

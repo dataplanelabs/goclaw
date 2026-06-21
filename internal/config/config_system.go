@@ -28,6 +28,14 @@ func (c *Config) ApplySystemConfigs(configs map[string]string) {
 			*dst = &b
 		}
 	}
+	stringSlice := func(key string, dst *[]string) {
+		if v, ok := configs[key]; ok && v != "" {
+			var items []string
+			if err := json.Unmarshal([]byte(v), &items); err == nil {
+				*dst = items
+			}
+		}
+	}
 
 	// Embedding
 	if c.Agents.Defaults.Memory == nil {
@@ -73,6 +81,7 @@ func (c *Config) ApplySystemConfigs(configs map[string]string) {
 	// Cron
 	integer("cron.max_retries", &c.Cron.MaxRetries)
 	str("cron.default_timezone", &c.Cron.DefaultTimezone)
+	stringSlice("cron.no_reply_keywords", &c.Cron.NoReplyKeywords)
 
 	// Pending message compaction
 	if _, ok := configs["compaction.threshold"]; ok {

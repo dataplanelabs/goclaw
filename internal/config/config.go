@@ -56,7 +56,7 @@ type Config struct {
 	Tailscale TailscaleConfig `json:"tailscale"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	Hooks     HooksConfig     `json:"hooks"`
-	Packages  PackagesConfig  `json:"packages"` // runtime package mgmt (GitHub updater)
+	Packages  PackagesConfig  `json:"packages"`        // runtime package mgmt (GitHub updater)
 	OAuth     OAuthConfig     `json:"oauth,omitempty"` // 3rd-party OAuth (Google, etc.) — secrets from env only
 	mu        sync.RWMutex
 }
@@ -419,11 +419,12 @@ type TelemetryConfig struct {
 
 // CronConfig configures the cron job system.
 type CronConfig struct {
-	MaxRetries      int    `json:"max_retries,omitempty"`      // max retry attempts on failure (default 3, 0 = no retry)
-	RetryBaseDelay  string `json:"retry_base_delay,omitempty"` // initial backoff delay (default "2s", Go duration)
-	RetryMaxDelay   string `json:"retry_max_delay,omitempty"`  // maximum backoff delay (default "30s", Go duration)
-	DefaultTimezone string `json:"default_timezone,omitempty"` // IANA timezone for cron expressions when not set per-job (e.g. "Asia/Ho_Chi_Minh")
-	JobTimeout      string `json:"job_timeout,omitempty"`      // max duration per cron job execution (default "10m", Go duration)
+	MaxRetries      int      `json:"max_retries,omitempty"`       // max retry attempts on failure (default 3, 0 = no retry)
+	RetryBaseDelay  string   `json:"retry_base_delay,omitempty"`  // initial backoff delay (default "2s", Go duration)
+	RetryMaxDelay   string   `json:"retry_max_delay,omitempty"`   // maximum backoff delay (default "30s", Go duration)
+	DefaultTimezone string   `json:"default_timezone,omitempty"`  // IANA timezone for cron expressions when not set per-job (e.g. "Asia/Ho_Chi_Minh")
+	JobTimeout      string   `json:"job_timeout,omitempty"`       // max duration per cron job execution (default "10m", Go duration)
+	NoReplyKeywords []string `json:"no_reply_keywords,omitempty"` // cron final-response phrases that mean "do not deliver"
 }
 
 // DefaultJobTimeout is the fallback timeout for cron job execution.
@@ -439,6 +440,13 @@ func (cc CronConfig) JobTimeoutDuration() time.Duration {
 		slog.Warn("cron: invalid job_timeout, using default", "value", cc.JobTimeout, "default", DefaultJobTimeout)
 	}
 	return DefaultJobTimeout
+}
+
+func (cc CronConfig) NoReplyKeywordsOrDefault() []string {
+	if len(cc.NoReplyKeywords) > 0 {
+		return cc.NoReplyKeywords
+	}
+	return DefaultCronNoReplyKeywords
 }
 
 // ToRetryConfig converts CronConfig to cron.RetryConfig with defaults applied.

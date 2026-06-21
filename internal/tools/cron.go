@@ -52,7 +52,7 @@ VALID ACTIONS AND EXACT PAYLOAD SHAPES:
     "deleteAfterRun": true|false, // optional, default true for schedule.kind="at"
     "stateless": true|false,      // optional, run each fire on a fresh session (default false)
     "injectTargetHistory": true|false,    // optional, inject recent target-chat history into the run (default true) — lets the job read the chat and skip a reminder the user already handled
-    "injectTargetHistoryLimit": <int>     // optional, max history messages to inject (default 50)
+    "injectTargetHistoryLimit": <int>     // optional, max history messages to inject (default 100)
   }
 }
 

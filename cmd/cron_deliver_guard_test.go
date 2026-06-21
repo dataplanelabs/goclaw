@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -14,6 +15,7 @@ func TestGuardCronDelivery(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
+		keywords    []string
 		wantContent string
 		wantDeliver bool
 	}{
@@ -141,8 +143,8 @@ func TestGuardCronDelivery(t *testing.T) {
 			wantDeliver: false,
 		},
 		{
-			name:        "trace no more sending suppressed",
-			input:       "Chị Trân đã báo dọn cát mèo + bếp xong trong ngày hôm nay rồi. Đã xoá cron nhắc. Không gửi gì thêm.",
+			name:        "generic vietnamese send nothing suppressed",
+			input:       "Việc này đã hoàn tất rồi. Không gửi gì thêm.",
 			wantContent: "",
 			wantDeliver: false,
 		},
@@ -155,6 +157,13 @@ func TestGuardCronDelivery(t *testing.T) {
 		{
 			name:        "vietnamese no reminder suppressed",
 			input:       "Đã xong rồi, không cần nhắc nữa.",
+			wantContent: "",
+			wantDeliver: false,
+		},
+		{
+			name:        "custom keyword suppressed",
+			input:       "Resolved for this cycle; hold fire.",
+			keywords:    []string{"hold fire"},
 			wantContent: "",
 			wantDeliver: false,
 		},
@@ -175,7 +184,11 @@ func TestGuardCronDelivery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, deliver := guardCronDelivery(tt.input)
+			keywords := tt.keywords
+			if keywords == nil {
+				keywords = config.DefaultCronNoReplyKeywords
+			}
+			got, deliver := guardCronDelivery(tt.input, keywords)
 			if deliver != tt.wantDeliver {
 				t.Fatalf("guardCronDelivery() deliver = %v, want %v (content %q)", deliver, tt.wantDeliver, got)
 			}

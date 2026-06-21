@@ -83,6 +83,11 @@ func seedConfigForContext(ctx context.Context, sc store.SystemConfigStore, cfg *
 			set(key, fmt.Sprintf("%t", *val))
 		}
 	}
+	setJSON := func(key string, val any) {
+		if b, err := json.Marshal(val); err == nil {
+			set(key, string(b))
+		}
+	}
 
 	// Embedding
 	if m := cfg.Agents.Defaults.Memory; m != nil {
@@ -127,6 +132,9 @@ func seedConfigForContext(ctx context.Context, sc store.SystemConfigStore, cfg *
 	// Cron
 	setInt("cron.max_retries", cfg.Cron.MaxRetries)
 	set("cron.default_timezone", cfg.Cron.DefaultTimezone)
+	if keywords := cfg.Cron.NoReplyKeywordsOrDefault(); len(keywords) > 0 {
+		setJSON("cron.no_reply_keywords", keywords)
+	}
 
 	// Pending message compaction
 	if pc := cfg.Channels.PendingCompaction; pc != nil {
