@@ -528,13 +528,26 @@ type WebFetchPolicyConfig struct {
 
 // BrowserToolConfig controls the browser automation tool.
 type BrowserToolConfig struct {
-	Enabled           bool   `json:"enabled"`                      // enable the browser tool (default false)
-	Headless          bool   `json:"headless,omitempty"`           // run Chrome in headless mode (ignored when RemoteURL is set)
-	RemoteURL         string `json:"remote_url,omitempty"`         // CDP endpoint for remote Chrome sidecar, e.g. "ws://chrome:9222"
-	PersistentProfile bool   `json:"persistent_profile,omitempty"` // share one authenticated profile across all tenants (single-identity only)
-	ActionTimeoutMs   int    `json:"action_timeout_ms,omitempty"`  // per-action timeout in ms (default 30000)
-	IdleTimeoutMs     int    `json:"idle_timeout_ms,omitempty"`    // idle page auto-close in ms (default 600000, 0=disabled)
-	MaxPages          int    `json:"max_pages,omitempty"`          // max open pages per tenant (default 5)
+	Enabled           bool                             `json:"enabled"`                      // enable the browser tool (default false)
+	Headless          bool                             `json:"headless,omitempty"`           // run Chrome in headless mode (ignored when RemoteURL is set)
+	RemoteURL         string                           `json:"remote_url,omitempty"`         // CDP endpoint for remote Chrome sidecar, e.g. "ws://chrome:9222"
+	PersistentProfile bool                             `json:"persistent_profile,omitempty"` // share one authenticated profile across all tenants (single-identity only)
+	ActionTimeoutMs   int                              `json:"action_timeout_ms,omitempty"`  // per-action timeout in ms (default 30000)
+	IdleTimeoutMs     int                              `json:"idle_timeout_ms,omitempty"`    // idle page auto-close in ms (default 600000, 0=disabled)
+	MaxPages          int                              `json:"max_pages,omitempty"`          // max open pages per tenant (default 5)
+	Instances         map[string]BrowserInstanceConfig `json:"instances,omitempty"`          // named browser backends for dedicated profiles
+	AgentInstances    map[string]string                `json:"agent_instances,omitempty"`    // agent key -> named instance
+	MasterInstance    string                           `json:"master_instance,omitempty"`    // named instance for the master tenant
+}
+
+// BrowserInstanceConfig configures a named browser backend.
+type BrowserInstanceConfig struct {
+	Headless          bool   `json:"headless,omitempty"`
+	RemoteURL         string `json:"remote_url,omitempty"`
+	PersistentProfile bool   `json:"persistent_profile,omitempty"`
+	ActionTimeoutMs   int    `json:"action_timeout_ms,omitempty"`
+	IdleTimeoutMs     int    `json:"idle_timeout_ms,omitempty"`
+	MaxPages          int    `json:"max_pages,omitempty"`
 }
 
 // ToolPolicySpec defines a tool policy at any level (global, per-agent, per-provider).

@@ -346,6 +346,45 @@ func (c *Config) applyEnvOverrides() {
 			c.Tools.Browser.ActionTimeoutMs = ms
 		}
 	}
+	envStr("GOCLAW_BROWSER_MASTER_INSTANCE", &c.Tools.Browser.MasterInstance)
+	if v := os.Getenv("GOCLAW_BROWSER_INSTANCES_JSON"); v != "" {
+		var instances map[string]BrowserInstanceConfig
+		if err := json.Unmarshal([]byte(v), &instances); err != nil {
+			slog.Warn("invalid GOCLAW_BROWSER_INSTANCES_JSON", "error", err)
+		} else {
+			if c.Tools.Browser.Instances == nil {
+				c.Tools.Browser.Instances = map[string]BrowserInstanceConfig{}
+			}
+			for name, instance := range instances {
+				name = strings.TrimSpace(name)
+				if name == "" {
+					continue
+				}
+				c.Tools.Browser.Instances[name] = instance
+			}
+			if len(c.Tools.Browser.Instances) > 0 {
+				c.Tools.Browser.Enabled = true
+			}
+		}
+	}
+	if v := os.Getenv("GOCLAW_BROWSER_AGENT_INSTANCES_JSON"); v != "" {
+		var agentInstances map[string]string
+		if err := json.Unmarshal([]byte(v), &agentInstances); err != nil {
+			slog.Warn("invalid GOCLAW_BROWSER_AGENT_INSTANCES_JSON", "error", err)
+		} else {
+			if c.Tools.Browser.AgentInstances == nil {
+				c.Tools.Browser.AgentInstances = map[string]string{}
+			}
+			for agentKey, instanceName := range agentInstances {
+				agentKey = strings.TrimSpace(agentKey)
+				instanceName = strings.TrimSpace(instanceName)
+				if agentKey == "" || instanceName == "" {
+					continue
+				}
+				c.Tools.Browser.AgentInstances[agentKey] = instanceName
+			}
+		}
+	}
 }
 
 // Save writes the config to a JSON file.
@@ -390,7 +429,6 @@ func ResolvedDataDirFromEnv() string {
 	}
 	return ExpandHome("~/.goclaw/data")
 }
-
 
 // WorkspacePath returns the expanded workspace path.
 func (c *Config) WorkspacePath() string {

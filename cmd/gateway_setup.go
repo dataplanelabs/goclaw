@@ -14,11 +14,11 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	mcpbridge "github.com/nextlevelbuilder/goclaw/internal/mcp"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/sandbox"
-	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/store/pg"
@@ -28,6 +28,38 @@ import (
 	"github.com/nextlevelbuilder/goclaw/pkg/browser"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
+
+func newBrowserManager(cfg config.BrowserInstanceConfig) *browser.Manager {
+	var opts []browser.Option
+	if cfg.PersistentProfile {
+		opts = append(opts, browser.WithPersistentProfile(true))
+	}
+	if cfg.RemoteURL != "" {
+		opts = append(opts, browser.WithRemoteURL(cfg.RemoteURL))
+	} else {
+		opts = append(opts, browser.WithHeadless(cfg.Headless))
+	}
+	if cfg.ActionTimeoutMs > 0 {
+		opts = append(opts, browser.WithActionTimeout(time.Duration(cfg.ActionTimeoutMs)*time.Millisecond))
+	}
+	if cfg.IdleTimeoutMs > 0 {
+		opts = append(opts, browser.WithIdleTimeout(time.Duration(cfg.IdleTimeoutMs)*time.Millisecond))
+	} else if cfg.IdleTimeoutMs < 0 {
+		opts = append(opts, browser.WithIdleTimeout(0))
+	}
+	if cfg.MaxPages > 0 {
+		opts = append(opts, browser.WithMaxPages(cfg.MaxPages))
+	}
+	return browser.New(opts...)
+}
+
+func logBrowserInstance(name string, cfg config.BrowserInstanceConfig) {
+	if cfg.RemoteURL != "" {
+		slog.Info("browser tool enabled", "instance", name, "remote", cfg.RemoteURL, "persistent_profile", cfg.PersistentProfile)
+		return
+	}
+	slog.Info("browser tool enabled", "instance", name, "headless", cfg.Headless, "persistent_profile", cfg.PersistentProfile)
+}
 
 // setupToolRegistry creates the tool registry and registers all tools.
 // Returns the registry, exec approval manager, MCP manager, sandbox manager,
@@ -93,32 +125,31 @@ func setupToolRegistry(
 
 	// Browser automation tool
 	if cfg.Tools.Browser.Enabled {
-		var opts []browser.Option
-		if cfg.Tools.Browser.PersistentProfile {
-			opts = append(opts, browser.WithPersistentProfile(true))
-			slog.Info("browser persistent profile enabled (single-identity)")
+		defaultBrowser := config.BrowserInstanceConfig{
+			Headless:          cfg.Tools.Browser.Headless,
+			RemoteURL:         cfg.Tools.Browser.RemoteURL,
+			PersistentProfile: cfg.Tools.Browser.PersistentProfile,
+			ActionTimeoutMs:   cfg.Tools.Browser.ActionTimeoutMs,
+			IdleTimeoutMs:     cfg.Tools.Browser.IdleTimeoutMs,
+			MaxPages:          cfg.Tools.Browser.MaxPages,
 		}
-		if cfg.Tools.Browser.RemoteURL != "" {
-			opts = append(opts, browser.WithRemoteURL(cfg.Tools.Browser.RemoteURL))
-			slog.Info("browser tool enabled", "remote", cfg.Tools.Browser.RemoteURL)
-		} else {
-			opts = append(opts, browser.WithHeadless(cfg.Tools.Browser.Headless))
-			slog.Info("browser tool enabled", "headless", cfg.Tools.Browser.Headless)
+		browserMgr = newBrowserManager(defaultBrowser)
+		logBrowserInstance("default", defaultBrowser)
+
+		browserManagers := map[string]*browser.Manager{}
+		for name, instance := range cfg.Tools.Browser.Instances {
+			if name == "" {
+				continue
+			}
+			browserManagers[name] = newBrowserManager(instance)
+			logBrowserInstance(name, instance)
 		}
-		if cfg.Tools.Browser.ActionTimeoutMs > 0 {
-			opts = append(opts, browser.WithActionTimeout(time.Duration(cfg.Tools.Browser.ActionTimeoutMs)*time.Millisecond))
-		}
-		if cfg.Tools.Browser.IdleTimeoutMs > 0 {
-			opts = append(opts, browser.WithIdleTimeout(time.Duration(cfg.Tools.Browser.IdleTimeoutMs)*time.Millisecond))
-		} else if cfg.Tools.Browser.IdleTimeoutMs < 0 {
-			// Explicitly disable idle reaper with negative value
-			opts = append(opts, browser.WithIdleTimeout(0))
-		}
-		if cfg.Tools.Browser.MaxPages > 0 {
-			opts = append(opts, browser.WithMaxPages(cfg.Tools.Browser.MaxPages))
-		}
-		browserMgr = browser.New(opts...)
-		toolsReg.Register(browser.NewBrowserTool(browserMgr))
+		toolsReg.Register(browser.NewMultiBrowserTool(
+			browserMgr,
+			browserManagers,
+			cfg.Tools.Browser.AgentInstances,
+			cfg.Tools.Browser.MasterInstance,
+		))
 	}
 
 	// Web tools (web_fetch; web_search is registered in wireExtraTools after stores are ready)
@@ -641,4 +672,3 @@ func setupSkillsSystem(
 
 	return skillsLoader, skillSearchTool, globalSkillsDir, bundledSkillsDir, builtinSkillsDir
 }
-

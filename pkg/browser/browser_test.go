@@ -1,13 +1,82 @@
 package browser
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
+
+	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
+
+// --- BrowserTool routing ---
+
+func TestBrowserToolWithContextManager(t *testing.T) {
+	defaultMgr := New()
+	agentMgr := New()
+	masterMgr := New()
+	tool := NewMultiBrowserTool(
+		defaultMgr,
+		map[string]*Manager{
+			"agent":  agentMgr,
+			"master": masterMgr,
+		},
+		map[string]string{"worker": "agent"},
+		"master",
+	)
+
+	tests := []struct {
+		name string
+		ctx  context.Context
+		want *Manager
+	}{
+		{
+			name: "agent override wins",
+			ctx:  store.WithTenantID(tools.WithToolAgentKey(context.Background(), "worker"), store.MasterTenantID),
+			want: agentMgr,
+		},
+		{
+			name: "master tenant uses master instance",
+			ctx:  store.WithTenantID(context.Background(), store.MasterTenantID),
+			want: masterMgr,
+		},
+		{
+			name: "non-master tenant falls back to default",
+			ctx:  store.WithTenantID(tools.WithToolAgentKey(context.Background(), "unknown"), uuid.MustParse("0193a5b0-7000-7000-8000-000000000002")),
+			want: defaultMgr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tool.withContextManager(tt.ctx).manager
+			if got != tt.want {
+				t.Fatalf("manager = %p, want %p", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBrowserToolWithContextManagerUnknownInstance(t *testing.T) {
+	defaultMgr := New()
+	tool := NewMultiBrowserTool(
+		defaultMgr,
+		map[string]*Manager{},
+		map[string]string{"worker": "missing"},
+		"missing",
+	)
+
+	got := tool.withContextManager(tools.WithToolAgentKey(context.Background(), "worker")).manager
+	if got != defaultMgr {
+		t.Fatalf("manager = %p, want default %p", got, defaultMgr)
+	}
+}
 
 // --- resolveToIPv4 ---
 

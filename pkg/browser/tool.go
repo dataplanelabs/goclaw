@@ -14,12 +14,25 @@ import (
 
 // BrowserTool implements tools.Tool for browser automation.
 type BrowserTool struct {
-	manager *Manager
+	manager        *Manager
+	managers       map[string]*Manager
+	agentInstances map[string]string
+	masterInstance string
 }
 
 // NewBrowserTool creates a BrowserTool wrapping a Manager.
 func NewBrowserTool(manager *Manager) *BrowserTool {
 	return &BrowserTool{manager: manager}
+}
+
+// NewMultiBrowserTool creates a BrowserTool that can route requests to named managers.
+func NewMultiBrowserTool(manager *Manager, managers map[string]*Manager, agentInstances map[string]string, masterInstance string) *BrowserTool {
+	return &BrowserTool{
+		manager:        manager,
+		managers:       managers,
+		agentInstances: agentInstances,
+		masterInstance: masterInstance,
+	}
 }
 
 func (t *BrowserTool) Name() string { return "browser" }
@@ -137,6 +150,7 @@ func (t *BrowserTool) Execute(ctx context.Context, args map[string]any) *tools.R
 	if action == "" {
 		return tools.ErrorResult("action is required")
 	}
+	t = t.withContextManager(ctx)
 
 	// Propagate tenant ID from store context to browser context for page isolation.
 	if tid := store.TenantIDFromContext(ctx); tid.String() != "00000000-0000-0000-0000-000000000000" {
@@ -189,6 +203,47 @@ func (t *BrowserTool) Execute(ctx context.Context, args map[string]any) *tools.R
 	default:
 		return tools.ErrorResult(fmt.Sprintf("unknown action: %s", action))
 	}
+}
+
+func (t *BrowserTool) withContextManager(ctx context.Context) *BrowserTool {
+	if t == nil || len(t.managers) == 0 {
+		return t
+	}
+	mgr := t.managerForContext(ctx)
+	if mgr == nil || mgr == t.manager {
+		return t
+	}
+	next := *t
+	next.manager = mgr
+	return &next
+}
+
+func (t *BrowserTool) managerForContext(ctx context.Context) *Manager {
+	if t == nil {
+		return nil
+	}
+	if name := t.instanceNameForContext(ctx); name != "" {
+		if mgr := t.managers[name]; mgr != nil {
+			return mgr
+		}
+	}
+	return t.manager
+}
+
+func (t *BrowserTool) instanceNameForContext(ctx context.Context) string {
+	if agentKey := tools.ToolAgentKeyFromCtx(ctx); agentKey != "" {
+		if name := t.agentInstances[agentKey]; name != "" {
+			return name
+		}
+	}
+	if t.masterInstance == "" {
+		return ""
+	}
+	tid := store.TenantIDFromContext(ctx).String()
+	if tid == MasterTenantID || tid == "00000000-0000-0000-0000-000000000000" {
+		return t.masterInstance
+	}
+	return ""
 }
 
 func (t *BrowserTool) handleStatus() *tools.Result {

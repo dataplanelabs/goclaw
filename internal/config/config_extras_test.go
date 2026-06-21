@@ -199,6 +199,39 @@ func TestConfigHash(t *testing.T) {
 	}
 }
 
+func TestBrowserInstancesEnvOverrides(t *testing.T) {
+	t.Setenv("GOCLAW_BROWSER_INSTANCES_JSON", `{"master":{"remote_url":"ws://chrome-master:9222","persistent_profile":true,"action_timeout_ms":1234}}`)
+	t.Setenv("GOCLAW_BROWSER_AGENT_INSTANCES_JSON", `{"worker":"master"}`)
+	t.Setenv("GOCLAW_BROWSER_MASTER_INSTANCE", "master")
+
+	cfg := Default()
+	cfg.Tools.Browser.Enabled = false
+	cfg.applyEnvOverrides()
+
+	if !cfg.Tools.Browser.Enabled {
+		t.Fatal("browser should be enabled when named instances are configured")
+	}
+	if cfg.Tools.Browser.MasterInstance != "master" {
+		t.Fatalf("MasterInstance = %q, want master", cfg.Tools.Browser.MasterInstance)
+	}
+	if got := cfg.Tools.Browser.AgentInstances["worker"]; got != "master" {
+		t.Fatalf("AgentInstances[worker] = %q, want master", got)
+	}
+	inst, ok := cfg.Tools.Browser.Instances["master"]
+	if !ok {
+		t.Fatal("missing master browser instance")
+	}
+	if inst.RemoteURL != "ws://chrome-master:9222" {
+		t.Fatalf("RemoteURL = %q, want ws://chrome-master:9222", inst.RemoteURL)
+	}
+	if !inst.PersistentProfile {
+		t.Fatal("PersistentProfile = false, want true")
+	}
+	if inst.ActionTimeoutMs != 1234 {
+		t.Fatalf("ActionTimeoutMs = %d, want 1234", inst.ActionTimeoutMs)
+	}
+}
+
 // --- ReplaceFrom ---
 
 func TestReplaceFrom(t *testing.T) {
