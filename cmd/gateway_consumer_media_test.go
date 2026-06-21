@@ -58,3 +58,29 @@ func TestAppendMediaToOutbound_EmptyNoOp(t *testing.T) {
 		t.Errorf("Content must not be modified, got %q", msg.Content)
 	}
 }
+
+func TestFilterAnnounceForwardedMedia_KeepsForwardedWhenNoManualMedia(t *testing.T) {
+	forwarded := []bus.MediaFile{{Path: "/team/out.png", MimeType: "image/png"}}
+	media := []agent.MediaResult{{Path: "/team/out.png", ContentType: "image/png"}}
+
+	got := filterAnnounceForwardedMedia(media, forwarded)
+	if len(got) != 1 || got[0].Path != "/team/out.png" {
+		t.Fatalf("expected forwarded media to stay when no manual media exists, got %+v", got)
+	}
+}
+
+func TestFilterAnnounceForwardedMedia_DropsForwardedWhenManualMediaExists(t *testing.T) {
+	forwarded := []bus.MediaFile{{Path: "/team/out.png", MimeType: "image/png"}}
+	media := []agent.MediaResult{
+		{Path: "/team/out.png", ContentType: "image/png"},
+		{Path: "/agent/generated/out.png", ContentType: "image/png"},
+	}
+
+	got := filterAnnounceForwardedMedia(media, forwarded)
+	if len(got) != 1 {
+		t.Fatalf("expected only manual media, got %+v", got)
+	}
+	if got[0].Path != "/agent/generated/out.png" {
+		t.Fatalf("expected manual media path, got %+v", got)
+	}
+}

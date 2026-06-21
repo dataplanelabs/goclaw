@@ -134,8 +134,9 @@ func processAnnounceLoop(
 			if outcome.Err != nil {
 				slog.Error("teammate announce: lead run failed", "error", outcome.Err, "batch_size", len(entries))
 			} else {
+				media := filterAnnounceForwardedMedia(outcome.Result.Media, req.ForwardMedia)
 				isSilent := outcome.Result.Content == "" || agent.IsSilentReply(outcome.Result.Content)
-				if !(isSilent && len(outcome.Result.Media) == 0) {
+				if !(isSilent && len(media) == 0) {
 					out := outcome.Result.Content
 					if isSilent {
 						out = ""
@@ -146,7 +147,7 @@ func processAnnounceLoop(
 						Content:  out,
 						Metadata: r.OutMeta,
 					}
-					appendMediaToOutbound(&outMsg, outcome.Result.Media)
+					appendMediaToOutbound(&outMsg, media)
 					msgBus.PublishOutbound(outMsg)
 				}
 			}
@@ -157,6 +158,36 @@ func processAnnounceLoop(
 
 		// Loop back — tryFinish at top will exit when queue is truly empty.
 	}
+}
+
+func filterAnnounceForwardedMedia(media []agent.MediaResult, forwarded []bus.MediaFile) []agent.MediaResult {
+	if len(media) == 0 || len(forwarded) == 0 {
+		return media
+	}
+	forwardedPaths := make(map[string]bool, len(forwarded))
+	for _, mf := range forwarded {
+		if mf.Path != "" {
+			forwardedPaths[mf.Path] = true
+		}
+	}
+	hasManualMedia := false
+	for _, mr := range media {
+		if !forwardedPaths[mr.Path] {
+			hasManualMedia = true
+			break
+		}
+	}
+	if !hasManualMedia {
+		return media
+	}
+	filtered := media[:0]
+	for _, mr := range media {
+		if forwardedPaths[mr.Path] {
+			continue
+		}
+		filtered = append(filtered, mr)
+	}
+	return filtered
 }
 
 // memberLabel returns a display-friendly name for announce messages.
