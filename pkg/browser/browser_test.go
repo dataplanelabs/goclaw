@@ -78,6 +78,65 @@ func TestBrowserToolWithContextManagerUnknownInstance(t *testing.T) {
 	}
 }
 
+func TestBrowserToolWithContextManagerUsesBuiltinToolSettings(t *testing.T) {
+	defaultMgr := New()
+	staticMgr := New()
+	configMgr := New()
+	tool := NewMultiBrowserTool(
+		defaultMgr,
+		map[string]*Manager{
+			"static": staticMgr,
+			"config": configMgr,
+		},
+		map[string]string{"assistant": "static"},
+		"static",
+	)
+
+	tests := []struct {
+		name     string
+		settings string
+		ctx      context.Context
+		want     *Manager
+	}{
+		{
+			name:     "config agent routing overrides startup routing",
+			settings: `{"agent_instances":{"assistant":"config"},"master_instance":"config"}`,
+			ctx:      tools.WithToolAgentKey(context.Background(), "assistant"),
+			want:     configMgr,
+		},
+		{
+			name:     "config master routing overrides startup routing",
+			settings: `{"agent_instances":{"assistant":"config"},"master_instance":"config"}`,
+			ctx:      store.WithTenantID(context.Background(), store.MasterTenantID),
+			want:     configMgr,
+		},
+		{
+			name:     "config can clear startup routing",
+			settings: `{"agent_instances":{},"master_instance":""}`,
+			ctx:      store.WithTenantID(tools.WithToolAgentKey(context.Background(), "assistant"), store.MasterTenantID),
+			want:     defaultMgr,
+		},
+		{
+			name:     "invalid config falls back to startup routing",
+			settings: `{bad json`,
+			ctx:      tools.WithToolAgentKey(context.Background(), "assistant"),
+			want:     staticMgr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := tools.WithBuiltinToolSettings(tt.ctx, tools.BuiltinToolSettings{
+				"browser": []byte(tt.settings),
+			})
+			got := tool.withContextManager(ctx).manager
+			if got != tt.want {
+				t.Fatalf("manager = %p, want %p", got, tt.want)
+			}
+		})
+	}
+}
+
 // --- resolveToIPv4 ---
 
 func TestResolveToIPv4_IPLiteral(t *testing.T) {

@@ -20,6 +20,11 @@ type BrowserTool struct {
 	masterInstance string
 }
 
+type browserToolSettings struct {
+	AgentInstances map[string]string `json:"agent_instances,omitempty"`
+	MasterInstance *string           `json:"master_instance,omitempty"`
+}
+
 // NewBrowserTool creates a BrowserTool wrapping a Manager.
 func NewBrowserTool(manager *Manager) *BrowserTool {
 	return &BrowserTool{manager: manager}
@@ -231,19 +236,42 @@ func (t *BrowserTool) managerForContext(ctx context.Context) *Manager {
 }
 
 func (t *BrowserTool) instanceNameForContext(ctx context.Context) string {
+	agentInstances, masterInstance := t.routingSettings(ctx)
 	if agentKey := tools.ToolAgentKeyFromCtx(ctx); agentKey != "" {
-		if name := t.agentInstances[agentKey]; name != "" {
+		if name := agentInstances[agentKey]; name != "" {
 			return name
 		}
 	}
-	if t.masterInstance == "" {
+	if masterInstance == "" {
 		return ""
 	}
 	tid := store.TenantIDFromContext(ctx).String()
 	if tid == MasterTenantID || tid == "00000000-0000-0000-0000-000000000000" {
-		return t.masterInstance
+		return masterInstance
 	}
 	return ""
+}
+
+func (t *BrowserTool) routingSettings(ctx context.Context) (map[string]string, string) {
+	agentInstances := t.agentInstances
+	masterInstance := t.masterInstance
+
+	raw := tools.BuiltinToolSettingsFromCtx(ctx)["browser"]
+	if len(raw) == 0 {
+		return agentInstances, masterInstance
+	}
+
+	var settings browserToolSettings
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		return agentInstances, masterInstance
+	}
+	if settings.AgentInstances != nil {
+		agentInstances = settings.AgentInstances
+	}
+	if settings.MasterInstance != nil {
+		masterInstance = *settings.MasterInstance
+	}
+	return agentInstances, masterInstance
 }
 
 func (t *BrowserTool) handleStatus() *tools.Result {
