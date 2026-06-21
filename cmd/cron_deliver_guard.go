@@ -16,8 +16,36 @@ func guardCronDelivery(content string) (string, bool) {
 	if strings.TrimSpace(cleaned) == "" {
 		return "", false
 	}
+	if isCronNoReply(cleaned) {
+		return "", false
+	}
 	if textguard.IsMetaFailure(cleaned) {
 		return "", false
 	}
 	return cleaned, true
+}
+
+func isCronNoReply(content string) bool {
+	text := strings.ToLower(strings.TrimSpace(content))
+	for _, phrase := range []string{
+		"send nothing",
+		"don't send",
+		"do not send",
+		"no reply needed",
+		"skip reply",
+		"no action needed",
+		"nothing to do",
+		"không gửi gì",
+		"không cần gửi",
+		"không cần nhắc",
+		"không cần làm gì",
+		"không còn gì cần làm",
+		"khỏi gửi",
+		"đừng gửi",
+	} {
+		if strings.Contains(text, phrase) {
+			return true
+		}
+	}
+	return false
 }

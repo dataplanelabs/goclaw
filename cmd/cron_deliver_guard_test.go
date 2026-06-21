@@ -140,6 +140,24 @@ func TestGuardCronDelivery(t *testing.T) {
 			wantContent: "",
 			wantDeliver: false,
 		},
+		{
+			name:        "trace no more sending suppressed",
+			input:       "Chị Trân đã báo dọn cát mèo + bếp xong trong ngày hôm nay rồi. Đã xoá cron nhắc. Không gửi gì thêm.",
+			wantContent: "",
+			wantDeliver: false,
+		},
+		{
+			name:        "explicit english no reply suppressed",
+			input:       "Already confirmed. No action needed for the next cycle.",
+			wantContent: "",
+			wantDeliver: false,
+		},
+		{
+			name:        "vietnamese no reminder suppressed",
+			input:       "Đã xong rồi, không cần nhắc nữa.",
+			wantContent: "",
+			wantDeliver: false,
+		},
 
 		// --- edge cases ---
 		{
