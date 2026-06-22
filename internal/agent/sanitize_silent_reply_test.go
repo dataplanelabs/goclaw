@@ -31,6 +31,12 @@ func TestIsSilentReply(t *testing.T) {
 		{"prefix + space + content", "NO_REPLY hello", true},
 		{"prefix + colon + content", "NO_REPLY: offline", true},
 		{"prefix + because", "NO_REPLY because user is away", true},
+		// Leading <br> an LLM may prepend before the token.
+		{"leading br self-close", "<br/>NO_REPLY", true},
+		{"leading br spaced", "<br/>\n\nNO_REPLY (task done)", true},
+		{"leading br open tag", "<br>NO_REPLY", true},
+		{"leading br with space", "<br />  NO_REPLY", true},
+		{"multiple leading br", "<br/><br/>NO_REPLY", true},
 		// NOT silent — token glued to another word, or not at start.
 		{"embedded word", "NO_REPLYING", false},
 		{"trailing after content", "Here you go. NO_REPLY", false},
@@ -38,6 +44,8 @@ func TestIsSilentReply(t *testing.T) {
 		{"empty", "", false},
 		{"whitespace only", "   ", false},
 		{"unrelated text", "no reply needed", false},
+		// NOT silent — <br> but no token (the prod trace: freeform note, no sentinel).
+		{"br then freeform note", "<br/>\n\n(Không gửi - chị đã xong)", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
