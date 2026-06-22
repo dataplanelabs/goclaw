@@ -494,6 +494,31 @@ CREATE INDEX IF NOT EXISTS idx_cron_jobs_tenant ON cron_jobs(tenant_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_cron_jobs_agent_tenant_name ON cron_jobs(agent_id, tenant_id, name);
 
 -- ============================================================
+-- Table: habit_checklist_entries (per-user/day habit state)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS habit_checklist_entries (
+    id              TEXT NOT NULL PRIMARY KEY,
+    tenant_id       TEXT NOT NULL,
+    agent_id        TEXT NOT NULL,
+    user_id         TEXT NOT NULL,
+    plan_date       TEXT NOT NULL,        -- "YYYY-MM-DD" local day
+    task_key        VARCHAR(80) NOT NULL,
+    title           VARCHAR(200) NOT NULL,
+    scheduled_local VARCHAR(5),           -- "HH:MM" local; NULL = anytime-today
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','done','skipped')),
+    nudge_count     INTEGER NOT NULL DEFAULT 0,
+    last_nudged_at  TEXT,
+    completed_at    TEXT,
+    completion_note TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE (tenant_id, agent_id, user_id, plan_date, task_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_habit_checklist_gate ON habit_checklist_entries(tenant_id, agent_id, user_id, plan_date, status);
+
+-- ============================================================
 -- Table: cron_run_logs
 -- ============================================================
 
