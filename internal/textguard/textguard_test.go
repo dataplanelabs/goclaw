@@ -218,6 +218,18 @@ func TestStripLeadingInternal(t *testing.T) {
 			input: "Apple unveils a new foldable iPhone at its annual September keynote event.\n\n" + vn,
 			want:  "Apple unveils a new foldable iPhone at its annual September keynote event.\n\n" + vn,
 		},
+		{
+			// Leak shape: VN reasoning preamble naming internal plumbing ("retry crons").
+			name:  "vietnamese internal-marker preamble stripped",
+			input: "Nhìn lại ngữ cảnh hôm nay: học viên tick xanh từng task. Em gửi nhắc Piano thôi, không tạo retry crons — mỗi task một lần.\n\n@[100000000000000001] 🎹 3h rồi! Mở nắp đàn — 30 phút luyện ngón nhé!",
+			want:  "@[100000000000000001] 🎹 3h rồi! Mở nắp đàn — 30 phút luyện ngón nhé!",
+		},
+		{
+			// A normal VN reminder (no internal vocabulary) is never stripped.
+			name:  "vietnamese reminder without markers kept",
+			input: "@[100000000000000001] 🎹 3h rồi! Mở nắp đàn nhé!\n\n" + vn,
+			want:  "@[100000000000000001] 🎹 3h rồi! Mở nắp đàn nhé!\n\n" + vn,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

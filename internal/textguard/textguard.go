@@ -26,6 +26,12 @@ var (
 	// "looking at", "i have", "it seems", bare "i need", bare "i'll") that
 	// appear in legit English reports.
 	cotStopwordPattern = regexp.MustCompile(`(?i)(?:i don't have access|i don't have|i do not have|i can't|i cannot|i'm unable|i am unable|i was unable|let me |i should |since i |i'll use|i'll mention|i'll just|i'll go with|as an ai|i need to figure|i need to determine|i don't have the ability)`)
+	// Internal technical vocabulary that NEVER belongs in a user-facing message,
+	// regardless of language. A leading paragraph containing one of these is the
+	// agent narrating its own plumbing (observed: a VN reminder preceded by a
+	// "...không tạo retry crons..." reasoning preamble that the English-only CoT
+	// check let through). Low false-positive: no coaching/reminder text says these.
+	internalMarkerPattern = regexp.MustCompile(`(?i)\b(?:retry cron|cron retry|escalation cron|target.?history|inject.?target|no_reply)`)
 )
 
 var vietnameseRunes = func() map[rune]bool {
@@ -85,8 +91,12 @@ func IsEnglishDominant(text string) bool {
 }
 
 // IsInternalReasoning reports whether a paragraph is leaked internal reasoning:
-// English-dominant AND matching a narrowed first-person CoT stopword.
+// either English-dominant first-person CoT, OR (any language) a paragraph that
+// names internal plumbing (retry cron, target-history, NO_REPLY, …).
 func IsInternalReasoning(paragraph string) bool {
+	if internalMarkerPattern.MatchString(paragraph) {
+		return true
+	}
 	if !IsEnglishDominant(paragraph) {
 		return false
 	}
