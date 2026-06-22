@@ -1,3 +1,5 @@
+//go:build sqlite || sqliteonly
+
 package sqlitestore
 
 import (
@@ -66,7 +68,8 @@ func (s *SQLiteHabitChecklistStore) MarkDone(ctx context.Context, sc store.Habit
 	now := time.Now().UTC().Format(habitTimeFmt)
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE habit_checklist_entries
-		 SET status='done', completed_at=?, completion_note=NULLIF(?,''), updated_at=?
+		 SET status='done', completed_at=COALESCE(completed_at, ?),
+		     completion_note=COALESCE(NULLIF(?,''), completion_note), updated_at=?
 		 WHERE tenant_id=? AND agent_id=? AND user_id=? AND plan_date=? AND task_key=?`,
 		now, note, now, sc.TenantID, sc.AgentID, sc.UserID, planDate, taskKey)
 	if err != nil {
@@ -80,7 +83,7 @@ func (s *SQLiteHabitChecklistStore) MarkSkipped(ctx context.Context, sc store.Ha
 	now := time.Now().UTC().Format(habitTimeFmt)
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE habit_checklist_entries SET status='skipped', updated_at=?
-		 WHERE tenant_id=? AND agent_id=? AND user_id=? AND plan_date=? AND task_key=?`,
+		 WHERE tenant_id=? AND agent_id=? AND user_id=? AND plan_date=? AND task_key=? AND status <> 'done'`,
 		now, sc.TenantID, sc.AgentID, sc.UserID, planDate, taskKey)
 	if err != nil {
 		return false, fmt.Errorf("habit mark_skipped: %w", err)
@@ -100,7 +103,7 @@ func (s *SQLiteHabitChecklistStore) IncrementNudge(ctx context.Context, sc store
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE habit_checklist_entries SET nudge_count=nudge_count+1, last_nudged_at=?, updated_at=?
-		 WHERE tenant_id=? AND agent_id=? AND user_id=? AND plan_date=? AND task_key IN (`+ph+`)`,
+		 WHERE tenant_id=? AND agent_id=? AND user_id=? AND plan_date=? AND status='pending' AND task_key IN (`+ph+`)`,
 		args...)
 	if err != nil {
 		return fmt.Errorf("habit increment_nudge: %w", err)

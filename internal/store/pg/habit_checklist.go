@@ -61,7 +61,8 @@ func (s *PGHabitChecklistStore) ListPendingDue(ctx context.Context, sc store.Hab
 func (s *PGHabitChecklistStore) MarkDone(ctx context.Context, sc store.HabitScope, planDate, taskKey, note string) (bool, error) {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE habit_checklist_entries
-		 SET status='done', completed_at=NOW(), completion_note=NULLIF($5,''), updated_at=NOW()
+		 SET status='done', completed_at=COALESCE(completed_at, NOW()),
+		     completion_note=COALESCE(NULLIF($5,''), completion_note), updated_at=NOW()
 		 WHERE tenant_id=$1::uuid AND agent_id=$2::uuid AND user_id=$3 AND plan_date=$4::date AND task_key=$6`,
 		sc.TenantID, sc.AgentID, sc.UserID, planDate, note, taskKey)
 	if err != nil {
@@ -75,7 +76,8 @@ func (s *PGHabitChecklistStore) MarkSkipped(ctx context.Context, sc store.HabitS
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE habit_checklist_entries
 		 SET status='skipped', updated_at=NOW()
-		 WHERE tenant_id=$1::uuid AND agent_id=$2::uuid AND user_id=$3 AND plan_date=$4::date AND task_key=$5`,
+		 WHERE tenant_id=$1::uuid AND agent_id=$2::uuid AND user_id=$3 AND plan_date=$4::date AND task_key=$5
+		   AND status <> 'done'`,
 		sc.TenantID, sc.AgentID, sc.UserID, planDate, taskKey)
 	if err != nil {
 		return false, fmt.Errorf("habit mark_skipped: %w", err)
@@ -91,7 +93,8 @@ func (s *PGHabitChecklistStore) IncrementNudge(ctx context.Context, sc store.Hab
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE habit_checklist_entries
 		 SET nudge_count=nudge_count+1, last_nudged_at=$5, updated_at=NOW()
-		 WHERE tenant_id=$1::uuid AND agent_id=$2::uuid AND user_id=$3 AND plan_date=$4::date AND task_key = ANY($6)`,
+		 WHERE tenant_id=$1::uuid AND agent_id=$2::uuid AND user_id=$3 AND plan_date=$4::date
+		   AND status='pending' AND task_key = ANY($6)`,
 		sc.TenantID, sc.AgentID, sc.UserID, planDate, at.UTC(), pqStringArray(taskKeys))
 	if err != nil {
 		return fmt.Errorf("habit increment_nudge: %w", err)

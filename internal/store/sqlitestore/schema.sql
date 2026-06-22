@@ -506,7 +506,7 @@ CREATE TABLE IF NOT EXISTS habit_checklist_entries (
     task_key        VARCHAR(80) NOT NULL,
     title           VARCHAR(200) NOT NULL,
     scheduled_local VARCHAR(5),           -- "HH:MM" local; NULL = anytime-today
-    status          VARCHAR(16) NOT NULL DEFAULT 'pending',
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','done','skipped')),
     nudge_count     INTEGER NOT NULL DEFAULT 0,
     last_nudged_at  TEXT,
     completed_at    TEXT,

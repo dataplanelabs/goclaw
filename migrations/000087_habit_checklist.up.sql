@@ -9,7 +9,8 @@ CREATE TABLE habit_checklist_entries (
     task_key        VARCHAR(80) NOT NULL, -- stable slug: guzheng|piano|run|english|...
     title           VARCHAR(200) NOT NULL,
     scheduled_local VARCHAR(5),           -- "HH:MM" local clock; NULL = anytime-today
-    status          VARCHAR(16) NOT NULL DEFAULT 'pending', -- pending|done|skipped
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','done','skipped')),
     nudge_count     INT NOT NULL DEFAULT 0,                 -- escalation = still pending after N ticks
     last_nudged_at  TIMESTAMPTZ,                            -- cadence floor
     completed_at    TIMESTAMPTZ,

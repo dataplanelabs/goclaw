@@ -1,3 +1,5 @@
+//go:build sqlite || sqliteonly
+
 package sqlitestore
 
 import (
