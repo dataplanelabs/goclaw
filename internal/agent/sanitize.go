@@ -403,6 +403,10 @@ func StripConfigLeak(content, agentType string) string {
 
 // --- NO_REPLY detection ---
 
+// leadingHTMLBreak matches one or more <br>/<br/>/<br /> tags an LLM may prepend
+// before the actual content (observed: "<br/>\n\nNO_REPLY ...").
+var leadingHTMLBreak = regexp.MustCompile(`(?i)^(?:<br\s*/?>\s*)+`)
+
 // IsSilentReply checks if the text begins with a NO_REPLY token.
 //
 // Divergent from TS isSilentReplyText() (exact-match only) — we match broadly:
@@ -416,6 +420,8 @@ func StripConfigLeak(content, agentType string) string {
 // leans toward "NO_REPLY + reason" rather than "real reply ending in NO_REPLY".
 func IsSilentReply(text string) bool {
 	trimmed := strings.TrimSpace(text)
+	// Strip a stray leading <br> an LLM may prepend so the NO_REPLY contract still suppresses.
+	trimmed = strings.TrimSpace(leadingHTMLBreak.ReplaceAllString(trimmed, ""))
 	if trimmed == "" {
 		return false
 	}
