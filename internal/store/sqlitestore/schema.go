@@ -20,7 +20,7 @@ var schemaSQL string
 // Fork keeps slots 26-28 for fork-specific migrations (zalo rename, cron
 // write_only_hash, provider write_only_hash). Upstream's slots 26-36 are
 // renumbered to 29-39 below to slot in after the fork's three.
-const SchemaVersion = 55
+const SchemaVersion = 56
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -877,6 +877,26 @@ WHERE path LIKE 'tenants/%/%';`,
 	53: `ALTER TABLE workstation_activity ADD COLUMN cmd_full TEXT; ALTER TABLE workstation_activity ADD COLUMN output_tail TEXT;`,
 	// Version 54 → 55: increase default-valued cron target history look-back.
 	54: `UPDATE cron_jobs SET inject_target_history_limit = 100 WHERE inject_target_history_limit = 50;`,
+	// Version 55 → 56: habit checklist state (mirrors PG migration 000087).
+	55: `CREATE TABLE IF NOT EXISTS habit_checklist_entries (
+    id              TEXT NOT NULL PRIMARY KEY,
+    tenant_id       TEXT NOT NULL,
+    agent_id        TEXT NOT NULL,
+    user_id         TEXT NOT NULL,
+    plan_date       TEXT NOT NULL,
+    task_key        VARCHAR(80) NOT NULL,
+    title           VARCHAR(200) NOT NULL,
+    scheduled_local VARCHAR(5),
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending',
+    nudge_count     INTEGER NOT NULL DEFAULT 0,
+    last_nudged_at  TEXT,
+    completed_at    TEXT,
+    completion_note TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE (tenant_id, agent_id, user_id, plan_date, task_key)
+);
+CREATE INDEX IF NOT EXISTS idx_habit_checklist_gate ON habit_checklist_entries(tenant_id, agent_id, user_id, plan_date, status);`,
 }
 
 const addUsageEventAnalyticsTables = `
