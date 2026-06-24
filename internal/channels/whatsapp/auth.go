@@ -123,6 +123,11 @@ func (c *Channel) resetClientLocked(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Tear down the previous client before replacing it, else its WebSocket +
+	// goroutines leak on every reauth cycle (Reauth() disconnects explicitly).
+	if c.client != nil {
+		c.client.Disconnect()
+	}
 	c.client = whatsmeow.NewClient(deviceStore, nil)
 	c.client.AddEventHandler(c.handleEvent)
 	return nil
@@ -147,8 +152,12 @@ func (c *Channel) resolveDeviceStoreLocked(ctx context.Context) (*wastore.Device
 		if err != nil {
 			return nil, err
 		}
-		if len(devices) > 0 {
-			return devices[0], nil
+		// Skip deleted devices — returning one defeats the re-scope (it's exactly
+		// the stale-device case this path handles); fall through to a fresh device.
+		for _, d := range devices {
+			if d != nil && !d.Deleted {
+				return d, nil
+			}
 		}
 	}
 
