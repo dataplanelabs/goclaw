@@ -360,16 +360,46 @@ func (ph *PendingHistory) formatContext(entries []HistoryEntry, currentMessage s
 		loc = time.UTC
 	}
 	var lines []string
+	var mediaNotes []string
 	for _, e := range entries {
 		ts := ""
 		if !e.Timestamp.IsZero() {
 			ts = fmt.Sprintf(" [%s]", e.Timestamp.In(loc).Format("2006-01-02 15:04"))
 		}
 		lines = append(lines, fmt.Sprintf("  %s%s: %s", e.Sender, ts, e.Body))
+		if entryHasMedia(e) {
+			mediaNotes = append(mediaNotes, mediaAttributionLine(e, loc))
+		}
 	}
 
-	return fmt.Sprintf("[Chat messages since your last reply - for context]\n%s\n\n%s\n%s",
-		strings.Join(lines, "\n"), CurrentMessageMarker, currentMessage)
+	block := fmt.Sprintf("[Chat messages since your last reply - for context]\n%s", strings.Join(lines, "\n"))
+	// Historical media is re-attached to the CURRENT turn's message, so without an
+	// explicit sharer note the model credits it to the current sender.
+	if len(mediaNotes) > 0 {
+		block += "\n\n[Media note: image/file media available this turn was shared EARLIER in the chat by the senders below — attribute it to them, not to the current message's sender:\n  - " +
+			strings.Join(mediaNotes, "\n  - ") + "]"
+	}
+
+	return fmt.Sprintf("%s\n\n%s\n%s", block, CurrentMessageMarker, currentMessage)
+}
+
+// entryHasMedia reports whether a history entry carried media, robust across
+// channels that nil Media during CollectMedia before formatting (Slack) and
+// those that defer download via MediaRefs (Telegram).
+func entryHasMedia(e HistoryEntry) bool {
+	return len(e.Media) > 0 || len(e.MediaRefs) > 0 || strings.Contains(e.Body, "<media:")
+}
+
+func mediaAttributionLine(e HistoryEntry, loc *time.Location) string {
+	noun := "an image/file"
+	if len(e.Media) > 1 || len(e.MediaRefs) > 1 {
+		noun = "images/files"
+	}
+	at := ""
+	if !e.Timestamp.IsZero() {
+		at = " at " + e.Timestamp.In(loc).Format("15:04")
+	}
+	return fmt.Sprintf("%s shared %s%s", e.Sender, noun, at)
 }
 
 // GetEntries returns a copy of pending entries for a group.
