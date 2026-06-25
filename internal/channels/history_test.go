@@ -33,6 +33,70 @@ func TestBuildContextLocalizesBufferTimestamp(t *testing.T) {
 	}
 }
 
+// Regression: a group photo posted by sharer A must be attributed to A, not to
+// the later sender B who mentions the bot. The historical image is re-attached to
+// B's turn, so the context must carry an explicit sharer note.
+func TestBuildContextAttributesHistoricalMediaToSharer(t *testing.T) {
+	ph := NewPendingHistory()
+	ph.SetTimezone("Asia/Ho_Chi_Minh")
+	key := "group:testchan:900000000000000010"
+	ph.Record(key, HistoryEntry{
+		Sender:    "Photo Sharer",
+		SenderID:  "100000000000000001",
+		Body:      `<media:image path="/tmp/cafe.jpg">`,
+		Media:     []string{"/tmp/cafe.jpg"},
+		Timestamp: fixedUTC,
+	}, 50)
+
+	current := "[From: Mention Sender (uid:100000000000000002)]\nhey bot"
+	out, paths := ph.BuildContextAndCollectMedia(key, current, 50)
+
+	if !strings.Contains(out, "Photo Sharer shared an image/file at 15:59") {
+		t.Fatalf("expected sharer attribution for Photo Sharer, got:\n%s", out)
+	}
+	if !strings.Contains(out, "not to the current message's sender") {
+		t.Fatalf("expected explicit anti-misattribution caveat, got:\n%s", out)
+	}
+	if strings.Contains(out, "Mention Sender shared") {
+		t.Fatalf("current sender must not be credited with the image, got:\n%s", out)
+	}
+	if len(paths) != 1 || paths[0] != "/tmp/cafe.jpg" {
+		t.Fatalf("expected the historical media path collected, got: %v", paths)
+	}
+}
+
+// The note must survive the Slack-style ordering where CollectMedia nils entry
+// Media before BuildContext formats — detection falls back to the Body media tag.
+func TestMediaNoteSurvivesCollectMediaNiling(t *testing.T) {
+	ph := NewPendingHistory()
+	key := "group:testchan:900000000000000011"
+	ph.Record(key, HistoryEntry{
+		Sender:    "Photo Sharer",
+		Body:      `caption here<media:image path="/tmp/x.jpg">`,
+		Media:     []string{"/tmp/x.jpg"},
+		Timestamp: fixedUTC,
+	}, 50)
+
+	if got := ph.CollectMedia(key); len(got) != 1 {
+		t.Fatalf("expected 1 collected path, got: %v", got)
+	}
+	out := ph.BuildContext(key, "current", 50)
+	if !strings.Contains(out, "Photo Sharer shared an image/file") {
+		t.Fatalf("expected sharer note after CollectMedia niled Media, got:\n%s", out)
+	}
+}
+
+func TestBuildContextNoMediaNoteWhenTextOnly(t *testing.T) {
+	ph := NewPendingHistory()
+	key := "group:testchan:900000000000000012"
+	ph.Record(key, HistoryEntry{Sender: "Writer One", Body: "just text", Timestamp: fixedUTC}, 50)
+
+	out := ph.BuildContext(key, "current", 50)
+	if strings.Contains(out, "Media note") {
+		t.Fatalf("text-only history must not emit a media note, got:\n%s", out)
+	}
+}
+
 func TestBuildContextDefaultsToUTC(t *testing.T) {
 	ph := NewPendingHistory()
 	key := "group:testchan:900000000000000002"
