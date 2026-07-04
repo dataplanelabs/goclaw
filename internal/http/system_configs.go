@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 
@@ -57,11 +58,10 @@ func (h *SystemConfigsHandler) handleGet(w http.ResponseWriter, r *http.Request)
 	key := r.PathValue("key")
 	val, err := h.store.Get(r.Context(), key)
 	if err != nil {
-		// Fail-soft: settings-store "missing" = "empty". Returning 200 here
-		// stops Chrome from logging 404s for polled alert-state keys
-		// (e.g. alert.background.provider_error) that legitimately don't
-		// exist most of the time. Frontend treats empty as "no alert".
-		val = ""
+		if !errors.Is(err, store.ErrSystemConfigNotFound) {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"key": key, "value": val})
 }
