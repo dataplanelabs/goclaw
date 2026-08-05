@@ -2,8 +2,10 @@ package personal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/protocol"
@@ -13,6 +15,7 @@ const (
 	maxChannelRestarts   = 10
 	maxChannelBackoff    = 60 * time.Second
 	code3000InitialDelay = 60 * time.Second
+	backoffRounds        = 6 // rounds before the delay pins at maxChannelBackoff
 )
 
 func (c *Channel) listenLoop(ctx context.Context) {
@@ -84,10 +87,18 @@ func (c *Channel) runListenerLoop(ctx context.Context) bool {
 // has its own internal retry for transient WS disconnects (endpoint rotation).
 // When the listener exhausts its retries, it emits to closedCh which triggers this.
 // Returns true if restart succeeded and the listen loop should continue.
+//
+// The attempt budget only counts credential rejections. A network outage longer
+// than the budget (cluster DNS, ISP) would otherwise kill the channel until an
+// operator re-saves it, so unreachability retries at maxChannelBackoff forever.
 func (c *Channel) restartWithBackoff(ctx context.Context) bool {
-	for attempt := range maxChannelRestarts {
-		delay := min(time.Duration(1<<uint(attempt+1))*time.Second, maxChannelBackoff)
-		slog.Info("zalo_personal restarting channel", "attempt", attempt+1, "delay", delay, "channel", c.Name())
+	authFailures := 0
+	for round := 0; authFailures < maxChannelRestarts; round++ {
+		delay := maxChannelBackoff
+		if round < backoffRounds {
+			delay = min(time.Duration(1<<uint(round+1))*time.Second, maxChannelBackoff)
+		}
+		slog.Info("zalo_personal restarting channel", "attempt", authFailures+1, "round", round+1, "delay", delay, "channel", c.Name())
 
 		select {
 		case <-ctx.Done():
@@ -97,14 +108,27 @@ func (c *Channel) restartWithBackoff(ctx context.Context) bool {
 		case <-time.After(delay):
 		}
 
-		if err := c.restart(ctx); err != nil {
-			slog.Warn("zalo_personal restart failed", "attempt", attempt+1, "error", err)
-			continue
+		err := c.restart(ctx)
+		switch {
+		case err == nil:
+			return true
+		case isUnreachable(err):
+			slog.Warn("zalo_personal restart failed: network unreachable, still retrying", "round", round+1, "error", err, "channel", c.Name())
+		default:
+			authFailures++
+			slog.Warn("zalo_personal restart failed", "attempt", authFailures, "error", err)
 		}
-		return true
 	}
 	slog.Error("zalo_personal channel gave up after max restart attempts", "channel", c.Name())
 	return false
+}
+
+// isUnreachable reports whether err is a transport failure (DNS, dial, TLS,
+// timeout) rather than Zalo rejecting the credentials. Credential rejections
+// are decoded from a successful HTTP response and never satisfy net.Error.
+func isUnreachable(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }
 
 // restart performs a full re-authentication and listener restart.
