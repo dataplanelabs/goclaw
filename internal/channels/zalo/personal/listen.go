@@ -98,7 +98,7 @@ func (c *Channel) restartWithBackoff(ctx context.Context) bool {
 		if round < backoffRounds {
 			delay = min(time.Duration(1<<uint(round+1))*time.Second, maxChannelBackoff)
 		}
-		slog.Info("zalo_personal restarting channel", "attempt", authFailures+1, "round", round+1, "delay", delay, "channel", c.Name())
+		slog.Info("zalo_personal restarting channel", "round", round+1, "auth_failures", authFailures, "delay", delay, "channel", c.Name())
 
 		select {
 		case <-ctx.Done():
