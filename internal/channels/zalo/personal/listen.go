@@ -92,12 +92,23 @@ func (c *Channel) runListenerLoop(ctx context.Context) bool {
 // than the budget (cluster DNS, ISP) would otherwise kill the channel until an
 // operator re-saves it, so unreachability retries at maxChannelBackoff forever.
 func (c *Channel) restartWithBackoff(ctx context.Context) bool {
+	return c.restartLoop(ctx, c.restart, backoffFor)
+}
+
+// backoffFor grows the delay per round, then pins it at maxChannelBackoff.
+func backoffFor(round int) time.Duration {
+	if round >= backoffRounds {
+		return maxChannelBackoff
+	}
+	return min(time.Duration(1<<uint(round+1))*time.Second, maxChannelBackoff)
+}
+
+// restartLoop is restartWithBackoff with its two side-effecting dependencies
+// injected so the budget accounting can be tested without real auth or sleeps.
+func (c *Channel) restartLoop(ctx context.Context, restart func(context.Context) error, backoff func(int) time.Duration) bool {
 	authFailures := 0
 	for round := 0; authFailures < maxChannelRestarts; round++ {
-		delay := maxChannelBackoff
-		if round < backoffRounds {
-			delay = min(time.Duration(1<<uint(round+1))*time.Second, maxChannelBackoff)
-		}
+		delay := backoff(round)
 		slog.Info("zalo_personal restarting channel", "round", round+1, "auth_failures", authFailures, "delay", delay, "channel", c.Name())
 
 		select {
@@ -108,7 +119,7 @@ func (c *Channel) restartWithBackoff(ctx context.Context) bool {
 		case <-time.After(delay):
 		}
 
-		err := c.restart(ctx)
+		err := restart(ctx)
 		switch {
 		case err == nil:
 			return true
@@ -116,7 +127,7 @@ func (c *Channel) restartWithBackoff(ctx context.Context) bool {
 			slog.Warn("zalo_personal restart failed: network unreachable, still retrying", "round", round+1, "error", err, "channel", c.Name())
 		default:
 			authFailures++
-			slog.Warn("zalo_personal restart failed", "attempt", authFailures, "error", err)
+			slog.Warn("zalo_personal restart failed", "auth_failures", authFailures, "error", err)
 		}
 	}
 	slog.Error("zalo_personal channel gave up after max restart attempts", "channel", c.Name())
