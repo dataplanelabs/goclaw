@@ -31,16 +31,19 @@ func TestIsSilentReply(t *testing.T) {
 		{"prefix + space + content", "NO_REPLY hello", true},
 		{"prefix + colon + content", "NO_REPLY: offline", true},
 		{"prefix + because", "NO_REPLY because user is away", true},
+		{"reason then terminal sentinel", "The scheduled reminder was cancelled.\n\nNO_REPLY", true},
+		{"suffix with whitespace", "No reminder is needed. NO_REPLY", true},
+		{"token mid-sentence", "Hello NO_REPLY world", false},
+		{"token mentioned as instruction", "Use NO_REPLY when no response is needed.", false},
 		// Leading <br> an LLM may prepend before the token.
 		{"leading br self-close", "<br/>NO_REPLY", true},
 		{"leading br spaced", "<br/>\n\nNO_REPLY (task done)", true},
 		{"leading br open tag", "<br>NO_REPLY", true},
 		{"leading br with space", "<br />  NO_REPLY", true},
 		{"multiple leading br", "<br/><br/>NO_REPLY", true},
-		// NOT silent — token glued to another word, or not at start.
+		// NOT silent - token glued to another word.
 		{"embedded word", "NO_REPLYING", false},
-		{"trailing after content", "Here you go. NO_REPLY", false},
-		{"token mid-sentence", "Hello NO_REPLY world", false},
+		{"glued prefix", "XNO_REPLY", false},
 		{"empty", "", false},
 		{"whitespace only", "   ", false},
 		{"unrelated text", "no reply needed", false},
