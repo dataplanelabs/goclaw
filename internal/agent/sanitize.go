@@ -20,7 +20,6 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/textguard"
@@ -407,17 +406,12 @@ func StripConfigLeak(content, agentType string) string {
 // before the actual content (observed: "<br/>\n\nNO_REPLY ...").
 var leadingHTMLBreak = regexp.MustCompile(`(?i)^(?:<br\s*/?>\s*)+`)
 
-// IsSilentReply checks if the text begins with a NO_REPLY token.
+// IsSilentReply checks if the text starts or ends with a standalone NO_REPLY token.
 //
-// Divergent from TS isSilentReplyText() (exact-match only) — we match broadly:
-// decorative wrappers (`NO_REPLY_`, `"NO_REPLY"`, `**NO_REPLY**`) AND trailing
-// explanations (`NO_REPLY because offline`, `NO_REPLY: note`) suppress delivery.
-// Only requirement: the token is not glued to another word (`NO_REPLYING` is NOT silent).
-// Case-insensitive.
-//
-// Trade-off vs upstream #19537: upstream guards against suppressing substantive
-// replies that end in NO_REPLY. We accept that risk because observed model output
-// leans toward "NO_REPLY + reason" rather than "real reply ending in NO_REPLY".
+// Divergent from TS isSilentReplyText() (exact-match only) - we match broadly so
+// both prefix forms (`NO_REPLY because offline`) and terminal sentinel forms
+// (`not for me. NO_REPLY`) suppress delivery. The token must not be glued to
+// another word (`NO_REPLYING` and `XNO_REPLY` are not silent). Case-insensitive.
 func IsSilentReply(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	// Strip a stray leading <br> an LLM may prepend so the NO_REPLY contract still suppresses.
@@ -428,22 +422,34 @@ func IsSilentReply(text string) bool {
 	// Strip decorative wrappers from both ends (quotes, markdown emphasis, punctuation).
 	stripped := strings.Trim(trimmed, "_ \t\n\r.,:;!?\"'`*~#>-()[]{}")
 	const token = "NO_REPLY"
-	if len(stripped) < len(token) {
-		return false
-	}
-	if !strings.EqualFold(stripped[:len(token)], token) {
-		return false
-	}
-	if len(stripped) == len(token) {
-		return true
-	}
-	// Token must not be glued to another word — next rune must be non-alphanumeric.
-	next, _ := utf8.DecodeRuneInString(stripped[len(token):])
-	return !isAlphaNum(next)
+	return hasStandaloneNoReplyPrefix(stripped, token) || hasStandaloneNoReplySuffix(stripped, token)
 }
 
-func isAlphaNum(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+func hasStandaloneNoReplyPrefix(text, token string) bool {
+	if len(text) < len(token) {
+		return false
+	}
+	if !strings.EqualFold(text[:len(token)], token) {
+		return false
+	}
+	return len(text) == len(token) || !isAlphaNumByte(text[len(token)])
+}
+
+func hasStandaloneNoReplySuffix(text, token string) bool {
+	if len(text) < len(token) {
+		return false
+	}
+	start := len(text) - len(token)
+	if !strings.EqualFold(text[start:], token) {
+		return false
+	}
+	return start == 0 || !isAlphaNumByte(text[start-1])
+}
+
+func isAlphaNumByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9')
 }
 
 func isWordChar(r rune) bool {

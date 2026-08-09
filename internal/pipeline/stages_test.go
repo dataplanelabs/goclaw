@@ -2419,6 +2419,34 @@ func TestFinalizeStage_MaybeSummarize_Called(t *testing.T) {
 	}
 }
 
+func TestFinalizeStage_SuppressesSilentReplyAfterFlush(t *testing.T) {
+	t.Parallel()
+	finalContent := "The scheduled reminder was cancelled.\n\nNO_REPLY"
+	var flushed []providers.Message
+	deps := &PipelineDeps{
+		IsSilentReply: func(content string) bool {
+			return content == finalContent
+		},
+		FlushMessages: func(_ context.Context, _ string, messages []providers.Message) error {
+			flushed = append(flushed, messages...)
+			return nil
+		},
+	}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Observe.FinalContent = finalContent
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if state.Observe.FinalContent != "" {
+		t.Fatalf("FinalContent = %q, want empty after silent reply suppression", state.Observe.FinalContent)
+	}
+	if len(flushed) == 0 || flushed[len(flushed)-1].Content != finalContent {
+		t.Fatalf("flushed final content = %#v, want original silent reply persisted before suppression", flushed)
+	}
+}
+
 // --- integration-style: multiple stages chained ---
 
 func TestStagesChained_ThinkThenObserve_FinalContentSet(t *testing.T) {
