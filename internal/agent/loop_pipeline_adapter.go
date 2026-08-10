@@ -256,6 +256,7 @@ func convertRunResult(pr *pipeline.RunResult) *RunResult {
 		media[i] = MediaResult{
 			Path:        m.Path,
 			ContentType: m.ContentType,
+			Caption:     m.Caption,
 			Size:        m.Size,
 			AsVoice:     m.AsVoice,
 			Prompt:      m.Prompt,

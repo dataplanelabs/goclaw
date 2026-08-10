@@ -40,7 +40,8 @@ var BridgeToolNames = map[string]bool{
 	// Scheduler
 	"cron": true,
 	// Messaging (send text/files to channels)
-	"message": true,
+	"message":   true,
+	"send_file": true,
 	// Sessions (read + send)
 	"sessions_list":    true,
 	"session_status":   true,
@@ -143,6 +144,7 @@ func forwardMediaToOutbound(ctx context.Context, msgBus *bus.MessageBus, toolNam
 		attachments = append(attachments, bus.MediaAttachment{
 			URL:         mf.Path,
 			ContentType: ct,
+			Caption:     mf.Caption,
 		})
 	}
 

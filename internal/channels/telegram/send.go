@@ -391,6 +391,9 @@ func (c *Channel) sendMediaMessage(ctx context.Context, chatID int64, msg bus.Ou
 	for _, media := range msg.Media {
 		// Determine caption (use message content for first media, or media caption)
 		caption := media.Caption
+		if caption != "" && strings.TrimSpace(caption) == strings.TrimSpace(msg.Content) {
+			msg.Content = ""
+		}
 		if caption == "" && msg.Content != "" {
 			caption = msg.Content
 			msg.Content = "" // only use for first media
@@ -462,6 +465,14 @@ func (c *Channel) sendMediaMessage(ctx context.Context, chatID int64, msg bus.Ou
 				if err := c.sendHTML(ctx, chatID, chunk, 0, threadID); err != nil {
 					return err
 				}
+			}
+		}
+	}
+	if msg.Content != "" {
+		chunks := chunkHTML(markdownToTelegramHTML(msg.Content), telegramMaxMessageLen)
+		for _, chunk := range chunks {
+			if err := c.sendHTML(ctx, chatID, chunk, 0, threadID); err != nil {
+				return err
 			}
 		}
 	}

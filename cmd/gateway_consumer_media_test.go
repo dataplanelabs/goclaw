@@ -18,7 +18,7 @@ import (
 func TestAppendMediaToOutbound_PopulatesURL(t *testing.T) {
 	msg := bus.OutboundMessage{}
 	appendMediaToOutbound(&msg, []agent.MediaResult{
-		{Path: "/workspace/cats.png", ContentType: "image/png"},
+		{Path: "/workspace/cats.png", ContentType: "image/png", Caption: "cat caption"},
 		{Path: "/workspace/report.pdf", ContentType: "application/pdf"},
 	})
 	if len(msg.Media) != 2 {
@@ -32,6 +32,9 @@ func TestAppendMediaToOutbound_PopulatesURL(t *testing.T) {
 	}
 	if msg.Media[0].ContentType != "image/png" {
 		t.Errorf("Media[0].ContentType = %q, want image/png", msg.Media[0].ContentType)
+	}
+	if msg.Media[0].Caption != "cat caption" {
+		t.Errorf("Media[0].Caption = %q, want cat caption", msg.Media[0].Caption)
 	}
 }
 

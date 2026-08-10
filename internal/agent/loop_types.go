@@ -715,8 +715,9 @@ type RunResult struct {
 type MediaResult struct {
 	Path        string `json:"path"`                   // local file path
 	ContentType string `json:"content_type,omitempty"` // MIME type
-	Size        int64  `json:"size,omitempty"`         // file size in bytes
-	AsVoice     bool   `json:"as_voice,omitempty"`     // send as voice message (Telegram OGG)
+	Caption     string `json:"caption,omitempty"`
+	Size        int64  `json:"size,omitempty"`     // file size in bytes
+	AsVoice     bool   `json:"as_voice,omitempty"` // send as voice message (Telegram OGG)
 	// Prompt is the generation prompt for AI-generated media (e.g. create_image).
 	// Empty for user-uploaded or non-generated files.
 	Prompt string `json:"prompt,omitempty"`

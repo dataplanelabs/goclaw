@@ -227,6 +227,7 @@ func syncBridgeToState(bridgeRS *runState, state *pipeline.RunState, action tool
 			state.Tool.MediaResults = append(state.Tool.MediaResults, pipeline.MediaResult{
 				Path:        mr.Path,
 				ContentType: mr.ContentType,
+				Caption:     mr.Caption,
 				Size:        mr.Size,
 				AsVoice:     mr.AsVoice,
 				Prompt:      mr.Prompt,

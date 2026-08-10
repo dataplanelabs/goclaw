@@ -105,6 +105,7 @@ func processAnnounceLoop(
 					Path:     mr.Path,
 					MimeType: mr.ContentType,
 					Filename: filepath.Base(mr.Path), // preserve sanitized stem from producer
+					Caption:  mr.Caption,
 				})
 			}
 		}

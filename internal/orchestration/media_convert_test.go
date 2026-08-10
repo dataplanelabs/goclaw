@@ -15,7 +15,7 @@ func TestMediaResultToBusFiles_Empty(t *testing.T) {
 
 func TestMediaResultToBusFiles_Converts(t *testing.T) {
 	input := []agent.MediaResult{
-		{Path: "/a.png", ContentType: "image/png", Size: 1024},
+		{Path: "/a.png", ContentType: "image/png", Caption: "caption a", Size: 1024},
 		{Path: "/b.pdf", ContentType: "application/pdf"},
 	}
 	got := MediaResultToBusFiles(input)
@@ -24,6 +24,9 @@ func TestMediaResultToBusFiles_Converts(t *testing.T) {
 	}
 	if got[0].Path != "/a.png" || got[0].MimeType != "image/png" {
 		t.Errorf("got[0] = %+v", got[0])
+	}
+	if got[0].Caption != "caption a" {
+		t.Errorf("got[0].Caption = %q, want caption a", got[0].Caption)
 	}
 	if got[1].Path != "/b.pdf" || got[1].MimeType != "application/pdf" {
 		t.Errorf("got[1] = %+v", got[1])
@@ -38,7 +41,7 @@ func TestBusFilesToMediaResult_Empty(t *testing.T) {
 
 func TestBusFilesToMediaResult_Converts(t *testing.T) {
 	input := []bus.MediaFile{
-		{Path: "/x.jpg", MimeType: "image/jpeg"},
+		{Path: "/x.jpg", MimeType: "image/jpeg", Caption: "caption x"},
 	}
 	got := BusFilesToMediaResult(input)
 	if len(got) != 1 {
@@ -47,17 +50,23 @@ func TestBusFilesToMediaResult_Converts(t *testing.T) {
 	if got[0].Path != "/x.jpg" || got[0].ContentType != "image/jpeg" {
 		t.Errorf("got[0] = %+v", got[0])
 	}
+	if got[0].Caption != "caption x" {
+		t.Errorf("got[0].Caption = %q, want caption x", got[0].Caption)
+	}
 }
 
 func TestRoundTrip_MediaResult(t *testing.T) {
 	original := []agent.MediaResult{
-		{Path: "/round.wav", ContentType: "audio/wav", Size: 2048, AsVoice: true},
+		{Path: "/round.wav", ContentType: "audio/wav", Caption: "round caption", Size: 2048, AsVoice: true},
 	}
 	busFiles := MediaResultToBusFiles(original)
 	backToMedia := BusFilesToMediaResult(busFiles)
 	// Path and ContentType should survive round-trip
 	if backToMedia[0].Path != "/round.wav" || backToMedia[0].ContentType != "audio/wav" {
 		t.Errorf("round-trip failed: %+v", backToMedia[0])
+	}
+	if backToMedia[0].Caption != "round caption" {
+		t.Errorf("round-trip caption = %q, want round caption", backToMedia[0].Caption)
 	}
 	// Size and AsVoice are NOT preserved in bus.MediaFile (by design)
 	if backToMedia[0].Size != 0 || backToMedia[0].AsVoice {

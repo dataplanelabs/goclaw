@@ -90,10 +90,7 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 			}
 			c.recordMessagePreview(ctx, string(resp.ID), mediaAttachmentPreview(mediaKindFromMIME(m.ContentType), m.URL, caption), resp.Timestamp)
 		}
-		// Skip text if caption was used on first media.
-		if msg.Media[0].Caption == "" && msg.Content != "" {
-			msg.Content = ""
-		}
+		msg.Content = remainingContentAfterMediaCaption(msg.Content, msg.Media[0].Caption, msg.Media[0].ContentType)
 	}
 
 	// Send text (chunked if exceeding limit).
@@ -121,6 +118,16 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	go c.sendPresence(chatJID, types.ChatPresencePaused)
 
 	return nil
+}
+
+func remainingContentAfterMediaCaption(content, caption, contentType string) string {
+	if strings.HasPrefix(strings.ToLower(contentType), "audio/") {
+		return content
+	}
+	if caption == "" || strings.TrimSpace(content) == strings.TrimSpace(caption) {
+		return ""
+	}
+	return content
 }
 
 // buildMediaMessage uploads media to WhatsApp and returns the message proto.
