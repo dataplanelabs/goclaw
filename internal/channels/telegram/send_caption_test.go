@@ -58,3 +58,39 @@ func TestSendMediaMessagePreservesDistinctContent(t *testing.T) {
 		t.Fatalf("text = %q, want distinct response", text)
 	}
 }
+
+func TestRemainingContentAfterTelegramMediaCaptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		media   []bus.MediaAttachment
+		want    string
+	}{
+		{
+			name:    "matching first caption",
+			content: "response",
+			media:   []bus.MediaAttachment{{Caption: "response"}},
+			want:    "",
+		},
+		{
+			name:    "matching later caption",
+			content: "response",
+			media:   []bus.MediaAttachment{{}, {Caption: " response "}},
+			want:    "",
+		},
+		{
+			name:    "distinct caption",
+			content: "response",
+			media:   []bus.MediaAttachment{{Caption: "file caption"}},
+			want:    "response",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := remainingContentAfterTelegramMediaCaptions(tt.content, tt.media); got != tt.want {
+				t.Fatalf("remainingContentAfterTelegramMediaCaptions() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -387,13 +387,11 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 // Ref: TS src/telegram/send.ts → sendMessageTelegram with mediaUrl
 func (c *Channel) sendMediaMessage(ctx context.Context, chatID int64, msg bus.OutboundMessage, replyTo, threadID int) error {
 	chatIDObj := tu.ID(chatID)
+	msg.Content = remainingContentAfterTelegramMediaCaptions(msg.Content, msg.Media)
 
 	for _, media := range msg.Media {
 		// Determine caption (use message content for first media, or media caption)
 		caption := media.Caption
-		if caption != "" && strings.TrimSpace(caption) == strings.TrimSpace(msg.Content) {
-			msg.Content = ""
-		}
 		if caption == "" && msg.Content != "" {
 			caption = msg.Content
 			msg.Content = "" // only use for first media
@@ -477,6 +475,15 @@ func (c *Channel) sendMediaMessage(ctx context.Context, chatID int64, msg bus.Ou
 		}
 	}
 	return nil
+}
+
+func remainingContentAfterTelegramMediaCaptions(content string, media []bus.MediaAttachment) string {
+	for _, attachment := range media {
+		if attachment.Caption != "" && strings.TrimSpace(attachment.Caption) == strings.TrimSpace(content) {
+			return ""
+		}
+	}
+	return content
 }
 
 func (c *Channel) validateOutboundMediaSize(path string) error {
