@@ -67,7 +67,7 @@ func TestCaptureFromPipelineResult_WithData(t *testing.T) {
 		Iterations: 5,
 		TotalUsage: providers.Usage{PromptTokens: 200, CompletionTokens: 80},
 		MediaResults: []plpkg.MediaResult{
-			{Path: "/tmp/audio.mp3", ContentType: "audio/mpeg"},
+			{Path: "/tmp/audio.mp3", ContentType: "audio/mpeg", Caption: "audio caption"},
 		},
 	}
 	c := CaptureFromPipelineResult(pr, 4*time.Second)
@@ -79,5 +79,8 @@ func TestCaptureFromPipelineResult_WithData(t *testing.T) {
 	}
 	if len(c.Media) != 1 || c.Media[0].MimeType != "audio/mpeg" {
 		t.Errorf("media = %v", c.Media)
+	}
+	if c.Media[0].Caption != "audio caption" {
+		t.Errorf("caption = %q, want audio caption", c.Media[0].Caption)
 	}
 }

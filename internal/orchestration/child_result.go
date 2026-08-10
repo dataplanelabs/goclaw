@@ -50,7 +50,7 @@ func CaptureFromPipelineResult(r *plpkg.RunResult, runtime time.Duration) ChildR
 	media := make([]bus.MediaFile, 0, len(r.MediaResults))
 	for _, m := range r.MediaResults {
 		// Basename preserves any sanitized stem from the producing agent's persistMedia.
-		media = append(media, bus.MediaFile{Path: m.Path, MimeType: m.ContentType, Filename: filepath.Base(m.Path)})
+		media = append(media, bus.MediaFile{Path: m.Path, MimeType: m.ContentType, Filename: filepath.Base(m.Path), Caption: m.Caption})
 	}
 	return ChildResult{
 		Content:      r.Content,

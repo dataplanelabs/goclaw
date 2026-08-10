@@ -382,3 +382,81 @@ func TestPersonalChannelSend_NoQuote_PreservesExistingMediaFirstOrder(t *testing
 		}
 	}
 }
+
+func TestMergeFileCaptions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		content string
+		media   []bus.MediaAttachment
+		want    string
+	}{
+		{
+			name:    "file caption before content",
+			content: "final response",
+			media:   []bus.MediaAttachment{{URL: "/tmp/report.pdf", Caption: "file caption"}},
+			want:    "file caption\n\nfinal response",
+		},
+		{
+			name:    "duplicate caption omitted",
+			content: "same text",
+			media:   []bus.MediaAttachment{{URL: "/tmp/report.pdf", Caption: "same text"}},
+			want:    "same text",
+		},
+		{
+			name:  "image caption stays native",
+			media: []bus.MediaAttachment{{URL: "/tmp/chart.png", Caption: "image caption"}},
+			want:  "",
+		},
+		{
+			name:    "no file caption preserves content",
+			content: "  padded content  ",
+			media:   []bus.MediaAttachment{{URL: "/tmp/chart.png", Caption: "image caption"}},
+			want:    "  padded content  ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := mergeFileCaptions(tt.content, tt.media); got != tt.want {
+				t.Fatalf("mergeFileCaptions() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeImageCaption(t *testing.T) {
+	t.Parallel()
+	srv, _, _, _ := sendQuoteServer(t, "1001", 0)
+	ch := newChannelWithSession(t, srv)
+	caption := ch.normalizeImageCaption(context.Background(), "user-1", protocol.ThreadTypeUser, "**Weekly report**")
+	if caption != "Weekly report" {
+		t.Fatalf("caption = %q, want Weekly report", caption)
+	}
+}
+
+func TestPersonalChannelSend_NoQuote_FileCaptionSendsTextWhenMediaFails(t *testing.T) {
+	t.Parallel()
+	srv, cap, _, _ := sendQuoteServer(t, "1001", 0)
+	ch := newChannelWithSession(t, srv)
+
+	err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID: "user-1",
+		Media: []bus.MediaAttachment{{
+			URL:         "/nonexistent/report.pdf",
+			ContentType: "application/pdf",
+			Caption:     "file caption",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if len(*cap) == 0 {
+		t.Fatal("file caption did not produce a text send")
+	}
+	payload := decryptCapturedForm(t, (*cap)[0].body)
+	if got := payload["message"]; got != "file caption" {
+		t.Fatalf("message = %v, want file caption", got)
+	}
+}

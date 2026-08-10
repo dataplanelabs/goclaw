@@ -54,6 +54,7 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() || sess == nil {
 		return fmt.Errorf("zalo_personal channel not running")
 	}
+	msg.Content = mergeFileCaptions(msg.Content, msg.Media)
 
 	var outStyles []common.Style
 	if c.enableNativeStyles {
@@ -142,6 +143,37 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		return c.sendChunkedText(ctx, sess, msg.ChatID, threadType, msg.Content, nil, allMentions, outStyles)
 	}
 	return nil
+}
+
+func mergeFileCaptions(content string, media []bus.MediaAttachment) string {
+	originalContent := content
+	content = strings.TrimSpace(content)
+	seen := make(map[string]struct{}, len(media)+1)
+	if content != "" {
+		seen[content] = struct{}{}
+	}
+	parts := make([]string, 0, len(media)+1)
+	for _, item := range media {
+		if protocol.IsImageFile(item.URL) {
+			continue
+		}
+		caption := strings.TrimSpace(item.Caption)
+		if caption == "" {
+			continue
+		}
+		if _, duplicate := seen[caption]; duplicate {
+			continue
+		}
+		seen[caption] = struct{}{}
+		parts = append(parts, caption)
+	}
+	if len(parts) == 0 {
+		return originalContent
+	}
+	if content != "" {
+		parts = append(parts, content)
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // parseOutboundMentionsWithStyles routes through ParseMarkersWithStyles when
@@ -235,7 +267,8 @@ func (c *Channel) sendMediaBestEffort(ctx context.Context, sess *protocol.Sessio
 			}
 		}
 		if protocol.IsImageFile(m.URL) {
-			if err := c.sendImage(ctx, sess, chatID, threadType, m.URL, m.Caption); err != nil {
+			caption := c.normalizeImageCaption(ctx, chatID, threadType, m.Caption)
+			if err := c.sendImage(ctx, sess, chatID, threadType, m.URL, caption); err != nil {
 				slog.Warn("zalo_personal: failed to send image", "path", m.URL, "error", err)
 			}
 		} else {
@@ -244,6 +277,12 @@ func (c *Channel) sendMediaBestEffort(ctx context.Context, sess *protocol.Sessio
 			}
 		}
 	}
+}
+
+func (c *Channel) normalizeImageCaption(ctx context.Context, chatID string, threadType protocol.ThreadType, caption string) string {
+	caption = common.StripMarkdown(caption)
+	caption, _ = c.parseOutboundMentions(ctx, chatID, threadType, caption)
+	return caption
 }
 
 // sendVoice normalizes audio to ADTS AAC (Zalo's own voice format) then sends

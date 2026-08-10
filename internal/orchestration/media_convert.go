@@ -20,6 +20,7 @@ func MediaResultToBusFiles(results []agent.MediaResult) []bus.MediaFile {
 			Path:     r.Path,
 			MimeType: r.ContentType,
 			Filename: filepath.Base(r.Path),
+			Caption:  r.Caption,
 		}
 	}
 	return files
@@ -35,6 +36,7 @@ func BusFilesToMediaResult(files []bus.MediaFile) []agent.MediaResult {
 		results[i] = agent.MediaResult{
 			Path:        f.Path,
 			ContentType: f.MimeType,
+			Caption:     f.Caption,
 		}
 	}
 	return results

@@ -72,8 +72,7 @@ func TestSendFile_T1_HappyPath(t *testing.T) {
 	}
 }
 
-// TestSendFile_T2_WithCaption verifies that a caption appears in ForLLM or ForUser
-// and that Media is still populated.
+// TestSendFile_T2_WithCaption verifies that a caption is carried with the media.
 func TestSendFile_T2_WithCaption(t *testing.T) {
 	ws, reportPDF, _, _ := mkSendFileWorkspace(t)
 	tool := NewSendFileTool(ws, true)
@@ -89,6 +88,9 @@ func TestSendFile_T2_WithCaption(t *testing.T) {
 	}
 	if len(result.Media) != 1 {
 		t.Fatalf("expected 1 Media entry, got %d", len(result.Media))
+	}
+	if result.Media[0].Caption != "Q4 report" {
+		t.Errorf("Media[0].Caption = %q, want %q", result.Media[0].Caption, "Q4 report")
 	}
 	caption := result.ForLLM + result.ForUser
 	if !strings.Contains(caption, "Q4 report") {

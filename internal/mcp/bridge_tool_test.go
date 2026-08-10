@@ -1,11 +1,102 @@
 package mcp
 
 import (
+	"context"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	mcpclient "github.com/mark3labs/mcp-go/client"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
+
+func TestBridgeRegistersAndCallsSendFile(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "report.pdf")
+	if err := os.WriteFile(path, []byte("report"), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	reg := tools.NewRegistry()
+	reg.Register(tools.NewSendFileTool(workspace, true))
+	srv := httptest.NewServer(NewBridgeServer(reg, "test", nil))
+	defer srv.Close()
+
+	client, err := mcpclient.NewStreamableHttpClient(srv.URL)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	ctx := context.Background()
+	if err := client.Start(ctx); err != nil {
+		t.Fatalf("start client: %v", err)
+	}
+	defer func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close client: %v", err)
+		}
+	}()
+	if _, err := client.Initialize(ctx, mcpgo.InitializeRequest{Params: mcpgo.InitializeParams{
+		ProtocolVersion: mcpgo.LATEST_PROTOCOL_VERSION,
+		ClientInfo:      mcpgo.Implementation{Name: "test-client", Version: "1.0.0"},
+	}}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	listed, err := client.ListTools(ctx, mcpgo.ListToolsRequest{})
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	found := false
+	for _, tool := range listed.Tools {
+		if tool.Name == "send_file" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("send_file not exposed by MCP bridge")
+	}
+
+	result, err := client.CallTool(ctx, mcpgo.CallToolRequest{Params: mcpgo.CallToolParams{
+		Name:      "send_file",
+		Arguments: map[string]any{"path": path, "caption": "weekly report"},
+	}})
+	if err != nil {
+		t.Fatalf("call send_file: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("send_file returned error: %+v", result.Content)
+	}
+}
+
+func TestForwardMediaToOutboundPreservesCaption(t *testing.T) {
+	msgBus := bus.New()
+	ctx := tools.WithToolChannel(context.Background(), "zalo-demo")
+	ctx = tools.WithToolChatID(ctx, "chat-1")
+	forwardMediaToOutbound(ctx, msgBus, "send_file", &tools.Result{
+		Media: []bus.MediaFile{{
+			Path:     "/workspace/report.pdf",
+			MimeType: "application/pdf",
+			Caption:  "weekly report",
+		}},
+	})
+
+	readCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	msg, ok := msgBus.SubscribeOutbound(readCtx)
+	if !ok {
+		t.Fatal("no outbound message received")
+	}
+	if got := msg.Media[0].Caption; got != "weekly report" {
+		t.Fatalf("caption = %q, want weekly report", got)
+	}
+}
 
 func TestInputSchemaToMap(t *testing.T) {
 	schema := mcpgo.ToolInputSchema{
@@ -184,10 +275,10 @@ func TestStripEmptyOptionalArgs(t *testing.T) {
 
 	args := map[string]any{
 		"url":      "https://example.com",
-		"api_key":  "optional",    // placeholder → strip
-		"timeout":  nil,           // nil → strip
-		"debug":    true,          // real boolean → keep
-		"keywords": "",            // empty string for string-typed → keep
+		"api_key":  "optional", // placeholder → strip
+		"timeout":  nil,        // nil → strip
+		"debug":    true,       // real boolean → keep
+		"keywords": "",         // empty string for string-typed → keep
 	}
 
 	cleaned := bt.stripEmptyOptionalArgs(args)

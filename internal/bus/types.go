@@ -14,6 +14,7 @@ type MediaFile struct {
 	Path     string `json:"path"`
 	MimeType string `json:"mime_type,omitempty"` // e.g. "application/pdf", "image/jpeg"
 	Filename string `json:"filename,omitempty"`  // original user-provided filename, e.g. "Báo cáo Q4.pdf"; empty → UUID fallback in persistMedia
+	Caption  string `json:"caption,omitempty"`
 }
 
 // InboundMessage represents a message received from a channel (Telegram, Discord, etc.)
@@ -35,14 +36,14 @@ type InboundMessage struct {
 
 // OutboundMessage represents a message to be sent to a channel.
 type OutboundMessage struct {
-	Channel         string            `json:"channel"`
-	ChatID          string            `json:"chat_id"`
-	Content         string            `json:"content"`
-	Media           []MediaAttachment `json:"media,omitempty"`
-	Metadata        map[string]string `json:"metadata,omitempty"`
-	TenantID        uuid.UUID         `json:"tenant_id,omitempty"`
-	AgentID         uuid.UUID         `json:"agent_id,omitempty"`
-	AgentOtherConfig []byte           `json:"agent_other_config,omitempty"`
+	Channel          string            `json:"channel"`
+	ChatID           string            `json:"chat_id"`
+	Content          string            `json:"content"`
+	Media            []MediaAttachment `json:"media,omitempty"`
+	Metadata         map[string]string `json:"metadata,omitempty"`
+	TenantID         uuid.UUID         `json:"tenant_id,omitempty"`
+	AgentID          uuid.UUID         `json:"agent_id,omitempty"`
+	AgentOtherConfig []byte            `json:"agent_other_config,omitempty"`
 	// TraceID set by the agent emit site so dispatch can mark outbound_emitted=true
 	// once channel.Send acks. uuid.Nil means caller has no trace to flag.
 	TraceID uuid.UUID `json:"trace_id,omitempty"`
@@ -57,7 +58,7 @@ type MediaAttachment struct {
 
 // Event represents a server-side event to broadcast to WebSocket clients.
 type Event struct {
-	Name     string    `json:"name"`              // event name (e.g. "agent", "chat", "health")
+	Name     string    `json:"name"` // event name (e.g. "agent", "chat", "health")
 	Payload  any       `json:"payload,omitempty"`
 	TenantID uuid.UUID `json:"-"` // tenant scope for event filtering (not serialized to clients)
 }

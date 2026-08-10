@@ -112,7 +112,8 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *Result
 	// Build result — caption overrides default message if provided.
 	filename := filepath.Base(resolved)
 	msg := fmt.Sprintf("Sent file: %s", filename)
-	if caption := argString(args, "caption"); caption != "" {
+	caption := argString(args, "caption")
+	if caption != "" {
 		msg = caption
 	}
 	result := SilentResult(msg)
@@ -120,6 +121,7 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *Result
 		Path:     resolved,
 		Filename: filename,
 		MimeType: mimeFromPath(resolved),
+		Caption:  caption,
 	}}
 
 	// Mark delivered so subsequent send_file or message(MEDIA:) calls detect the duplicate.

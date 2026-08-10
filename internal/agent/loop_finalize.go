@@ -88,7 +88,7 @@ func (l *Loop) finalizeRun(
 		if ct == "" {
 			ct = mimeFromExt(filepath.Ext(mf.Path))
 		}
-		rs.mediaResults = append(rs.mediaResults, MediaResult{Path: mf.Path, ContentType: ct})
+		rs.mediaResults = append(rs.mediaResults, MediaResult{Path: mf.Path, ContentType: ct, Caption: mf.Caption})
 	}
 	rs.mediaResults = deduplicateMedia(rs.mediaResults)
 	if pm := tools.PublishedMediaFromCtx(ctx); pm != nil {

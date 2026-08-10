@@ -120,7 +120,7 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 	// 2d. Merge forwarded media into results (matching v2 finalizeRun).
 	for _, mf := range state.Input.ForwardMedia {
 		ct := mf.MimeType
-		state.Tool.MediaResults = append(state.Tool.MediaResults, MediaResult{Path: mf.Path, ContentType: ct})
+		state.Tool.MediaResults = append(state.Tool.MediaResults, MediaResult{Path: mf.Path, ContentType: ct, Caption: mf.Caption})
 	}
 
 	// 3. Deduplicate + populate media sizes
