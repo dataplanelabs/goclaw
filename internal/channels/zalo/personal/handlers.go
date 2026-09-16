@@ -500,7 +500,9 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		"preview", channels.Truncate(content, 50),
 	)
 
-	c.startTyping(threadID, protocol.ThreadTypeUser)
+	if !c.InStandby("direct", threadID) {
+		c.startTyping(threadID, protocol.ThreadTypeUser)
+	}
 
 	// Collect contact for DM messages.
 	if cc := c.ContactCollector(); cc != nil {
@@ -513,6 +515,9 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		"platform":             channels.TypeZaloPersonal,
 		"display_name":         channels.SanitizeDisplayName(senderName),
 		"enable_native_styles": boolMetadata(c.enableNativeStyles),
+	}
+	if msg.FromOA() {
+		metadata["sender_kind"] = "oa"
 	}
 	if c.quoteInDM() {
 		if qm := buildSelfQuoteMetadata(&msg.Data, senderID); qm != nil {

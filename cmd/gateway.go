@@ -537,6 +537,9 @@ func runGateway() {
 	// Channel manager
 	channelMgr := channels.NewManager(msgBus)
 	channelMgr.SetTracingStore(pgStores.Tracing)
+	if standbyRegistry != nil {
+		channelMgr.SetStandbyResolver(standbyRegistry.ResolveMode)
+	}
 	deps.channelMgr = channelMgr
 
 	// Wire channel member resolver into permission grant paths (WS + HTTP) so

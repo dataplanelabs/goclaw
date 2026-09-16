@@ -538,38 +538,41 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 		finalContent = fmt.Sprintf("[From: %s]\n%s", senderLabel, content)
 	}
 
+	peerKind := "direct"
+	if isGroup {
+		peerKind = "group"
+	}
+
 	// Send typing indicator with keepalive + TTL safety net.
 	// Telegram typing expires after 5s, so keepalive every 4s.
 	// TTL auto-stops after 60s to prevent stuck indicators.
 	chatIDObj := tu.ID(chatID)
-	typingCtrl := typing.New(typing.Options{
-		MaxDuration:       60 * time.Second,
-		KeepaliveInterval: 4 * time.Second,
-		StartFn: func() error {
-			action := tu.ChatAction(chatIDObj, telego.ChatActionTyping)
-			if messageThreadID > 0 {
-				action.MessageThreadID = messageThreadID
-			}
-			return c.bot.SendChatAction(ctx, action)
-		},
-	})
-	// Stop previous typing controller for this chat/topic (if any)
-	if prev, ok := c.typingCtrls.Load(localKey); ok {
-		prev.(*typing.Controller).Stop()
-	}
-	c.typingCtrls.Store(localKey, typingCtrl)
-	typingCtrl.Start()
-
-	// Stop previous thinking animation for this chat/topic
-	if prevStop, ok := c.stopThinking.Load(localKey); ok {
-		if cf, ok := prevStop.(*thinkingCancel); ok {
-			cf.Cancel()
+	if !c.InStandby(peerKind, chatIDStr) {
+		typingCtrl := typing.New(typing.Options{
+			MaxDuration:       60 * time.Second,
+			KeepaliveInterval: 4 * time.Second,
+			StartFn: func() error {
+				action := tu.ChatAction(chatIDObj, telego.ChatActionTyping)
+				if messageThreadID > 0 {
+					action.MessageThreadID = messageThreadID
+				}
+				return c.bot.SendChatAction(ctx, action)
+			},
+		})
+		if prev, ok := c.typingCtrls.Load(localKey); ok {
+			prev.(*typing.Controller).Stop()
 		}
-	}
+		c.typingCtrls.Store(localKey, typingCtrl)
+		typingCtrl.Start()
 
-	// Create thinking cancel for this chat/topic
-	_, thinkCancel := context.WithCancel(ctx)
-	c.stopThinking.Store(localKey, &thinkingCancel{fn: thinkCancel})
+		if prevStop, ok := c.stopThinking.Load(localKey); ok {
+			if cf, ok := prevStop.(*thinkingCancel); ok {
+				cf.Cancel()
+			}
+		}
+		_, thinkCancel := context.WithCancel(ctx)
+		c.stopThinking.Store(localKey, &thinkingCancel{fn: thinkCancel})
+	}
 
 	// No "Thinking..." placeholder — the DraftStream creates its own message
 	// on the first streaming chunk (sendMessage on first flush).
@@ -577,12 +580,12 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 	// user sees typing indicator → first content appears directly.
 
 	metadata := map[string]string{
-		"message_id": fmt.Sprintf("%d", message.MessageID),
-		"user_id":    fmt.Sprintf("%d", user.ID),
+		"message_id":       fmt.Sprintf("%d", message.MessageID),
+		"user_id":          fmt.Sprintf("%d", user.ID),
 		tools.MetaUsername: user.Username,
-		"first_name": user.FirstName,
-		"is_group":   fmt.Sprintf("%t", isGroup),
-		"local_key":  localKey,
+		"first_name":       user.FirstName,
+		"is_group":         fmt.Sprintf("%t", isGroup),
+		"local_key":        localKey,
 	}
 	if message.Chat.Title != "" {
 		metadata[tools.MetaChatTitle] = message.Chat.Title
@@ -606,11 +609,6 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 	}
 	if topicCfg.skills != nil {
 		metadata[tools.MetaTopicSkills] = strings.Join(topicCfg.skills, ",")
-	}
-
-	peerKind := "direct"
-	if isGroup {
-		peerKind = "group"
 	}
 
 	// Audio-aware routing: if a voice/audio message was received and a dedicated speaking agent

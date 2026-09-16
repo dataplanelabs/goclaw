@@ -13,9 +13,10 @@ import (
 )
 
 // TestFinalize_StandbySuppressesContentKeepsMemory proves that standby mode:
-//   1. zeroes Observe.FinalContent (no outbound delivery)
-//   2. still calls FlushMessages (memory write)
-//   3. still calls MaybeSummarize (episodic)
+//  1. zeroes Observe.FinalContent (no outbound delivery)
+//  2. still calls FlushMessages (memory write)
+//  3. still calls MaybeSummarize (episodic)
+//
 // Audit-revised assertion (Phase 3 Step 1).
 func TestFinalize_StandbySuppressesContentKeepsMemory(t *testing.T) {
 	var flushedCount, summarizedCount int
@@ -149,6 +150,17 @@ func TestStandbyGate_StandbyAborts(t *testing.T) {
 	}
 	if gotThreadKey != "group:chat42" {
 		t.Fatalf("thread key: got %q want %q", gotThreadKey, "group:chat42")
+	}
+}
+
+func TestStandbyGate_ObserveOnlyAbortsWithoutResolver(t *testing.T) {
+	g := NewStandbyGate(&PipelineDeps{})
+	st := &RunState{Input: &RunInput{Channel: "zalo_oa", ChatID: "user-1", ObserveOnly: true}}
+	if err := g.Execute(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	if !st.StandbyMode || st.ExitCode != AbortRun || g.Result() != AbortRun {
+		t.Fatalf("observe_only: standby=%v exit=%v result=%v", st.StandbyMode, st.ExitCode, g.Result())
 	}
 }
 

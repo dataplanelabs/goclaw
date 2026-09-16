@@ -19,6 +19,7 @@ type oaInboundEvent struct {
 	Sender    struct {
 		ID          string `json:"id"`
 		DisplayName string `json:"display_name,omitempty"`
+		AdminID     string `json:"admin_id,omitempty"`
 	} `json:"sender"`
 	Recipient struct {
 		ID string `json:"id"`
@@ -40,9 +41,10 @@ func (e *oaInboundEvent) messageID() string {
 }
 
 // HandleWebhookEvent routes a verified+deduped event onto the message bus.
-// Drops self-echoes (Sender.ID == OAID). In bootstrap mode drops every
-// event without decoding so Zalo's URL-save ping is acked but not
-// dispatched.
+// Drops self-echoes (Sender.ID == OAID) for user_send_* only. OA-origin
+// events (oa_send_*, user_received_message) are captured observe-only.
+// In bootstrap mode drops every event without decoding so Zalo's URL-save
+// ping is acked but not dispatched.
 func (c *Channel) HandleWebhookEvent(ctx context.Context, raw json.RawMessage) error {
 	if c.inBootstrap() {
 		n := c.bootstrapDroppedCount.Add(1)
@@ -62,6 +64,19 @@ func (c *Channel) HandleWebhookEvent(ctx context.Context, raw json.RawMessage) e
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return fmt.Errorf("zalo_oa.webhook: decode event: %w", err)
 	}
+	switch e.EventName {
+	case "oa_send_text", "oa_send_image", "oa_send_gif", "oa_send_sticker",
+		"oa_send_file", "oa_send_link", "oa_send_list", "oa_send_request_user_info":
+		c.dispatchOAOrigin(&e)
+		return nil
+	case "user_received_message":
+		slog.Info("zalo_oa.webhook.user_received_message",
+			"oa_id", c.creds().OAID,
+			"user_id", e.Recipient.ID,
+			"message_id", e.messageID())
+		return nil
+	}
+
 	if e.Sender.ID != "" && e.Sender.ID == c.creds().OAID {
 		slog.Debug("zalo_oa.webhook.self_echo_filtered",
 			"oa_id", c.creds().OAID, "message_id", e.messageID())
@@ -100,15 +115,42 @@ func (c *Channel) HandleWebhookEvent(ctx context.Context, raw json.RawMessage) e
 	case "user_unfollow":
 		c.handleUserUnfollow(&e)
 		return nil
-	case "oa_send_text", "oa_send_image", "oa_send_gif", "oa_send_sticker",
-		"oa_send_file", "oa_send_link", "oa_send_list", "oa_send_request_user_info":
-		// Name-match in case Zalo's payload shape change ever bypasses Sender.ID == OAID.
-		slog.Debug("zalo_oa.webhook.outbound_mirror_dropped", "event", e.EventName)
-		return nil
 	default:
 		slog.Debug("zalo_oa.webhook.unknown_event", "event", e.EventName)
 		return nil
 	}
+}
+
+func (c *Channel) dispatchOAOrigin(e *oaInboundEvent) {
+	userID := e.Recipient.ID
+	if userID == "" {
+		return
+	}
+	text := e.Message.Text
+	if text == "" {
+		text = "[" + e.EventName + "]"
+	}
+	from := "Zalo OA"
+	if e.Sender.AdminID != "" {
+		from = "Zalo OA admin " + e.Sender.AdminID
+	}
+	metadata := common.InboundMeta{
+		MessageID:         e.messageID(),
+		Platform:          common.PlatformZaloOA,
+		SenderDisplayName: from,
+	}.ToMap()
+	metadata["observe_only"] = "true"
+	metadata["sender_kind"] = "oa"
+	metadata["oa_event"] = e.EventName
+	if e.Sender.AdminID != "" {
+		metadata["oa_admin_id"] = e.Sender.AdminID
+	}
+	slog.Info("zalo_oa.webhook.oa_origin",
+		"event", e.EventName,
+		"user_id", userID,
+		"message_id", e.messageID(),
+		"admin_id", e.Sender.AdminID)
+	c.BaseChannel.HandleMessage(userID, userID, fmt.Sprintf("[From: %s]\n%s", from, text), nil, metadata, "direct")
 }
 
 func (c *Channel) dispatchWebhookText(e *oaInboundEvent) {

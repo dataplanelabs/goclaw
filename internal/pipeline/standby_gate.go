@@ -29,6 +29,16 @@ func (s *StandbyGate) Name() string { return "standby_gate" }
 
 func (s *StandbyGate) Execute(ctx context.Context, state *RunState) error {
 	s.result = Continue
+	if state != nil && state.Input != nil && state.Input.ObserveOnly {
+		state.StandbyMode = true
+		state.ExitCode = AbortRun
+		s.result = AbortRun
+		slog.Info("pipeline.standby_gate observe_only",
+			"channel", state.Input.Channel,
+			"chat_id", state.Input.ChatID,
+		)
+		return nil
+	}
 	if s.deps == nil || s.deps.ResolveStandbyMode == nil {
 		return nil
 	}

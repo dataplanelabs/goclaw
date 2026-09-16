@@ -665,6 +665,9 @@ type RunRequest struct {
 	// because the same agent may serve channels with different toggle state.
 	EnableNativeStyles bool
 
+	// ObserveOnly records the inbound (trace + memory) without LLM or reply.
+	ObserveOnly bool
+
 	// Run classification
 	RunKind       string // "delegation", "announce" — empty for user-initiated runs
 	HideInput     bool   // don't persist input message in session history (announce runs)

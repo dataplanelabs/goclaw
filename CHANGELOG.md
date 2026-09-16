@@ -66,6 +66,18 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Fixed
 
+- **Standby no longer sends typing indicators** — channels consult the same
+  schedule registry as `StandbyGate` before `startTyping`, so a standby thread
+  does not show "typing…" while the agent is only observing.
+
+- **Zalo Personal now captures Official Account DMs** — WS cmd `503`/`504`
+  `pageMsgs[]` (previously logged as `unknown_frame` and dropped) are emitted as
+  DMs with `sender_kind=oa` and still create traces in standby.
+
+- **Zalo OA webhook `oa_send_*` is recorded observe-only** — Official Account
+  (or OA-admin) outbound is persisted into the user session/trace without a bot
+  reply. `user_send_text` from the OA id is still dropped as self-echo.
+
 - **Cron runs honor their schedule timezone in trace prompts** — cron-dispatched
   agent turns now carry the job schedule timezone into the run request, so the
   bracketed prompt timestamp renders in the configured local timezone instead of

@@ -32,8 +32,8 @@ type Listener struct {
 	client      *WSClient
 	cipherKey   string
 	connectedAt time.Time
-	stopped     bool         // prevents reconnect after Stop()
-	reconnTimer *time.Timer  // pending reconnect timer, cancelled on Stop()
+	stopped     bool        // prevents reconnect after Stop()
+	reconnTimer *time.Timer // pending reconnect timer, cancelled on Stop()
 
 	retryStates map[string]*retryState
 
@@ -105,7 +105,7 @@ func NewListener(sess *Session) (*Listener, error) {
 }
 
 // Channel accessors.
-func (ln *Listener) Messages() <-chan Message      { return ln.messageCh }
+func (ln *Listener) Messages() <-chan Message       { return ln.messageCh }
 func (ln *Listener) Disconnected() <-chan CloseInfo { return ln.disconnectedCh }
 func (ln *Listener) Closed() <-chan CloseInfo       { return ln.closedCh }
 func (ln *Listener) Errors() <-chan error           { return ln.errorCh }
@@ -255,7 +255,9 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
 		ln.handleCipherKey(ctx, envelope.Key)
 	case "1_2_1":
 		// Ping/keepalive ack — no-op.
-	case "1_501_0", "1_502_0":
+	case "1_501_0", "1_502_0", "1_503_0", "1_504_0":
+		// 501/502 = user DMs (+ delivered/seen mix). 503/504 = OA/page DMs.
+		// Prod 504 frames carry pageMsgs[] — previously dropped as unknown_frame.
 		ln.handleUserMessages(ctx, envelope.Data, envelope.Encrypt)
 	case "1_521_0", "1_522_0":
 		ln.handleGroupMessages(ctx, envelope.Data, envelope.Encrypt)
@@ -337,4 +339,3 @@ func (ln *Listener) handleCipherKey(ctx context.Context, key *string) {
 		}
 	}
 }
-

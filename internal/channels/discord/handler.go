@@ -227,26 +227,27 @@ func (c *Channel) handleMessage(_ *discordgo.Session, m *discordgo.MessageCreate
 	// Send typing indicator with keepalive + TTL safety net.
 	// Discord typing expires after 10s, so keepalive every 9s.
 	// TTL auto-stops after 60s to prevent stuck indicators.
-	typingCtrl := typing.New(typing.Options{
-		MaxDuration:       60 * time.Second,
-		KeepaliveInterval: 9 * time.Second,
-		StartFn: func() error {
-			return c.session.ChannelTyping(channelID)
-		},
-	})
-	// Stop previous typing controller for this channel (if any)
-	if prev, ok := c.typingCtrls.Load(channelID); ok {
-		prev.(*typing.Controller).Stop()
+	if !c.InStandby(peerKind, channelID) {
+		typingCtrl := typing.New(typing.Options{
+			MaxDuration:       60 * time.Second,
+			KeepaliveInterval: 9 * time.Second,
+			StartFn: func() error {
+				return c.session.ChannelTyping(channelID)
+			},
+		})
+		if prev, ok := c.typingCtrls.Load(channelID); ok {
+			prev.(*typing.Controller).Stop()
+		}
+		c.typingCtrls.Store(channelID, typingCtrl)
+		typingCtrl.Start()
 	}
-	c.typingCtrls.Store(channelID, typingCtrl)
-	typingCtrl.Start()
 
-	// Send placeholder "Thinking..." message.
-	// Key by inbound message ID (not channel ID) to avoid race conditions
-	// when multiple messages arrive in the same channel concurrently.
-	placeholder, err := c.session.ChannelMessageSend(channelID, "Thinking...")
-	if err == nil {
-		c.placeholders.Store(m.ID, placeholder.ID)
+	// Send placeholder "Thinking..." message — skip in standby (no reply coming).
+	if !c.InStandby(peerKind, channelID) {
+		placeholder, err := c.session.ChannelMessageSend(channelID, "Thinking...")
+		if err == nil {
+			c.placeholders.Store(m.ID, placeholder.ID)
+		}
 	}
 
 	// Strip bot @mention from content — it's just the trigger, not meaningful.

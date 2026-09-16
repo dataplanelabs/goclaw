@@ -278,6 +278,7 @@ type UserMessage struct {
 	Data     TMessage
 	threadID string
 	isSelf   bool
+	fromOA   bool // true when decoded from pageMsgs (Official Account thread)
 }
 
 // NewUserMessage creates a UserMessage, resolving self-sent messages.
@@ -298,6 +299,9 @@ func NewUserMessage(selfUID string, data TMessage) UserMessage {
 func (m UserMessage) Type() ThreadType { return ThreadTypeUser }
 func (m UserMessage) ThreadID() string { return m.threadID }
 func (m UserMessage) IsSelf() bool     { return m.isSelf }
+
+// FromOA reports whether this DM arrived on the Official Account (pageMsgs) path.
+func (m UserMessage) FromOA() bool { return m.fromOA }
 
 // GroupMessage represents a group message (type=1).
 type GroupMessage struct {

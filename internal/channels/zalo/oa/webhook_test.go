@@ -255,6 +255,47 @@ func TestHandleWebhookEvent_DispatchesText(t *testing.T) {
 	}
 }
 
+func TestHandleWebhookEvent_CapturesOASendTextObserveOnly(t *testing.T) {
+	t.Parallel()
+	ch, mb := newWebhookChannel(t, "secret", "strict", 0)
+	payload := `{"event_name":"oa_send_text","sender":{"id":"oa-1","admin_id":"admin-9"},"recipient":{"id":"user-7"},"message":{"msg_id":"m-oa","text":"hello from desk"}}`
+	if err := ch.HandleWebhookEvent(context.Background(), json.RawMessage(payload)); err != nil {
+		t.Fatalf("HandleWebhookEvent: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	got, ok := mb.ConsumeInbound(ctx)
+	if !ok {
+		t.Fatal("oa_send_text should publish inbound")
+	}
+	if got.ChatID != "user-7" || got.SenderID != "user-7" {
+		t.Errorf("sender/chat = %q/%q, want user-7/user-7", got.SenderID, got.ChatID)
+	}
+	if got.Metadata["observe_only"] != "true" || got.Metadata["sender_kind"] != "oa" {
+		t.Errorf("metadata=%v", got.Metadata)
+	}
+	if got.Metadata["oa_admin_id"] != "admin-9" {
+		t.Errorf("oa_admin_id=%q", got.Metadata["oa_admin_id"])
+	}
+	if got.Content == "" {
+		t.Error("empty content")
+	}
+}
+
+func TestHandleWebhookEvent_UserReceivedMessageNoBus(t *testing.T) {
+	t.Parallel()
+	ch, mb := newWebhookChannel(t, "secret", "strict", 0)
+	payload := `{"event_name":"user_received_message","sender":{"id":"oa-1"},"recipient":{"id":"user-7"},"message":{"msg_id":"m-r"}}`
+	if err := ch.HandleWebhookEvent(context.Background(), json.RawMessage(payload)); err != nil {
+		t.Fatalf("HandleWebhookEvent: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, ok := mb.ConsumeInbound(ctx); ok {
+		t.Error("user_received_message should not publish inbound")
+	}
+}
+
 // A8: sender == OAID is the bot's own outbound — must drop, not forward.
 func TestHandleWebhookEvent_FiltersSelfEcho(t *testing.T) {
 	t.Parallel()

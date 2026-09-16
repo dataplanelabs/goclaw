@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -199,6 +200,11 @@ type BaseChannel struct {
 	approvedGroups  sync.Map // chatID → true (in-memory cache for paired group approval)
 	pairingDebounce sync.Map // senderID → time.Time (debounce pairing reply sends)
 	requireMention  bool
+
+	// standbyResolver is optional. When set, InStandby consults the same
+	// schedule registry the pipeline StandbyGate uses so channels can skip
+	// typing indicators before the agent run starts.
+	standbyResolver func(ctx context.Context, tenantID, channelName, threadKey string, now time.Time) schedule.Mode
 }
 
 // NewBaseChannel creates a new BaseChannel with the given parameters.
@@ -234,8 +240,8 @@ func (c *BaseChannel) AgentID() string { return c.agentID }
 // SetAgentID sets the explicit agent ID for routing (used by InstanceLoader for DB instances).
 func (c *BaseChannel) SetAgentID(id string) { c.agentID = id }
 
-func (c *BaseChannel) AgentUUID() uuid.UUID         { return c.agentUUID }
-func (c *BaseChannel) SetAgentUUID(id uuid.UUID)    { c.agentUUID = id }
+func (c *BaseChannel) AgentUUID() uuid.UUID      { return c.agentUUID }
+func (c *BaseChannel) SetAgentUUID(id uuid.UUID) { c.agentUUID = id }
 
 // TenantID returns the tenant UUID for this channel (zero = master tenant fallback).
 func (c *BaseChannel) TenantID() uuid.UUID { return c.tenantID }
@@ -284,6 +290,24 @@ func (c *BaseChannel) HistoryLimit() int { return c.historyLimit }
 
 // SetRequireMention sets whether @mention is required in group chats.
 func (c *BaseChannel) SetRequireMention(b bool) { c.requireMention = b }
+
+// SetStandbyResolver wires the schedule resolver used by InStandby.
+func (c *BaseChannel) SetStandbyResolver(fn func(ctx context.Context, tenantID, channelName, threadKey string, now time.Time) schedule.Mode) {
+	c.standbyResolver = fn
+}
+
+// InStandby reports whether the current thread is in standby. Missing
+// resolver, tenant, or channel name → false (fail open: typing still fires).
+func (c *BaseChannel) InStandby(peerKind, chatID string) bool {
+	if c == nil || c.standbyResolver == nil || chatID == "" || c.tenantID == uuid.Nil || c.name == "" {
+		return false
+	}
+	if peerKind == "" {
+		peerKind = "direct"
+	}
+	mode := c.standbyResolver(context.Background(), c.tenantID.String(), c.name, peerKind+":"+chatID, time.Now())
+	return mode == schedule.ModeStandby
+}
 
 // RequireMention returns whether @mention is required in group chats.
 func (c *BaseChannel) RequireMention() bool { return c.requireMention }
