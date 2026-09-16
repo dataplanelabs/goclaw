@@ -93,7 +93,9 @@ func (c *Channel) dispatchInboundTurn(turn inboundTurn) {
 	allMedia = append(allMedia, histMedia...)
 	allMedia = append(allMedia, turn.media...)
 
-	c.startTyping(turn.threadID, turn.threadType)
+	if !c.InStandby(turn.peerKind, turn.threadID) {
+		c.startTyping(turn.threadID, turn.threadType)
+	}
 	c.HandleMessage(turn.senderID, turn.threadID, finalContent, allMedia, turn.metadata, turn.peerKind)
 
 	waitMs := int64(0)

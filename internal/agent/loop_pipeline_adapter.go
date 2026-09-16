@@ -243,6 +243,7 @@ func convertRunInput(req *RunRequest) *pipeline.RunInput {
 		WorkspaceChatID:    req.WorkspaceChatID,
 		TeamWorkspace:      req.TeamWorkspace,
 		EnableNativeStyles: req.EnableNativeStyles,
+		ObserveOnly:        req.ObserveOnly,
 	}
 }
 

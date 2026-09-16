@@ -13,7 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 )
 
@@ -704,6 +707,30 @@ func TestStartTyping_NoOpWhenNotRunning(t *testing.T) {
 	}
 	if _, ok := ch.typingCtrls.Load("chat-1"); ok {
 		t.Error("typingCtrls should be empty when channel not running")
+	}
+}
+
+func TestStartTyping_NoOpWhenStandby(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		_, _ = w.Write([]byte(`{"ok":true,"result":{}}`))
+	}))
+	defer srv.Close()
+
+	ch := newTestChannel(t, srv.URL)
+	ch.SetTenantID(uuid.New())
+	ch.SetName("zalo-bot")
+	ch.SetStandbyResolver(func(_ context.Context, _, _, _ string, _ time.Time) schedule.Mode {
+		return schedule.ModeStandby
+	})
+	ch.startTyping("chat-1")
+	time.Sleep(50 * time.Millisecond)
+	if got := atomic.LoadInt32(&calls); got != 0 {
+		t.Errorf("sendChatAction calls = %d, want 0 (standby)", got)
+	}
+	if _, ok := ch.typingCtrls.Load("chat-1"); ok {
+		t.Error("typingCtrls should be empty in standby")
 	}
 }
 

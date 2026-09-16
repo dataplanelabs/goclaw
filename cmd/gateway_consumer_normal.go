@@ -400,6 +400,7 @@ func processNormalMessage(
 		ExtraSystemPrompt:  extraPrompt,
 		SkillFilter:        skillFilter,
 		EnableNativeStyles: parseBoolMetadata(msg.Metadata, "enable_native_styles"),
+		ObserveOnly:        parseBoolMetadata(msg.Metadata, "observe_only"),
 		OnTraceCreated: func(traceID uuid.UUID) {
 			if chanMgr != nil {
 				chanMgr.SetRunTraceID(runID, traceID)

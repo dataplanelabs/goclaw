@@ -18,6 +18,9 @@ func (c *Channel) startTyping(chatID string) {
 	if !c.IsRunning() {
 		return
 	}
+	if c.InStandby("direct", chatID) {
+		return
+	}
 	ctrl := typing.New(typing.Options{
 		MaxDuration:       typingMaxTTL,
 		KeepaliveInterval: typingKeepalive,

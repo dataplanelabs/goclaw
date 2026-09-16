@@ -198,14 +198,16 @@ func (c *Channel) handleIncomingMessage(evt *events.Message) {
 	}
 
 	// Typing indicator.
-	if prevCancel, ok := c.typingCancel.LoadAndDelete(chatID); ok {
-		if fn, ok := prevCancel.(context.CancelFunc); ok {
-			fn()
+	if !c.InStandby(peerKind, chatID) {
+		if prevCancel, ok := c.typingCancel.LoadAndDelete(chatID); ok {
+			if fn, ok := prevCancel.(context.CancelFunc); ok {
+				fn()
+			}
 		}
+		typingCtx, typingCancel := context.WithCancel(context.Background())
+		c.typingCancel.Store(chatID, typingCancel)
+		go c.keepTyping(typingCtx, chatJID)
 	}
-	typingCtx, typingCancel := context.WithCancel(context.Background())
-	c.typingCancel.Store(chatID, typingCancel)
-	go c.keepTyping(typingCtx, chatJID)
 
 	// Derive userID from senderID.
 	userID := senderID

@@ -114,6 +114,9 @@ type RunInput struct {
 	WorkspaceChatID    string
 	TeamWorkspace      string
 	EnableNativeStyles bool
+	// ObserveOnly aborts iteration like standby: persist + trace, no LLM/reply.
+	// Used for OA-origin webhook events (oa_send_*) that must be recorded without answering.
+	ObserveOnly bool
 }
 
 // MediaResult represents a media file produced during tool execution.

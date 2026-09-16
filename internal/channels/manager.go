@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/schedule"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -57,6 +59,7 @@ type Manager struct {
 	dispatchTask     *asyncTask
 	mu               sync.RWMutex
 	contactCollector *store.ContactCollector
+	standbyResolver  func(ctx context.Context, tenantID, channelName, threadKey string, now time.Time) schedule.Mode
 	// tracingStore is used to flag outbound_emitted=true on the originating
 	// trace after a successful channel.Send. Optional; nil disables the flag.
 	tracingStore store.TracingStore
@@ -252,6 +255,13 @@ func (m *Manager) RegisterChannel(name string, channel Channel) {
 			bc.SetContactCollector(m.contactCollector)
 		}
 	}
+	if m.standbyResolver != nil {
+		if bc, ok := channel.(interface {
+			SetStandbyResolver(func(context.Context, string, string, string, time.Time) schedule.Mode)
+		}); ok {
+			bc.SetStandbyResolver(m.standbyResolver)
+		}
+	}
 	m.channels[name] = channel
 	if hc, ok := channel.(interface{ MarkRegistered(string) }); ok {
 		hc.MarkRegistered("Configured")
@@ -332,6 +342,20 @@ func (m *Manager) SetContactCollector(cc *store.ContactCollector) {
 	for _, ch := range m.channels {
 		if bc, ok := ch.(interface{ SetContactCollector(*store.ContactCollector) }); ok {
 			bc.SetContactCollector(cc)
+		}
+	}
+}
+
+// SetStandbyResolver wires the schedule resolver onto current and future channels.
+func (m *Manager) SetStandbyResolver(fn func(ctx context.Context, tenantID, channelName, threadKey string, now time.Time) schedule.Mode) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.standbyResolver = fn
+	for _, ch := range m.channels {
+		if bc, ok := ch.(interface {
+			SetStandbyResolver(func(context.Context, string, string, string, time.Time) schedule.Mode)
+		}); ok {
+			bc.SetStandbyResolver(fn)
 		}
 	}
 }

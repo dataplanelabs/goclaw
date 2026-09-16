@@ -2,7 +2,7 @@
 
 ## Overview
 
-Standby mode is a declarative-schedule feature on `channel_instances` (with per-thread overrides) that gates message processing at the pipeline entry. While standby resolves true for a `(tenant, channel, thread)` triplet, the agent **still observes and writes to working/episodic memory**, but does NOT call the LLM, run tools, or emit replies. Outcome: ~$0 LLM cost during silent windows, full context continuity when the window expires.
+Standby mode is a declarative-schedule feature on `channel_instances` (with per-thread overrides) that gates message processing at the pipeline entry. While standby resolves true for a `(tenant, channel, thread)` triplet, the agent **still observes and writes to working/episodic memory**, but does NOT call the LLM, run tools, emit replies, **or send typing indicators**. Channels consult the same `ScheduleRegistry` before `startTyping`. Outcome: ~$0 LLM cost during silent windows, full context continuity when the window expires.
 
 Three use cases shaped the design:
 

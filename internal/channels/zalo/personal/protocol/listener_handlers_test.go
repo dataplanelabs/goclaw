@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 )
@@ -46,5 +47,47 @@ func TestAnyToDecimalString_JSONUnmarshal(t *testing.T) {
 	got := anyToDecimalString(parsed.FileID)
 	if got != "315077459047" {
 		t.Errorf("JSON number → anyToDecimalString = %q, want %q", got, "315077459047")
+	}
+}
+
+func TestHandleUserMessages_EmitsPageMsgsAsOA(t *testing.T) {
+	ln := &Listener{
+		sess:      &Session{UID: "me"},
+		messageCh: make(chan Message, 2),
+		errorCh:   make(chan error, 2),
+	}
+	payload := `{"data":{"msgs":[],"pageMsgs":[{"msgId":"m1","uidFrom":"oa-99","idTo":"0","dName":"Bank OA","content":"otp","msgType":"webchat"}]}}`
+	ln.handleUserMessages(context.Background(), payload, 0)
+	select {
+	case m := <-ln.messageCh:
+		um, ok := m.(UserMessage)
+		if !ok {
+			t.Fatalf("got %T", m)
+		}
+		if !um.FromOA() {
+			t.Fatal("want FromOA")
+		}
+		if um.ThreadID() != "oa-99" {
+			t.Fatalf("thread=%s want oa-99", um.ThreadID())
+		}
+		if um.Data.DName != "Bank OA" {
+			t.Fatalf("dname=%s", um.Data.DName)
+		}
+	default:
+		t.Fatal("no pageMsg emitted")
+	}
+}
+
+func TestHandleUserMessages_EmptyPageMsgsNoEmit(t *testing.T) {
+	ln := &Listener{
+		sess:      &Session{UID: "me"},
+		messageCh: make(chan Message, 1),
+		errorCh:   make(chan error, 1),
+	}
+	ln.handleUserMessages(context.Background(), `{"data":{"msgs":[],"pageMsgs":[]}}`, 0)
+	select {
+	case m := <-ln.messageCh:
+		t.Fatalf("unexpected emit: %+v", m)
+	default:
 	}
 }
