@@ -432,6 +432,24 @@ func TestSendMessage_AuthErrorDoesNotWrapErrQuoteRejected(t *testing.T) {
 	}
 }
 
+func TestSendMessage_SessionKeyErrorDoesNotWrapErrQuoteRejected(t *testing.T) {
+	t.Parallel()
+	srv, _ := captureServer(t, "", 600)
+	sess := newQuoteTestSession(t, srv)
+
+	q := &SendMessageQuote{OwnerID: "x", MsgID: "y", MsgType: "chat.text", Msg: "z"}
+	_, err := SendMessage(context.Background(), sess, "user-1", ThreadTypeUser, "reply", q)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrQuoteRejected) || errors.Is(err, ErrMentionRejected) {
+		t.Errorf("session-key error must surface unwrapped; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "send error code 600") || !strings.Contains(err.Error(), "x") {
+		t.Errorf("err = %v, want code 600 and server message", err)
+	}
+}
+
 // Inner-envelope error 114 ("Tham số không hợp lệ") rides under a clean
 // outer envelope (error_code=0). Without typed-error wrapping in
 // decryptDataField the channel layer's silent retry never fired and the

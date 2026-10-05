@@ -57,6 +57,7 @@ var nonQuoteErrorCodes = map[int]bool{
 	-100:  true, // session expired / auth invalid
 	-114:  true, // session token invalid (zalo-oa equivalent: -216)
 	-201:  true, // params invalid / encryption error (NOT a quote rejection)
+	600:   true, // zpw_sek missing or wrong; a no-quote retry fails the same way
 	12010: true, // per-user rate limit (zalo-oa pattern)
 }
 
@@ -65,11 +66,11 @@ var nonQuoteErrorCodes = map[int]bool{
 // FromInboundQuote, or deserialized from outbound metadata in Phase 4.
 type SendMessageQuote struct {
 	OwnerID     string          `json:"ownerId"`
-	MsgID       string          `json:"msgId"`    // = original TQuote.GlobalMsgID
+	MsgID       string          `json:"msgId"` // = original TQuote.GlobalMsgID
 	CliMsgID    string          `json:"cliMsgId"`
-	MsgType     string          `json:"msgType"`  // string form: chat.text, chat.photo, etc.
-	Msg         string          `json:"msg"`      // quoted text body — qmsg payload field
-	Attach      string          `json:"attach"`   // quoted attachment metadata as JSON string — qmsgAttach
+	MsgType     string          `json:"msgType"` // string form: chat.text, chat.photo, etc.
+	Msg         string          `json:"msg"`     // quoted text body — qmsg payload field
+	Attach      string          `json:"attach"`  // quoted attachment metadata as JSON string — qmsgAttach
 	TS          string          `json:"ts"`
 	TTL         int             `json:"ttl"`
 	PropertyExt json.RawMessage `json:"propertyExt,omitempty"`
@@ -350,7 +351,7 @@ func SendMessageWithOptions(
 		return "", fmt.Errorf("zalo_personal: parse send response: %w", err)
 	}
 	if envelope.ErrorCode != 0 {
-		baseErr := fmt.Errorf("zalo_personal: send error code %d", envelope.ErrorCode)
+		baseErr := fmt.Errorf("zalo_personal: send error code %d: %s", envelope.ErrorCode, envelope.ErrorMessage)
 		if len(mentions) > 0 && !nonQuoteErrorCodes[envelope.ErrorCode] {
 			return "", fmt.Errorf("%w: %w", ErrMentionRejected, baseErr)
 		}

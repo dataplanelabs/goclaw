@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -288,6 +289,33 @@ func TestPersonalSendText_QuoteDroppedOnQuoteRejected(t *testing.T) {
 	payload := decryptCapturedForm(t, (*cap)[1].body)
 	if _, ok := payload["qmsgId"]; ok {
 		t.Errorf("fallback retry still carries qmsg fields, payload=%v", payload)
+	}
+}
+
+func TestPersonalSendText_SessionKeyErrorDoesNotFallback(t *testing.T) {
+	t.Parallel()
+	srv, _, quoted, unquoted := sendQuoteServer(t, "1001", 600)
+	ch := newChannelWithSession(t, srv)
+
+	err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "user-1",
+		Content: "hi",
+		Metadata: map[string]string{
+			"reply_to_message_id":    "9876543210",
+			"reply_to_quote_payload": makeQuotePayload(t, "9876543210", "hello"),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected session-key error, got nil")
+	}
+	if errors.Is(err, protocol.ErrQuoteRejected) {
+		t.Errorf("code 600 must not be treated as a quote rejection; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "send error code 600") {
+		t.Errorf("err = %v, want send error code 600", err)
+	}
+	if *quoted != 1 || *unquoted != 0 {
+		t.Errorf("hits = quoted:%d unquoted:%d, want 1/0 (no fallback)", *quoted, *unquoted)
 	}
 }
 
