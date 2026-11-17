@@ -62,7 +62,7 @@ Streaming fallback is conservative: backup models are tried only if the stream f
 |----------|------|----------|---------------|
 | **anthropic** | Native HTTP + SSE | API key required | `claude-sonnet-4-5-20250929` |
 | **claude_cli** | stdio subprocess + MCP | Binary path (default: `claude`) | `sonnet` |
-| **codex** | OAuth Responses API | OAuth token source | `gpt-5.5` |
+| **codex** | OAuth Responses API | OAuth token source | `gpt-6.1-sol` |
 | **acp** | JSON-RPC 2.0 subagents | Binary + workspace dir | `claude` |
 | **dashscope** | OpenAI-compat wrapper | API key + custom models | `qwen3-max` |
 | **openai** (+ 10+ variants) | OpenAI-compatible | API key + endpoint URL | Model-specific |
@@ -571,7 +571,9 @@ Claude CLI inherits thinking support from the underlying Claude model. Thinking 
 
 ## 12. Codex Provider
 
-The Codex provider integrates with OpenAI's ChatGPT Responses API (OAuth-based), defaulting to `gpt-5.5` through the chatgpt.com backend. Unlike standard OpenAI endpoints, Codex uses OAuth token refresh and a custom response format with "phase" markers.
+The Codex provider integrates with OpenAI's ChatGPT Responses API (OAuth-based), defaulting to `gpt-6.1-sol` through the chatgpt.com backend. Unlike standard OpenAI endpoints, Codex uses OAuth token refresh and a custom response format with "phase" markers.
+
+A ChatGPT account accepts only the models Codex currently offers to it: `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-sol`, `gpt-6-astra`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra` and `gpt-5.6-luna`. Retired ids such as `gpt-5.5` and `gpt-5.3-codex` fail with HTTP 400 "model is not supported when using Codex with a ChatGPT account". These models also accept the reasoning efforts `max` (all of them) and `ultra` (all but the Luna models) above `xhigh`; an unsupported effort is downgraded to the nearest supported one.
 
 ### Configuration
 
@@ -582,7 +584,7 @@ tokenSource := &MyTokenSource{} // implements TokenSource interface
 provider := NewCodexProvider("codex", tokenSource, "", "")
 // or specify custom API base and model:
 provider := NewCodexProvider("codex", tokenSource,
-  "https://chatgpt.com/backend-api", "gpt-5.5")
+  "https://chatgpt.com/backend-api", "gpt-6.1-sol")
 ```
 
 ### API Endpoint
@@ -601,7 +603,7 @@ Codex returns structured responses with phase markers:
 ```json
 {
   "id": "...",
-  "model": "gpt-5.5",
+  "model": "gpt-6.1-sol",
   "choices": [{
     "message": {
       "role": "assistant",

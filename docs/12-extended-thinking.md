@@ -59,7 +59,7 @@ Rules:
 - `settings.reasoning_defaults` is provider-owned and reusable across agents.
 - `reasoning_config.override_mode` accepts `inherit|custom`.
 - `thinking_level` still accepts `off|low|medium|high`.
-- `reasoning_config.effort` accepts `off|auto|none|minimal|low|medium|high|xhigh`.
+- `reasoning_config.effort` accepts `off|auto|none|minimal|low|medium|high|xhigh|max|ultra`.
 - `reasoning_config.fallback` accepts `downgrade|off|provider_default`.
 - Existing legacy `other_config.reasoning` payloads without `override_mode` are treated as custom overrides for backward compatibility.
 - Read path resolves provider defaults first, then applies agent inherit/custom semantics, then falls back to legacy `thinking_level`.

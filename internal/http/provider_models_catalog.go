@@ -83,19 +83,17 @@ func acpModels() []ModelInfo {
 	}
 }
 
-// chatGPTOAuthModels returns models available via ChatGPT OAuth integration.
+// chatGPTOAuthModels returns the models a ChatGPT account accepts through Codex.
+// The subscription rejects retired ids (gpt-5.5 and older) with HTTP 400.
 func chatGPTOAuthModels() []ModelInfo {
 	return withReasoningCapabilities([]ModelInfo{
-		{ID: providers.DefaultCodexModel, Name: "GPT-5.5"},
-		{ID: "gpt-5.4", Name: "GPT-5.4"},
-		{ID: "gpt-5.4-mini", Name: "GPT-5.4 Mini"},
-		{ID: "gpt-5.3-codex", Name: "GPT-5.3 Codex"},
-		{ID: "gpt-5.3-codex-spark", Name: "GPT-5.3 Codex Spark"},
-		{ID: "gpt-5.2-codex", Name: "GPT-5.2 Codex"},
-		{ID: "gpt-5.2", Name: "GPT-5.2"},
-		{ID: "gpt-5.1-codex", Name: "GPT-5.1 Codex"},
-		{ID: "gpt-5.1-codex-max", Name: "GPT-5.1 Codex Max"},
-		{ID: "gpt-5.1-codex-mini", Name: "GPT-5.1 Codex Mini"},
-		{ID: "gpt-5.1", Name: "GPT-5.1"},
+		{ID: providers.DefaultCodexModel, Name: "GPT-6.1 Sol"},
+		{ID: "gpt-6.1-terra", Name: "GPT-6.1 Terra"},
+		{ID: "gpt-6-sol", Name: "GPT-6 Sol"},
+		{ID: "gpt-6-astra", Name: "GPT-6 Astra"},
+		{ID: "gpt-6-luna", Name: "GPT-6 Luna"},
+		{ID: "gpt-5.6-sol", Name: "GPT-5.6 Sol"},
+		{ID: "gpt-5.6-terra", Name: "GPT-5.6 Terra"},
+		{ID: "gpt-5.6-luna", Name: "GPT-5.6 Luna"},
 	})
 }

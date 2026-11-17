@@ -172,7 +172,7 @@ func (p *OpenAIProvider) buildRequestBody(model string, req ChatRequest, stream 
 				slog.Debug("max_tokens clamped to 4096 for Fireworks non-streaming request", "provider", p.name, "model", model)
 			}
 		}
-		if strings.HasPrefix(capabilityModel, "gpt-5") || strings.HasPrefix(capabilityModel, "o1") || strings.HasPrefix(capabilityModel, "o3") || strings.HasPrefix(capabilityModel, "o4") {
+		if strings.HasPrefix(capabilityModel, "gpt-5") || strings.HasPrefix(capabilityModel, "gpt-6") || strings.HasPrefix(capabilityModel, "o1") || strings.HasPrefix(capabilityModel, "o3") || strings.HasPrefix(capabilityModel, "o4") {
 			body["max_completion_tokens"] = v
 		} else {
 			body["max_tokens"] = v
@@ -280,14 +280,14 @@ func modelFamily(model string) string {
 }
 
 // openAIModelSupportsReasoningEffort is true when the Chat Completions request may include
-// the top-level "reasoning_effort" field (OpenAI o-series / GPT-5 family).
+// the top-level "reasoning_effort" field (OpenAI o-series / GPT-5 and GPT-6 families).
 // Other OpenAI-compatible hosts (Together, Groq, vLLM, etc.) often reject unknown fields with HTTP 400.
 func openAIModelSupportsReasoningEffort(model string) bool {
 	if LookupReasoningCapability(model) != nil {
 		return true
 	}
 	fam := strings.ToLower(modelFamily(model))
-	for _, prefix := range []string{"gpt-5", "o1", "o3", "o4"} {
+	for _, prefix := range []string{"gpt-5", "gpt-6", "o1", "o3", "o4"} {
 		if strings.HasPrefix(fam, prefix) {
 			return true
 		}
