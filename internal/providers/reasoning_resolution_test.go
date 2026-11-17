@@ -95,3 +95,24 @@ func TestResolveReasoningDecisionDisablesWhenProviderCannotReason(t *testing.T) 
 		t.Fatalf("EffectiveEffort = %q, want off", decision.EffectiveEffort)
 	}
 }
+
+func TestResolveReasoningDecisionKeepsUltraWhereSupported(t *testing.T) {
+	decision := ResolveReasoningDecision(testThinkingProvider{thinking: true}, "gpt-6.1-sol", "ultra", "downgrade", "reasoning")
+	if decision.RequestEffort() != "ultra" {
+		t.Fatalf("RequestEffort() = %q, want ultra", decision.RequestEffort())
+	}
+}
+
+func TestResolveReasoningDecisionDowngradesUltraToMax(t *testing.T) {
+	decision := ResolveReasoningDecision(testThinkingProvider{thinking: true}, "gpt-6-luna", "ultra", "downgrade", "reasoning")
+	if decision.RequestEffort() != "max" {
+		t.Fatalf("RequestEffort() = %q, want max", decision.RequestEffort())
+	}
+}
+
+func TestResolveReasoningDecisionDowngradesMaxOnOlderModels(t *testing.T) {
+	decision := ResolveReasoningDecision(testThinkingProvider{thinking: true}, "gpt-5.5", "max", "downgrade", "reasoning")
+	if decision.RequestEffort() != "xhigh" {
+		t.Fatalf("RequestEffort() = %q, want xhigh", decision.RequestEffort())
+	}
+}

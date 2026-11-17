@@ -24,7 +24,21 @@ type reasoningCapabilityEntry struct {
 	capability ReasoningCapability
 }
 
+// Levels the ChatGPT-subscription models accept; Luna stops at max.
+var (
+	codexUltraLevels = []string{"low", "medium", "high", "xhigh", "max", "ultra"}
+	codexMaxLevels   = []string{"low", "medium", "high", "xhigh", "max"}
+)
+
 var reasoningCapabilityEntries = []reasoningCapabilityEntry{
+	{id: "gpt-6.1-sol", capability: ReasoningCapability{Levels: codexUltraLevels, DefaultEffort: "low"}},
+	{id: "gpt-6.1-terra", capability: ReasoningCapability{Levels: codexUltraLevels, DefaultEffort: "low"}},
+	{id: "gpt-6-sol", capability: ReasoningCapability{Levels: codexUltraLevels, DefaultEffort: "medium"}},
+	{id: "gpt-6-astra", capability: ReasoningCapability{Levels: codexUltraLevels, DefaultEffort: "medium"}},
+	{id: "gpt-6-luna", capability: ReasoningCapability{Levels: codexMaxLevels, DefaultEffort: "medium"}},
+	{id: "gpt-5.6-sol", capability: ReasoningCapability{Levels: codexUltraLevels, DefaultEffort: "low"}},
+	{id: "gpt-5.6-terra", capability: ReasoningCapability{Levels: codexUltraLevels, DefaultEffort: "medium"}},
+	{id: "gpt-5.6-luna", capability: ReasoningCapability{Levels: codexMaxLevels, DefaultEffort: "medium"}},
 	{id: "gpt-5.5", capability: ReasoningCapability{Levels: []string{"none", "low", "medium", "high", "xhigh"}, DefaultEffort: "medium"}},
 	{id: "gpt-5.4-mini", capability: ReasoningCapability{Levels: []string{"none", "low", "medium", "high", "xhigh"}, DefaultEffort: "none"}},
 	{id: "gpt-5-mini", capability: ReasoningCapability{Levels: []string{"none", "low", "medium", "high", "xhigh"}, DefaultEffort: "none"}},

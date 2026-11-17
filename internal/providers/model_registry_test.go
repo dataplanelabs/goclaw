@@ -487,3 +487,22 @@ func TestCloneFromTemplatePatchZeroValuesIgnored(t *testing.T) {
 		t.Errorf("expected InputPer1M=1.0 (unchanged), got %f", cloned.Cost.InputPer1M)
 	}
 }
+
+func TestOpenAIForwardCompatPrefersLongestPrefix(t *testing.T) {
+	registry := NewInMemoryRegistry()
+	SeedDefaultModels(registry)
+	registry.RegisterResolver("openai", &OpenAIForwardCompat{})
+
+	for i := 0; i < 20; i++ {
+		resolved := registry.Resolve("openai", "gpt-6.1-nova")
+		if resolved == nil {
+			t.Fatal("expected forward-compat resolution for gpt-6.1-nova, got nil")
+		}
+		if resolved.ContextWindow != 500_000 {
+			t.Fatalf("gpt-6.1-nova ContextWindow = %d, want 500000 from gpt-6.1-sol", resolved.ContextWindow)
+		}
+	}
+	if resolved := registry.Resolve("openai", "gpt-6-nova"); resolved == nil || resolved.ContextWindow != 272_000 {
+		t.Fatalf("gpt-6-nova = %+v, want 272000 from gpt-6-sol", resolved)
+	}
+}

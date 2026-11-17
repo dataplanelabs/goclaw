@@ -226,7 +226,7 @@ Rules:
 - `override_mode: "inherit"` tells the agent to follow `settings.reasoning_defaults`
 - `override_mode: "custom"` stores an agent-local override; the dashboard also writes a derived `thinking_level` shim for rollback safety
 - `thinking_level` remains the coarse compatibility shim: `off|low|medium|high`
-- `reasoning_config.effort` supports `off|auto|none|minimal|low|medium|high|xhigh`
+- `reasoning_config.effort` supports `off|auto|none|minimal|low|medium|high|xhigh|max|ultra`
 - `reasoning_config.fallback` supports `downgrade|off|provider_default`
 - existing legacy `other_config.reasoning` payloads without `override_mode` continue to behave as custom overrides
 - unset reasoning resolves to `off`

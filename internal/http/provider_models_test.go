@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -97,22 +98,25 @@ func TestProvidersHandlerListProviderModelsChatGPTOAuthIncludesReasoningMetadata
 
 	var found bool
 	for _, model := range result.Models {
-		if model.ID != "gpt-5.5" {
+		if model.ID == "gpt-5.5" {
+			t.Fatal("gpt-5.5 listed, but ChatGPT accounts reject it")
+		}
+		if model.ID != providers.DefaultCodexModel {
 			continue
 		}
 		found = true
 		if model.Reasoning == nil {
-			t.Fatal("gpt-5.5 reasoning = nil, want capability metadata")
+			t.Fatalf("%s reasoning = nil, want capability metadata", model.ID)
 		}
-		if model.Reasoning.DefaultEffort != "medium" {
-			t.Fatalf("gpt-5.5 default_effort = %q, want medium", model.Reasoning.DefaultEffort)
+		if model.Reasoning.DefaultEffort != "low" {
+			t.Fatalf("%s default_effort = %q, want low", model.ID, model.Reasoning.DefaultEffort)
 		}
-		if got := model.Reasoning.Levels; len(got) != 5 || got[4] != "xhigh" {
-			t.Fatalf("gpt-5.5 levels = %#v, want none..xhigh", got)
+		if got := model.Reasoning.Levels; len(got) != 6 || got[0] != "low" || got[5] != "ultra" {
+			t.Fatalf("%s levels = %#v, want low..ultra", model.ID, got)
 		}
 	}
 	if !found {
-		t.Fatal("gpt-5.5 not found in ChatGPT OAuth model list")
+		t.Fatalf("%s not found in ChatGPT OAuth model list", providers.DefaultCodexModel)
 	}
 }
 
