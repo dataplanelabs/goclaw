@@ -111,6 +111,9 @@ type Manager struct {
 	activatedTools map[string]struct{}    // tracks activated tool names for group:mcp
 	searchMode     bool
 
+	// inlinePins: server name -> original tool names its settings.inline_tools keeps inline
+	inlinePins map[string]map[string]struct{}
+
 	// User-credential servers: servers requiring per-user credentials, stored during
 	// LoadForAgent("") for later per-request tool resolution. These servers are NOT
 	// connected at startup — connections are created per-user via pool.AcquireUser().
@@ -348,6 +351,17 @@ func (m *Manager) connectAndFilter(ctx context.Context, rs *resolvedServer) erro
 		}
 	}
 
+	m.mu.Lock()
+	if m.inlinePins == nil {
+		m.inlinePins = make(map[string]map[string]struct{})
+	}
+	if pins := InlineTools(srv.Settings); len(pins) > 0 {
+		m.inlinePins[srv.Name] = toSet(pins)
+	} else {
+		delete(m.inlinePins, srv.Name)
+	}
+	m.mu.Unlock()
+
 	// Apply tool filtering from grants
 	if len(rs.info.ToolAllow) > 0 || len(rs.info.ToolDeny) > 0 {
 		m.filterTools(srv.Name, rs.info.ToolAllow, rs.info.ToolDeny)
@@ -397,22 +411,59 @@ func (m *Manager) LoadForAgent(ctx context.Context, agentID uuid.UUID, userID st
 }
 
 // maybeEnterSearchMode partially defers MCP tools when total count exceeds
-// the inline threshold. The first mcpToolInlineMaxCount tools stay registered
-// inline; the rest are moved to deferredTools and discovered via mcp_tool_search.
+// the inline threshold. Tools a server pins through settings.inline_tools stay
+// inline first, then the rest in server/tool name order up to
+// mcpToolInlineMaxCount; the remainder is moved to deferredTools and discovered
+// via mcp_tool_search. If pins alone exceed the threshold, every pin stays and
+// everything else is deferred.
 func (m *Manager) maybeEnterSearchMode() {
-	allNames := m.ToolNames()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var pinned, rest, unknownPins []string
+	for _, server := range m.sortedServerNamesLocked() {
+		pins := m.inlinePins[server]
+		found := make(map[string]struct{}, len(pins))
+		for _, name := range m.sortedServerToolNamesLocked(server) {
+			orig := name
+			if bt, ok := m.registry.Get(name); ok {
+				if bridge, ok := bt.(*BridgeTool); ok {
+					orig = bridge.OriginalName()
+				}
+			}
+			if _, ok := pins[orig]; ok {
+				pinned = append(pinned, name)
+				found[orig] = struct{}{}
+			} else {
+				rest = append(rest, name)
+			}
+		}
+		for pin := range pins {
+			if _, ok := found[pin]; !ok {
+				unknownPins = append(unknownPins, server+"/"+pin)
+			}
+		}
+	}
+
+	allNames := append(append([]string(nil), pinned...), rest...)
 	if len(allNames) <= mcpToolInlineMaxCount {
 		return
 	}
 
-	// Build a set of names to defer (everything beyond the threshold).
-	deferSet := make(map[string]struct{}, len(allNames)-mcpToolInlineMaxCount)
-	for _, name := range allNames[mcpToolInlineMaxCount:] {
-		deferSet[name] = struct{}{}
+	for _, pin := range unknownPins {
+		slog.Warn("mcp.inline_tools.unknown_pin", "pin", pin)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	inlineCount := mcpToolInlineMaxCount
+	if len(pinned) > inlineCount {
+		inlineCount = len(pinned)
+		slog.Warn("mcp.inline_tools.pins_exceed_threshold", "pinned", len(pinned), "threshold", mcpToolInlineMaxCount)
+	}
+
+	deferSet := make(map[string]struct{}, len(allNames)-inlineCount)
+	for _, name := range allNames[inlineCount:] {
+		deferSet[name] = struct{}{}
+	}
 
 	m.deferredTools = make(map[string]*BridgeTool, len(deferSet))
 	m.activatedTools = make(map[string]struct{})
@@ -449,13 +500,14 @@ func (m *Manager) maybeEnterSearchMode() {
 	}
 
 	// Update "mcp" group to only the kept inline names.
-	inlineNames := allNames[:mcpToolInlineMaxCount]
+	inlineNames := allNames[:inlineCount]
 	m.registry.RegisterToolGroup("mcp", inlineNames)
 	m.searchMode = true
 
 	slog.Info("mcp.search_mode.enabled",
 		"inline_tools", len(inlineNames),
 		"deferred_tools", len(m.deferredTools),
+		"pinned_tools", len(pinned),
 		"threshold", mcpToolInlineMaxCount)
 }
 
@@ -637,6 +689,21 @@ func requireUserCreds(settings json.RawMessage) bool {
 	}
 	_ = json.Unmarshal(settings, &s)
 	return s.RequireUserCredentials
+}
+
+// InlineTools returns the tool names a server pins inline through its
+// settings.inline_tools list (the server's own tool names, without prefix).
+func InlineTools(settings json.RawMessage) []string {
+	if len(settings) == 0 {
+		return nil
+	}
+	var s struct {
+		InlineTools []string `json:"inline_tools"`
+	}
+	if err := json.Unmarshal(settings, &s); err != nil {
+		return nil
+	}
+	return s.InlineTools
 }
 
 // IsOAuthActive reports whether an MCP server is configured to authenticate via OAuth.
