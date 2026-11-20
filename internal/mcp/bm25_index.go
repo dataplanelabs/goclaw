@@ -77,6 +77,8 @@ func (idx *mcpBM25Index) build(tools []*BridgeTool) {
 	}
 }
 
+const exactNameBoost = 1e6
+
 // search performs a BM25 search over indexed MCP tools.
 func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchResult {
 	if maxResults <= 0 {
@@ -89,6 +91,15 @@ func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchRes
 	}
 
 	N := float64(len(idx.docs))
+
+	// A query that names a tool must find it: BM25 alone ranks a tool with a long
+	// description below shorter siblings that share its name tokens.
+	named := make(map[string]bool)
+	for _, w := range strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return unicode.IsSpace(r) || r == ',' || r == '`' || r == '"' || r == '\''
+	}) {
+		named[w] = true
+	}
 
 	type scored struct {
 		doc   toolDoc
@@ -118,6 +129,10 @@ func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchRes
 			numerator := termFreq * (idx.k1 + 1)
 			denominator := termFreq + idx.k1*(1-idx.b+idx.b*dl/idx.avgDL)
 			score += idf * numerator / denominator
+		}
+
+		if named[strings.ToLower(doc.originalName)] || named[strings.ToLower(doc.registeredName)] {
+			score += exactNameBoost
 		}
 
 		if score > 0 {

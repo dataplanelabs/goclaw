@@ -243,6 +243,28 @@ func TestMCPBM25Index_Search_ExactMatch(t *testing.T) {
 	}
 }
 
+func TestMCPBM25Index_Search_ExactNameFirst(t *testing.T) {
+	idx := newMCPBM25Index()
+	idx.build([]*BridgeTool{
+		makeBridgeToolWithDesc("crm", "orders_update", "Update an existing sales order"),
+		makeBridgeToolWithDesc("crm", "orders_pdf", "Render a sales order as PDF"),
+		makeBridgeToolWithDesc("crm", "orders_create", "Create a sales order after the requester confirms the summary, "+
+			"assigning the next order number, computing tax and totals, and reporting any validation error verbatim "+
+			"so the caller stops instead of retrying with different arguments or guessing values"),
+		makeBridgeToolWithDesc("tasks", "create_task", "Create a task"),
+	})
+
+	for _, q := range []string{"orders_create", "orders_create create sales order", "`orders_create`"} {
+		results := idx.search(q, 2)
+		if len(results) == 0 || results[0].OriginalName != "orders_create" {
+			t.Errorf("query %q: expected orders_create first, got %+v", q, results)
+		}
+	}
+	if results := idx.search("sales order", 5); len(results) > 0 && results[0].Score >= exactNameBoost {
+		t.Errorf("a query without a tool name must not get the exact-name boost")
+	}
+}
+
 func TestMCPBM25Index_Search_ZeroResults(t *testing.T) {
 	idx := newMCPBM25Index()
 	idx.build([]*BridgeTool{
