@@ -94,11 +94,13 @@ func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchRes
 
 	// A query that names a tool must find it: BM25 alone ranks a tool with a long
 	// description below shorter siblings that share its name tokens.
-	named := make(map[string]bool)
-	for _, w := range strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
-		return unicode.IsSpace(r) || r == ',' || r == '`' || r == '"' || r == '\''
-	}) {
+	words := queryWords(query)
+	named := make(map[string]bool, len(words))
+	for _, w := range words {
 		named[w] = true
+		if i := strings.LastIndex(w, "."); i > 0 {
+			named[w[i+1:]] = true
+		}
 	}
 
 	type scored struct {
@@ -131,7 +133,11 @@ func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchRes
 			score += idf * numerator / denominator
 		}
 
-		if named[strings.ToLower(doc.originalName)] || named[strings.ToLower(doc.registeredName)] {
+		// A one-word name such as "search" is generic: other servers carry it too,
+		// so it only wins when it is the whole query.
+		origNamed := named[strings.ToLower(doc.originalName)] &&
+			(len(words) == 1 || len(tokenizeMCP(doc.originalName)) > 1)
+		if origNamed || named[strings.ToLower(doc.registeredName)] {
 			score += exactNameBoost
 		}
 
@@ -170,6 +176,21 @@ func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchRes
 
 // docCount returns the number of indexed documents.
 func (idx *mcpBM25Index) docCount() int { return len(idx.docs) }
+
+// queryWords splits a query into lowercase words on anything that cannot be part
+// of a tool name (letters, digits, '_', '-', '.'), dropping trailing dots.
+func queryWords(query string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '.')
+	})
+	words := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if f = strings.TrimRight(f, "."); f != "" {
+			words = append(words, f)
+		}
+	}
+	return words
+}
 
 // tokenizeMCP splits text into lowercase tokens, removing punctuation.
 // Mirrors skills.tokenize() (unexported, so duplicated here).
