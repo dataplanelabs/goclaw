@@ -77,6 +77,8 @@ func (idx *mcpBM25Index) build(tools []*BridgeTool) {
 	}
 }
 
+const exactNameBoost = 1e6
+
 // search performs a BM25 search over indexed MCP tools.
 func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchResult {
 	if maxResults <= 0 {
@@ -89,6 +91,18 @@ func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchRes
 	}
 
 	N := float64(len(idx.docs))
+
+	// A query that names a tool must find it: BM25 alone ranks a tool with a long
+	// description below shorter siblings that share its name tokens.
+	words := queryWords(query)
+	named := make(map[string]bool, len(words))
+	lastSegment := make(map[string]bool)
+	for _, w := range words {
+		named[w] = true
+		if i := strings.LastIndex(w, "."); i > 0 {
+			lastSegment[w[i+1:]] = true
+		}
+	}
 
 	type scored struct {
 		doc   toolDoc
@@ -118,6 +132,18 @@ func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchRes
 			numerator := termFreq * (idx.k1 + 1)
 			denominator := termFreq + idx.k1*(1-idx.b+idx.b*dl/idx.avgDL)
 			score += idf * numerator / denominator
+		}
+
+		// A one-word name such as "search" is generic: other servers carry it too,
+		// so it only wins when it is the whole query. The last segment of a dotted
+		// word ("crm.orders_create") may only name a multi-token tool, so "v1.search"
+		// or "ansasafety.vn" boost nothing.
+		lowerOrig := strings.ToLower(doc.originalName)
+		multiToken := len(tokenizeMCP(doc.originalName)) > 1
+		origNamed := (named[lowerOrig] && (len(words) == 1 || multiToken)) ||
+			(multiToken && lastSegment[lowerOrig])
+		if origNamed || named[strings.ToLower(doc.registeredName)] {
+			score += exactNameBoost
 		}
 
 		if score > 0 {
@@ -155,6 +181,21 @@ func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchRes
 
 // docCount returns the number of indexed documents.
 func (idx *mcpBM25Index) docCount() int { return len(idx.docs) }
+
+// queryWords splits a query into lowercase words on anything that cannot be part
+// of a tool name (letters, digits, '_', '-', '.'), dropping trailing dots.
+func queryWords(query string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '.')
+	})
+	words := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if f = strings.TrimRight(f, "."); f != "" {
+			words = append(words, f)
+		}
+	}
+	return words
+}
 
 // tokenizeMCP splits text into lowercase tokens, removing punctuation.
 // Mirrors skills.tokenize() (unexported, so duplicated here).
