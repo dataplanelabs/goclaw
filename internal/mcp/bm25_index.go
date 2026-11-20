@@ -96,10 +96,11 @@ func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchRes
 	// description below shorter siblings that share its name tokens.
 	words := queryWords(query)
 	named := make(map[string]bool, len(words))
+	lastSegment := make(map[string]bool)
 	for _, w := range words {
 		named[w] = true
 		if i := strings.LastIndex(w, "."); i > 0 {
-			named[w[i+1:]] = true
+			lastSegment[w[i+1:]] = true
 		}
 	}
 
@@ -134,9 +135,13 @@ func (idx *mcpBM25Index) search(query string, maxResults int) []MCPToolSearchRes
 		}
 
 		// A one-word name such as "search" is generic: other servers carry it too,
-		// so it only wins when it is the whole query.
-		origNamed := named[strings.ToLower(doc.originalName)] &&
-			(len(words) == 1 || len(tokenizeMCP(doc.originalName)) > 1)
+		// so it only wins when it is the whole query. The last segment of a dotted
+		// word ("crm.orders_create") may only name a multi-token tool, so "v1.search"
+		// or "ansasafety.vn" boost nothing.
+		lowerOrig := strings.ToLower(doc.originalName)
+		multiToken := len(tokenizeMCP(doc.originalName)) > 1
+		origNamed := (named[lowerOrig] && (len(words) == 1 || multiToken)) ||
+			(multiToken && lastSegment[lowerOrig])
 		if origNamed || named[strings.ToLower(doc.registeredName)] {
 			score += exactNameBoost
 		}

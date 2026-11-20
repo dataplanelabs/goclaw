@@ -309,6 +309,31 @@ func TestMCPBM25Index_Search_NameWithPunctuationAroundIt(t *testing.T) {
 	}
 }
 
+func TestMCPBM25Index_Search_DottedWordDoesNotBoostOneWordNames(t *testing.T) {
+	idx := newMCPBM25Index()
+	idx.build([]*BridgeTool{
+		makeBridgeToolWithDesc("alpha", "search", "Find things"),
+		makeBridgeToolWithDesc("bravo", "vn", "Country lookup"),
+		makeBridgeToolWithDesc("charlie", "list_items", "List items for the v1 api and ansasafety site"),
+	})
+
+	for _, q := range []string{"v1.search", "ansasafety.vn", "x.search items"} {
+		for _, r := range idx.search(q, 5) {
+			if r.Score >= exactNameBoost {
+				t.Errorf("query %q: %s must not get the exact-name boost", q, r.OriginalName)
+			}
+		}
+	}
+
+	idx.build([]*BridgeTool{
+		makeBridgeToolWithDesc("alpha", "search", "Find things"),
+		makeBridgeToolWithDesc("crm", "orders_create", "Create a sales order"),
+	})
+	if r := idx.search("crm.orders_create", 1); len(r) == 0 || r[0].OriginalName != "orders_create" || r[0].Score < exactNameBoost {
+		t.Errorf("crm.orders_create must still boost orders_create, got %+v", r)
+	}
+}
+
 func TestQueryWords(t *testing.T) {
 	got := queryWords("Find `crm.orders_create`, then (a-b) x... or crm/orders_create:")
 	want := []string{"find", "crm.orders_create", "then", "a-b", "x", "or", "crm", "orders_create"}
