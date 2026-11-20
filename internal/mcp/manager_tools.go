@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
@@ -17,19 +18,39 @@ func (m *Manager) UserCredServers() []store.MCPAccessInfo {
 	return m.userCredServers
 }
 
-// ToolNames returns all registered MCP tool names.
+// ToolNames returns all registered MCP tool names, ordered by server name then
+// tool name so the order is the same on every start.
 func (m *Manager) ToolNames() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	var names []string
-	for name, ss := range m.servers {
-		if _, isPool := m.poolServers[name]; isPool {
-			names = append(names, m.poolToolNames[name]...)
-		} else {
-			names = append(names, ss.toolNames...)
-		}
+	for _, server := range m.sortedServerNamesLocked() {
+		names = append(names, m.sortedServerToolNamesLocked(server)...)
 	}
+	return names
+}
+
+// sortedServerNamesLocked returns server names in ascending order. Caller holds m.mu.
+func (m *Manager) sortedServerNamesLocked() []string {
+	servers := make([]string, 0, len(m.servers))
+	for name := range m.servers {
+		servers = append(servers, name)
+	}
+	sort.Strings(servers)
+	return servers
+}
+
+// sortedServerToolNamesLocked returns one server's registered tool names in
+// ascending order. Caller holds m.mu.
+func (m *Manager) sortedServerToolNamesLocked(server string) []string {
+	var names []string
+	if _, isPool := m.poolServers[server]; isPool {
+		names = append(names, m.poolToolNames[server]...)
+	} else if ss, ok := m.servers[server]; ok {
+		names = append(names, ss.toolNames...)
+	}
+	sort.Strings(names)
 	return names
 }
 
