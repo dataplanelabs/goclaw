@@ -420,7 +420,7 @@ func (m *Manager) maybeEnterSearchMode() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var pinned, rest, unknownPins []string
+	var pinned, rest, unregisteredPins []string
 	for _, server := range m.sortedServerNamesLocked() {
 		pins := m.inlinePins[server]
 		found := make(map[string]struct{}, len(pins))
@@ -440,7 +440,7 @@ func (m *Manager) maybeEnterSearchMode() {
 		}
 		for pin := range pins {
 			if _, ok := found[pin]; !ok {
-				unknownPins = append(unknownPins, server+"/"+pin)
+				unregisteredPins = append(unregisteredPins, server+"/"+pin)
 			}
 		}
 	}
@@ -450,8 +450,8 @@ func (m *Manager) maybeEnterSearchMode() {
 		return
 	}
 
-	for _, pin := range unknownPins {
-		slog.Warn("mcp.inline_tools.unknown_pin", "pin", pin)
+	for _, pin := range unregisteredPins {
+		slog.Warn("mcp.inline_tools.pin_not_registered", "pin", pin, "reason", "unknown tool or removed by the grant allow/deny list")
 	}
 
 	inlineCount := mcpToolInlineMaxCount
